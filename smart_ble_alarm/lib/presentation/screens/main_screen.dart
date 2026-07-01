@@ -1,7 +1,6 @@
 import 'dart:ui' as dart_ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../core/theme/app_colors.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
@@ -103,7 +102,7 @@ class _MainScreenState extends State<MainScreen> {
               if (state is BleDisconnected) {
                 return Container(
                   width: double.infinity,
-                  color: AppColors.error,
+                  color: Theme.of(context).colorScheme.error,
                   padding: EdgeInsets.only(
                     top: MediaQuery.of(context).padding.top + 8,
                     bottom: 8,
@@ -135,18 +134,18 @@ class _MainScreenState extends State<MainScreen> {
             child: NavigationBarTheme(
               data: NavigationBarThemeData(
                 backgroundColor: Colors.transparent,
-            indicatorColor: AppColors.primaryOrange.withValues(alpha: 0.2),
+            indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
             labelTextStyle: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.selected)) {
-                return const TextStyle(color: AppColors.primaryOrange, fontWeight: FontWeight.bold, fontSize: 12);
+                return TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 12);
               }
-              return const TextStyle(color: AppColors.textSecondary, fontSize: 12);
+              return TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 12);
             }),
             iconTheme: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.selected)) {
-                return const IconThemeData(color: AppColors.primaryOrange);
+                return IconThemeData(color: Theme.of(context).colorScheme.primary);
               }
-              return const IconThemeData(color: AppColors.textSecondary);
+              return IconThemeData(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)));
             }),
           ),
           child: NavigationBar(

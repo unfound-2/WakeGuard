@@ -6,6 +6,7 @@ import '../../../domain/repositories/ble_repository.dart';
 import '../../blocs/ble_bloc/ble_bloc.dart';
 import '../../blocs/ble_bloc/ble_state.dart';
 import '../../blocs/alarm_bloc/alarm_bloc.dart';
+import 'dart:ui' as dart_ui;
 import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../../../domain/entities/alarm.dart';
 import '../alarm_edit_screen.dart';
@@ -22,8 +23,8 @@ class HomeTab extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: Theme.of(context).brightness == Brightness.dark 
-              ? [AppColors.background, Colors.black]
-              : [AppColors.lightBackground, Colors.white],
+              ? [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.black]
+              : [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.white],
         ),
       ),
       child: SafeArea(
@@ -32,13 +33,13 @@ class HomeTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('DASHBOARD', style: TextStyle(color: AppColors.neonBlue, fontWeight: FontWeight.bold, letterSpacing: 2)),
+              Text('DASHBOARD', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 2)),
               const SizedBox(height: 16),
               _buildConnectionStatus(),
               const SizedBox(height: 16),
               _buildNextAlarm(context),
               const SizedBox(height: 24),
-              const Text('QUICK ACTIONS', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, letterSpacing: 2)),
+              Text('QUICK ACTIONS', style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontWeight: FontWeight.bold, letterSpacing: 2)),
               const SizedBox(height: 16),
               Expanded(
                 child: GridView.count(
@@ -72,44 +73,50 @@ class HomeTab extends StatelessWidget {
 
   Widget _buildConnectionStatus() {
     return BlocBuilder<BleConnectionBloc, BleState>(
-      builder: (context, state) {
-        String status = 'Disconnected';
-        String deviceName = 'No Device';
-        Color color = AppColors.error;
-        if (state is BleConnected) {
+      builder: (context, bleState) {
+        String deviceName = 'No Device Connected';
+        String status = 'Tap to Pair';
+        Color color = Theme.of(context).colorScheme.error;
+
+        if (bleState is BleConnected) {
+          deviceName = bleState.device.platformName;
           status = 'Connected';
-          deviceName = state.device.platformName;
-          color = AppColors.success;
-        } else if (state is BleConnecting || state is BleScanning) {
+          color = const Color(0xFF4ADE80); // Success green
+        } else if (bleState is BleConnecting || bleState is BleScanning) {
           status = 'Connecting...';
-          color = AppColors.primaryOrange;
+          color = Theme.of(context).colorScheme.primary;
         }
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.surfaceHighlight),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
-                child: Icon(Icons.bluetooth, color: color),
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: BackdropFilter(
+            filter: dart_ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.3),
+                border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(deviceName, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 18)),
-                    Text(status, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12)),
-                  ],
-                ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
+                    child: Icon(Icons.bluetooth, color: color),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(deviceName, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 18)),
+                        Text(status, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         );
       }
@@ -162,51 +169,55 @@ class HomeTab extends StatelessWidget {
               timeStr = '${h.toString().padLeft(2, '0')}:$m $amPm';
             }
 
-            return AnimatedContainer(
-              duration: settingsState.animationsEnabled ? const Duration(milliseconds: 300) : Duration.zero,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: isRinging ? AppColors.error.withValues(alpha: 0.2) : AppColors.primaryOrange.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: isRinging ? AppColors.error : AppColors.primaryOrange.withValues(alpha: 0.3), width: isRinging ? 2 : 1),
-              ),
-              child: isRinging 
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text('ALARM RINGING', textAlign: TextAlign.center, style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold, letterSpacing: 2, fontSize: 16)),
-                      const SizedBox(height: 8),
-                      Text(timeStr, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textPrimary, fontSize: 42, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.error,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        icon: const Icon(Icons.qr_code_scanner, size: 28),
-                        label: const Text('SCAN QR TO DISMISS', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        onPressed: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => ScannerScreen(alarmId: activeNextAlarm.id)));
-                        },
-                      ),
-                    ],
-                  )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('NEXT ALARM', style: TextStyle(color: AppColors.primaryOrange, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                          const SizedBox(height: 8),
-                          Text(timeStr, style: const TextStyle(color: AppColors.textPrimary, fontSize: 32, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      Icon(Icons.alarm_on, color: AppColors.primaryOrange.withValues(alpha: 0.5), size: 48),
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: BackdropFilter(
+                filter: dart_ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 500),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: isRinging ? Theme.of(context).colorScheme.error.withValues(alpha: 0.2) : Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                    border: Border.all(color: isRinging ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary.withValues(alpha: 0.3), width: isRinging ? 2 : 1),
+                  ),
+                  child: isRinging
+                      ? Column(
+                          children: [
+                            Text('ALARM RINGING', textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold, letterSpacing: 2, fontSize: 16)),
+                            const SizedBox(height: 8),
+                            Text(timeStr, textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 42, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(context).colorScheme.error,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              ),
+                              icon: const Icon(Icons.qr_code_scanner, size: 28),
+                              label: const Text('SCAN QR TO DISMISS', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              onPressed: () {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => ScannerScreen(alarmId: activeNextAlarm.id)));
+                              },
+                            ),
+                          ],
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('NEXT ALARM', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                const SizedBox(height: 8),
+                                Text(timeStr, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 32, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                            Icon(Icons.alarm_on, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5), size: 48),
                     ],
                   ),
+                ),
+              ),
             );
           }
         );
@@ -217,19 +228,24 @@ class HomeTab extends StatelessWidget {
   Widget _buildActionCard(BuildContext context, String title, IconData icon, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.surfaceHighlight),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: AppColors.neonBlue, size: 32),
-            const SizedBox(height: 12),
-            Text(title, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
-          ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: dart_ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.3),
+              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: Theme.of(context).colorScheme.primary, size: 32),
+                const SizedBox(height: 12),
+                Text(title, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -245,7 +261,7 @@ class HomeTab extends StatelessWidget {
           builder: (context, setState) {
             return AlertDialog(
               backgroundColor: Theme.of(context).colorScheme.surface,
-              title: const Text('Start Timer', style: TextStyle(color: AppColors.neonBlue)),
+              title: Text('Start Timer', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
               content: SizedBox(
                 height: 200,
                 child: CupertinoTheme(
@@ -272,7 +288,7 @@ class HomeTab extends StatelessWidget {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('CANCEL', style: TextStyle(color: AppColors.textSecondary)),
+                  child: Text('CANCEL', style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)))),
                 ),
                 TextButton(
                   onPressed: () {
@@ -292,11 +308,11 @@ class HomeTab extends StatelessWidget {
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Timer started on clock!'), backgroundColor: AppColors.success));
                       } catch (_) {}
                     } else {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Not connected to clock'), backgroundColor: AppColors.error));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Not connected to clock'), backgroundColor: Theme.of(context).colorScheme.error));
                     }
                     Navigator.pop(context);
                   },
-                  child: const Text('START', style: TextStyle(color: AppColors.primaryOrange, fontWeight: FontWeight.bold)),
+                  child: Text('START', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
                 ),
               ],
             );

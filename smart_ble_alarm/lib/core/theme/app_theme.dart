@@ -26,7 +26,7 @@ class AppTheme {
       ),
       scaffoldBackgroundColor: bgColor,
       textTheme: GoogleFonts.interTextTheme(
-        ThemeData.dark().textTheme.copyWith(
+        (isDarkMode ? ThemeData.dark() : ThemeData.light()).textTheme.copyWith(
           displayLarge: TextStyle(color: textPrimary, fontWeight: FontWeight.bold),
           displayMedium: TextStyle(color: textPrimary, fontWeight: FontWeight.bold),
           bodyLarge: TextStyle(color: textPrimary),

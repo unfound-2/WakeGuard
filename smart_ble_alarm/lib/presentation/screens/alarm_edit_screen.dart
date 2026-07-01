@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../core/theme/app_colors.dart';
 import '../../domain/entities/alarm.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
@@ -66,8 +65,8 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: Theme.of(context).brightness == Brightness.dark 
-                    ? [AppColors.background, Colors.black]
-                    : [AppColors.lightBackground, Colors.white],
+                    ? [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.black]
+                    : [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.white],
               ),
             ),
             child: SafeArea(
@@ -85,8 +84,8 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                       height: 64,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaryOrange,
-                          shadowColor: AppColors.primaryOrange.withValues(alpha: 0.5),
+                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          shadowColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                           elevation: 10,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(20),
@@ -138,11 +137,11 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
               data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: is24HourTime),
               child: Theme(
                 data: Theme.of(context).copyWith(
-                  colorScheme: const ColorScheme.dark(
-                    primary: AppColors.primaryOrange,
+                  colorScheme: ColorScheme.dark(
+                    primary: Theme.of(context).colorScheme.primary,
                     onPrimary: Colors.white,
-                    surface: AppColors.surface,
-                    onSurface: AppColors.textPrimary,
+                    surface: Theme.of(context).colorScheme.surface,
+                    onSurface: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 child: child!,
@@ -156,12 +155,12 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 40),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(30),
-          border: Border.all(color: AppColors.primaryOrange.withValues(alpha: 0.5), width: 2),
+          border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5), width: 2),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primaryOrange.withValues(alpha: 0.15),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
               blurRadius: 30,
               spreadRadius: 5,
             ),
@@ -171,10 +170,10 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
           children: [
             Text(
               formattedTime,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 64, // Slightly smaller to fit AM/PM if needed
                 fontWeight: FontWeight.bold,
-                color: AppColors.neonBlue,
+                color: Theme.of(context).colorScheme.primary,
                 letterSpacing: 4,
               ),
             ),
@@ -182,9 +181,9 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.touch_app, color: AppColors.primaryOrange, size: 20),
+                Icon(Icons.touch_app, color: Theme.of(context).colorScheme.primary, size: 20),
                 const SizedBox(width: 8),
-                const Text('TAP TO CHANGE TIME', style: TextStyle(color: AppColors.primaryOrange, letterSpacing: 2, fontWeight: FontWeight.w600)),
+                Text('TAP TO CHANGE TIME', style: TextStyle(color: Theme.of(context).colorScheme.primary, letterSpacing: 2, fontWeight: FontWeight.w600)),
               ],
             )
           ],
@@ -201,31 +200,31 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.6),
+            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.surfaceHighlight, width: 1.5),
+            border: Border.all(color: Theme.of(context).dividerColor, width: 1.5),
           ),
           child: Column(
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('One-Time Alarm', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  Text('One-Time Alarm', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface)),
                   Switch(
                     value: _isOneTime,
-                    activeThumbColor: AppColors.neonBlue,
+                    activeThumbColor: Theme.of(context).colorScheme.primary,
                     onChanged: (val) => setState(() => _isOneTime = val),
                   ),
                 ],
               ),
               if (!_isOneTime) ...[
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16.0),
-                  child: Divider(color: AppColors.surfaceHighlight, height: 1),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  child: Divider(color: Theme.of(context).dividerColor, height: 1),
                 ),
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('REPEAT ON', style: TextStyle(color: AppColors.textSecondary, letterSpacing: 2, fontWeight: FontWeight.bold)),
+                  child: Text('REPEAT ON', style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), letterSpacing: 2, fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -241,17 +240,17 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                   ],
                 ),
               ],
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16.0),
-                child: Divider(color: AppColors.surfaceHighlight, height: 1),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: Divider(color: Theme.of(context).dividerColor, height: 1),
               ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Require QR Scan', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  Text('Require QR Scan', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface)),
                   Switch(
                     value: _qrRequired,
-                    activeThumbColor: AppColors.primaryOrange,
+                    activeThumbColor: Theme.of(context).colorScheme.primary,
                     onChanged: (val) => setState(() => _qrRequired = val),
                   ),
                 ],
@@ -273,14 +272,14 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
         height: 40,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: isSelected ? AppColors.neonBlue.withValues(alpha: 0.2) : AppColors.surfaceHighlight.withValues(alpha: 0.3),
+          color: isSelected ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2) : Theme.of(context).dividerColor.withValues(alpha: 0.3),
           border: Border.all(
-            color: isSelected ? AppColors.neonBlue : Colors.transparent,
+            color: isSelected ? Theme.of(context).colorScheme.primary : Colors.transparent,
             width: 2,
           ),
           boxShadow: isSelected ? [
             BoxShadow(
-              color: AppColors.neonBlue.withValues(alpha: 0.3),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
               blurRadius: 8,
               spreadRadius: 1,
             )
@@ -291,7 +290,7 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
           label,
           style: TextStyle(
             fontSize: 16,
-            color: isSelected ? AppColors.neonBlue : AppColors.textSecondary,
+            color: isSelected ? Theme.of(context).colorScheme.primary : (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)),
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
         ),

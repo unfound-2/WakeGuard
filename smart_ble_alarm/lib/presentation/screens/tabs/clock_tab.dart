@@ -19,99 +19,82 @@ class ClockTab extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: Theme.of(context).brightness == Brightness.dark 
-              ? [AppColors.background, Colors.black]
-              : [AppColors.lightBackground, Colors.white],
+              ? [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.black]
+              : [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.white],
         ),
       ),
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: 24, top: 16),
-              child: Text('CLOCK SETTINGS', style: TextStyle(color: AppColors.neonBlue, fontWeight: FontWeight.bold, letterSpacing: 2, fontSize: 18)),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 24, top: 16),
+              child: Text('CLOCK SETTINGS', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 2, fontSize: 18)),
             ),
-            _buildSectionHeader('DISPLAY'),
+            _buildSectionHeader(context, 'DISPLAY'),
             BlocBuilder<SettingsBloc, SettingsState>(
               builder: (context, settingsState) {
-                final sleepStart = TimeOfDay(hour: settingsState.sleepStartHour, minute: settingsState.sleepStartMinute);
-                final sleepEnd = TimeOfDay(hour: settingsState.sleepEndHour, minute: settingsState.sleepEndMinute);
-
-                return _buildCard([
+                return _buildCard(context, [
                   _buildSwitchTile(
+                    context: context,
                     title: '24-Hour (Military Time)',
-                    subtitle: 'Use 24-hour time format everywhere',
+                    subtitle: 'Use 24-hour format instead of AM/PM',
                     value: settingsState.is24HourTime,
-                    onChanged: (val) => context.read<SettingsBloc>().add(Toggle24HourTimeEvent(val)),
+                    onChanged: (val) {
+                      context.read<SettingsBloc>().add(Toggle24HourTimeEvent(val));
+                    },
                     icon: Icons.access_time,
                   ),
                   _buildSwitchTile(
+                    context: context,
                     title: 'Auto-Dim Display',
                     subtitle: 'Uses light sensor to turn off backlight in darkness',
                     icon: Icons.brightness_auto,
                     value: settingsState.autoDim,
                     onChanged: (val) {
                       context.read<SettingsBloc>().add(
-                        UpdateClockConfigEvent(val, sleepStart.hour, sleepStart.minute, sleepEnd.hour, sleepEnd.minute)
+                        UpdateClockConfigEvent(val, settingsState.sleepStartHour, settingsState.sleepStartMinute, settingsState.sleepEndHour, settingsState.sleepEndMinute)
                       );
                     },
                   ),
+                  Divider(height: 1, color: Theme.of(context).dividerColor),
                   _buildListTile(
-                    title: 'Sleep Schedule',
-                    subtitle: 'Display OFF from ${sleepStart.format(context)} to ${sleepEnd.format(context)}',
-                    icon: Icons.schedule,
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textSecondary),
-                    onTap: () async {
-                      final start = await showTimePicker(
-                        context: context, 
-                        initialTime: sleepStart,
-                        builder: (context, child) {
-                          return MediaQuery(
-                            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: settingsState.is24HourTime),
-                            child: child!,
-                          );
-                        },
-                      );
-                      if (start == null) return;
-                      if (!context.mounted) return;
-                      
-                      final end = await showTimePicker(
-                        context: context, 
-                        initialTime: sleepEnd,
-                        builder: (context, child) {
-                          return MediaQuery(
-                            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: settingsState.is24HourTime),
-                            child: child!,
-                          );
-                        },
-                      );
-                      if (end == null) return;
-                      if (!context.mounted) return;
-                      
-                      context.read<SettingsBloc>().add(
-                        UpdateClockConfigEvent(settingsState.autoDim, start.hour, start.minute, end.hour, end.minute)
-                      );
-                    },
+                    context: context,
+                    title: 'Sleep Mode Start',
+                    subtitle: 'Display will turn off during these hours',
+                    icon: Icons.bedtime,
+                    trailing: Text(_formatTime(settingsState.sleepStartHour, settingsState.sleepStartMinute), style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 16)),
+                    onTap: () => _pickTime(context, true, settingsState),
+                  ),
+                  Divider(height: 1, color: Theme.of(context).dividerColor),
+                  _buildListTile(
+                    context: context,
+                    title: 'Sleep Mode End',
+                    subtitle: 'Display will turn back on',
+                    icon: Icons.wb_sunny,
+                    trailing: Text(_formatTime(settingsState.sleepEndHour, settingsState.sleepEndMinute), style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 16)),
+                    onTap: () => _pickTime(context, false, settingsState),
                   ),
                 ]);
               }
             ),
             
-            _buildSectionHeader('BLUETOOTH'),
+            _buildSectionHeader(context, 'BLUETOOTH'),
             BlocBuilder<BleConnectionBloc, BleState>(
               builder: (context, bleState) {
                 String status = 'Disconnected';
-                Color color = AppColors.error;
+                Color color = Theme.of(context).colorScheme.error;
                 if (bleState is BleConnected) {
                   status = 'Connected to ${bleState.device.platformName}';
                   color = AppColors.success;
                 } else if (bleState is BleConnecting || bleState is BleScanning) {
                   status = 'Connecting...';
-                  color = AppColors.primaryOrange;
+                  color = Theme.of(context).colorScheme.primary;
                 }
 
-                return _buildCard([
+                return _buildCard(context, [
                   _buildListTile(
+                    context: context,
                     title: 'Connection Status',
                     subtitle: status,
                     icon: Icons.bluetooth,
@@ -122,15 +105,17 @@ class ClockTab extends StatelessWidget {
                   ),
                   if (bleState is BleDisconnected)
                     _buildListTile(
+                      context: context,
                       title: 'Reconnect Device',
                       icon: Icons.bluetooth_searching,
                       onTap: () => context.read<BleConnectionBloc>().add(StartScanEvent()),
                     ),
                   if (bleState is BleConnected)
                     _buildListTile(
+                      context: context,
                       title: 'Forget Device',
                       icon: Icons.bluetooth_disabled,
-                      titleColor: AppColors.error,
+                      titleColor: Theme.of(context).colorScheme.error,
                       onTap: () async {
                         final prefs = await SharedPreferences.getInstance();
                         await prefs.remove('rememberedDeviceId');
@@ -148,27 +133,49 @@ class ClockTab extends StatelessWidget {
     );
   }
 
-  Widget _buildSectionHeader(String title) {
+  String _formatTime(int hour, int minute) {
+    final time = TimeOfDay(hour: hour, minute: minute);
+    return "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
+  }
+
+  Future<void> _pickTime(BuildContext context, bool isStart, SettingsState state) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: isStart ? state.sleepStartHour : state.sleepEndHour, minute: isStart ? state.sleepStartMinute : state.sleepEndMinute),
+    );
+    if (picked != null) {
+      if (!context.mounted) return;
+      context.read<SettingsBloc>().add(UpdateClockConfigEvent(
+        state.autoDim,
+        isStart ? picked.hour : state.sleepStartHour,
+        isStart ? picked.minute : state.sleepStartMinute,
+        !isStart ? picked.hour : state.sleepEndHour,
+        !isStart ? picked.minute : state.sleepEndMinute
+      ));
+    }
+  }
+
+  Widget _buildSectionHeader(BuildContext context, String title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 8, bottom: 8, top: 24),
+      padding: EdgeInsets.only(left: 8, bottom: 8, top: 24),
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.bold,
-          color: AppColors.neonBlue,
+          color: Theme.of(context).colorScheme.primary,
           letterSpacing: 1.5,
         ),
       ),
     );
   }
 
-  Widget _buildCard(List<Widget> children) {
+  Widget _buildCard(BuildContext context, List<Widget> children) {
     return Material(
-      color: AppColors.surface.withValues(alpha: 0.6),
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: AppColors.surfaceHighlight, width: 1.5),
+        side: BorderSide(color: Theme.of(context).dividerColor, width: 1.5),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -178,6 +185,7 @@ class ClockTab extends StatelessWidget {
   }
 
   Widget _buildSwitchTile({
+    required BuildContext context,
     required String title,
     required String subtitle,
     required bool value,
@@ -185,17 +193,18 @@ class ClockTab extends StatelessWidget {
     required IconData icon,
   }) {
     return SwitchListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      title: Text(title, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-      secondary: Icon(icon, color: AppColors.primaryOrange),
+      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      title: Text(title, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 12)),
+      secondary: Icon(icon, color: Theme.of(context).colorScheme.primary),
       value: value,
-      activeThumbColor: AppColors.neonBlue,
+      activeThumbColor: Theme.of(context).colorScheme.primary,
       onChanged: onChanged,
     );
   }
 
   Widget _buildListTile({
+    required BuildContext context,
     required String title,
     String? subtitle,
     required IconData icon,
@@ -204,11 +213,11 @@ class ClockTab extends StatelessWidget {
     Color? titleColor,
   }) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      leading: Icon(icon, color: titleColor ?? AppColors.primaryOrange),
-      title: Text(title, style: TextStyle(color: titleColor ?? AppColors.textPrimary, fontWeight: FontWeight.w600)),
-      subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)) : null,
-      trailing: trailing,
+      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      leading: Icon(icon, color: titleColor ?? Theme.of(context).colorScheme.primary),
+      title: Text(title, style: TextStyle(color: titleColor ?? Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w600)),
+      subtitle: subtitle != null ? Text(subtitle, style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 12)) : null,
+      trailing: trailing ?? Icon(Icons.chevron_right, color: Theme.of(context).dividerColor),
       onTap: onTap,
     );
   }

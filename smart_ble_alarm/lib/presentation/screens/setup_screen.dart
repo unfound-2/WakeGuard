@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/theme/app_colors.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/ble_bloc/ble_event.dart';
@@ -33,8 +32,8 @@ class _SetupScreenState extends State<SetupScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: Theme.of(context).brightness == Brightness.dark 
-                ? [AppColors.background, Colors.black]
-                : [AppColors.lightBackground, Colors.white],
+                ? [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.black]
+                : [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.white],
           ),
         ),
         child: SafeArea(
@@ -44,11 +43,11 @@ class _SetupScreenState extends State<SetupScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.watch, size: 100, color: AppColors.primaryOrange),
+                Icon(Icons.watch, size: 100, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 32),
                 const Text('Smart BLE Alarm', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
-                const Text('Pair your clock to get started.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+                Text('Pair your clock to get started.', textAlign: TextAlign.center, style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 16)),
                 const SizedBox(height: 48),
                 BlocConsumer<BleConnectionBloc, BleState>(
                   listener: (context, state) async {
@@ -62,15 +61,15 @@ class _SetupScreenState extends State<SetupScreen> {
                     if (state is BleScanning || state is BleConnecting) {
                       return Column(
                         children: [
-                          const CircularProgressIndicator(color: AppColors.neonBlue),
+                          CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
                           const SizedBox(height: 16),
-                          Text('Searching...', style: TextStyle(color: AppColors.textSecondary)),
+                          Text('Searching...', style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)))),
                         ],
                       );
                     }
                     return ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryOrange,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
@@ -88,7 +87,7 @@ class _SetupScreenState extends State<SetupScreen> {
                     if (!context.mounted) return;
                     app_main.main();
                   },
-                  child: const Text('Simulate Connection (Dev)', style: TextStyle(color: AppColors.textSecondary)),
+                  child: Text('Simulate Connection (Dev)', style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)))),
                 ),
               ],
             ),

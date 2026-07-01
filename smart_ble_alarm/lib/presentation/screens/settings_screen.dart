@@ -32,8 +32,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: Theme.of(context).brightness == Brightness.dark 
-                ? [AppColors.background, Colors.black]
-                : [AppColors.lightBackground, Colors.white],
+                ? [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.black]
+                : [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.white],
           ),
         ),
         child: SafeArea(
@@ -48,7 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: 'Theme',
                       subtitle: settingsState.themeString,
                       icon: Icons.dark_mode,
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textSecondary),
+                      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280))),
                       onTap: () {
                         _showSelectionSheet(
                           context,
@@ -63,7 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: 'Accent Color',
                       subtitle: settingsState.accentColorString,
                       icon: Icons.color_lens,
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textSecondary),
+                      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280))),
                       onTap: () {
                         _showSelectionSheet(
                           context,
@@ -111,7 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _buildListTile(
                       title: 'Factory Reset Clock',
                       icon: Icons.factory,
-                      titleColor: AppColors.error,
+                      titleColor: Theme.of(context).colorScheme.error,
                       onTap: () => _showConfirmationDialog(
                         context,
                         'Factory Reset Clock',
@@ -136,7 +136,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _buildListTile(
                       title: 'Reset Local Data',
                       icon: Icons.delete_forever,
-                      titleColor: AppColors.error,
+                      titleColor: Theme.of(context).colorScheme.error,
                       onTap: () => _showConfirmationDialog(
                         context,
                         'Reset Local Data',
@@ -201,10 +201,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.only(left: 8, bottom: 8, top: 24),
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.bold,
-          color: AppColors.neonBlue,
+          color: Theme.of(context).colorScheme.primary,
           letterSpacing: 1.5,
         ),
       ),
@@ -213,10 +213,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildCard(List<Widget> children) {
     return Material(
-      color: AppColors.surface.withValues(alpha: 0.6),
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: AppColors.surfaceHighlight, width: 1.5),
+        side: BorderSide(color: Theme.of(context).dividerColor, width: 1.5),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -228,7 +228,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showSelectionSheet(BuildContext context, String title, List<String> options, String currentValue, Function(String) onSelect) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return SafeArea(
@@ -237,11 +237,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
               ),
               ...options.map((option) => ListTile(
-                    title: Text(option, style: TextStyle(color: currentValue == option ? AppColors.neonBlue : AppColors.textPrimary)),
-                    trailing: currentValue == option ? const Icon(Icons.check, color: AppColors.neonBlue) : null,
+                    title: Text(option, style: TextStyle(color: currentValue == option ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface)),
+                    trailing: currentValue == option ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary) : null,
                     onTap: () {
                       onSelect(option);
                       Navigator.pop(context);
@@ -259,20 +259,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: Text(title, style: const TextStyle(color: AppColors.textPrimary)),
-          content: Text(content, style: const TextStyle(color: AppColors.textSecondary)),
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          title: Text(title, style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+          content: Text(content, style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)))),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('CANCEL', style: TextStyle(color: AppColors.textSecondary)),
+              child: Text('CANCEL', style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)))),
             ),
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
                 onConfirm();
               },
-              child: const Text('CONFIRM', style: TextStyle(color: AppColors.error)),
+              child: Text('CONFIRM', style: TextStyle(color: Theme.of(context).colorScheme.error)),
             ),
           ],
         );
@@ -290,9 +290,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      leading: Icon(icon, color: titleColor ?? AppColors.primaryOrange),
-      title: Text(title, style: TextStyle(color: titleColor ?? AppColors.textPrimary, fontWeight: FontWeight.w600)),
-      subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)) : null,
+      leading: Icon(icon, color: titleColor ?? Theme.of(context).colorScheme.primary),
+      title: Text(title, style: TextStyle(color: titleColor ?? Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w600)),
+      subtitle: subtitle != null ? Text(subtitle, style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 12)) : null,
       trailing: trailing,
       onTap: onTap,
     );
@@ -307,11 +307,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) {
     return SwitchListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      title: Text(title, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-      secondary: Icon(icon, color: AppColors.primaryOrange),
+      title: Text(title, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 12)),
+      secondary: Icon(icon, color: Theme.of(context).colorScheme.primary),
       value: value,
-      activeThumbColor: AppColors.neonBlue,
+      activeThumbColor: Theme.of(context).colorScheme.primary,
       onChanged: onChanged,
     );
   }
@@ -332,11 +332,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           trailing: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: isGranted ? AppColors.success.withValues(alpha: 0.2) : AppColors.error.withValues(alpha: 0.2),
+              color: isGranted ? AppColors.success.withValues(alpha: 0.2) : Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isGranted ? AppColors.success : AppColors.error),
+              border: Border.all(color: isGranted ? AppColors.success : Theme.of(context).colorScheme.error),
             ),
-            child: Text(isGranted ? 'OK' : 'FIX', style: TextStyle(color: isGranted ? AppColors.success : AppColors.error, fontWeight: FontWeight.bold, fontSize: 12)),
+            child: Text(isGranted ? 'OK' : 'FIX', style: TextStyle(color: isGranted ? AppColors.success : Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold, fontSize: 12)),
           ),
           onTap: () async {
             if (!isGranted) {

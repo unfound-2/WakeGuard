@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../alarm_edit_screen.dart';
@@ -21,20 +20,20 @@ class AlarmsTab extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: Theme.of(context).brightness == Brightness.dark 
-                ? [AppColors.background, Colors.black]
-                : [AppColors.lightBackground, Colors.white],
+                ? [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.black]
+                : [(Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F111A) : const Color(0xFFF3F4F6)), Colors.white],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16.0),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
                 child: TabBar(
-                  indicatorColor: AppColors.primaryOrange,
-                  labelColor: AppColors.primaryOrange,
-                  unselectedLabelColor: AppColors.textSecondary,
-                  tabs: [
+                  indicatorColor: Theme.of(context).colorScheme.primary,
+                  labelColor: Theme.of(context).colorScheme.primary,
+                  unselectedLabelColor: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)),
+                  tabs: const [
                     Tab(text: 'ALARMS'),
                     Tab(text: 'TIMERS'),
                   ],
@@ -44,7 +43,7 @@ class AlarmsTab extends StatelessWidget {
                 child: TabBarView(
                   children: [
                     _buildAlarmsList(),
-                    _buildTimersList(),
+                    _buildTimersList(context),
                   ],
                 ),
               ),
@@ -55,11 +54,11 @@ class AlarmsTab extends StatelessWidget {
     );
   }
 
-  Widget _buildTimersList() {
-    return const Center(
+  Widget _buildTimersList(BuildContext context) {
+    return Center(
       child: Text(
         'No active timers.',
-        style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
+        style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)), fontSize: 16),
       ),
     );
   }
@@ -70,8 +69,8 @@ class AlarmsTab extends StatelessWidget {
         return BlocBuilder<AlarmBloc, AlarmState>(
           builder: (context, state) {
             if (state.alarms.isEmpty) {
-              return const Center(
-                child: Text('No alarms yet. Tap + to add one.', style: TextStyle(color: AppColors.textSecondary)),
+              return Center(
+                child: Text('No alarms yet. Tap + to add one.', style: TextStyle(color: (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8B9BB4) : const Color(0xFF6B7280)))),
               );
             }
 
@@ -91,9 +90,9 @@ class AlarmsTab extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: AppColors.surface.withValues(alpha: 0.6),
+                            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: AppColors.surfaceHighlight),
+                            border: Border.all(color: Theme.of(context).dividerColor),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -103,20 +102,20 @@ class AlarmsTab extends StatelessWidget {
                                 children: [
                                   Text(
                                     _formatTime(alarm.hour, alarm.minute, settingsState.is24HourTime),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 40,
                                       fontWeight: FontWeight.bold,
-                                      color: AppColors.textPrimary,
+                                      color: Theme.of(context).colorScheme.onSurface,
                                       letterSpacing: 2,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
                                     _formatDays(alarm.dayMask),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
-                                      color: AppColors.neonBlue,
+                                      color: Theme.of(context).colorScheme.primary,
                                       letterSpacing: 2,
                                     ),
                                   ),
@@ -128,7 +127,7 @@ class AlarmsTab extends StatelessWidget {
                                           icon: const Icon(Icons.print, size: 16, color: Colors.white),
                                           label: const Text('Print QR', style: TextStyle(color: Colors.white)),
                                           style: OutlinedButton.styleFrom(
-                                            side: const BorderSide(color: AppColors.surfaceHighlight),
+                                            side: BorderSide(color: Theme.of(context).dividerColor),
                                           ),
                                           onPressed: () async {
                                             final usecase = PrintQrCodeUseCase(
@@ -140,7 +139,7 @@ class AlarmsTab extends StatelessWidget {
                                         ElevatedButton.icon(
                                           icon: const Icon(Icons.qr_code_scanner, size: 16, color: Colors.white),
                                           label: const Text('Dismiss', style: TextStyle(color: Colors.white)),
-                                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+                                          style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
                                           onPressed: () {
                                             Navigator.push(
                                               context,
@@ -157,7 +156,7 @@ class AlarmsTab extends StatelessWidget {
                               ),
                               Switch(
                                 value: (alarm.dayMask & 0x80) != 0,
-                                activeThumbColor: AppColors.primaryOrange,
+                                activeThumbColor: Theme.of(context).colorScheme.primary,
                                 onChanged: (val) {
                                   // Toggle logic here
                                 },
@@ -176,7 +175,7 @@ class AlarmsTab extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const AlarmEditScreen()));
                     },
-                    backgroundColor: AppColors.primaryOrange,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
                     child: const Icon(Icons.add, color: Colors.white),
                   ),
                 ),
