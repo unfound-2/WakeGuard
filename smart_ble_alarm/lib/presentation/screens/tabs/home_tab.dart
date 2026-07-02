@@ -96,8 +96,8 @@ class HomeTab extends StatelessWidget {
                     }),
                     _buildActionCard(
                       context,
-                      'Scan QR',
-                      Icons.qr_code_scanner,
+                      'Wake Challenge',
+                      Icons.center_focus_strong,
                       () {
                         _openScanner(context);
                       },
@@ -273,6 +273,19 @@ class HomeTab extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 16),
+                            Text(
+                              'Verify ${settingsState.wakeObjectName} to dismiss.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? const Color(0xFF8B9BB4)
+                                    : const Color(0xFF6B7280),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
                             ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Theme.of(
@@ -286,9 +299,12 @@ class HomeTab extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                               ),
-                              icon: const Icon(Icons.qr_code_scanner, size: 28),
+                              icon: const Icon(
+                                Icons.center_focus_strong,
+                                size: 28,
+                              ),
                               label: const Text(
-                                'SCAN QR TO DISMISS',
+                                'VERIFY WAKE OBJECT',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -613,7 +629,7 @@ class HomeTab extends StatelessWidget {
     if (qrAlarms.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('No QR-protected alarms are available.'),
+          content: const Text('No challenge-protected alarms are available.'),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );

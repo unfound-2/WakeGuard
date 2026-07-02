@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/challenge/wake_challenge_options.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/ble_bloc/ble_event.dart';
+import '../blocs/settings_bloc/settings_bloc.dart';
 import 'main_screen.dart';
 
 class SetupScreen extends StatefulWidget {
@@ -35,6 +37,154 @@ class _SetupScreenState extends State<SetupScreen> {
 
     if (!mounted) return;
     context.read<BleConnectionBloc>().add(StartScanEvent());
+  }
+
+  void _showWakeObjectSheet(SettingsState settingsState) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Choose Wake Object',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              ...WakeChallengeOptions.suggestedObjects.map(
+                (option) => ListTile(
+                  title: Text(option),
+                  trailing: settingsState.wakeObjectName == option
+                      ? Icon(
+                          Icons.check,
+                          color: Theme.of(context).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () {
+                    context.read<SettingsBloc>().add(
+                      UpdateWakeObjectEvent(option),
+                    );
+                    Navigator.pop(sheetContext);
+                  },
+                ),
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.edit,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                title: const Text('Custom object'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showCustomWakeObjectDialog(settingsState.wakeObjectName);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCustomWakeObjectDialog(String currentValue) {
+    final controller = TextEditingController(text: currentValue);
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Custom wake object'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              hintText: 'Bathroom sink, coffee maker, medication...',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                context.read<SettingsBloc>().add(
+                  UpdateWakeObjectEvent(controller.text),
+                );
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    ).whenComplete(controller.dispose);
+  }
+
+  Widget _buildWakeObjectPicker() {
+    return BlocBuilder<SettingsBloc, SettingsState>(
+      builder: (context, settingsState) {
+        return Material(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.62),
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => _showWakeObjectSheet(settingsState),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.center_focus_strong,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Wake object',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          settingsState.wakeObjectName,
+                          style: TextStyle(
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF8B9BB4)
+                                : const Color(0xFF6B7280),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -70,25 +220,28 @@ class _SetupScreenState extends State<SetupScreen> {
                 Semantics(
                   label: 'WakeGuard logo',
                   image: true,
-                  child: Container(
-                    width: 112,
-                    height: 112,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withAlpha(35),
-                          blurRadius: 22,
-                          offset: const Offset(0, 12),
+                  child: Center(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x35000000),
+                            blurRadius: 22,
+                            offset: Offset(0, 12),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(28),
+                        child: Image.asset(
+                          'assets/branding/wakeguard_logo.png',
+                          width: 112,
+                          height: 112,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.high,
                         ),
-                      ],
-                    ),
-                    child: Image.asset(
-                      'assets/branding/wakeguard_logo.png',
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
+                      ),
                     ),
                   ),
                 ),
@@ -104,7 +257,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Pair your clock to get started.',
+                  'Pair your clock and choose the object you will verify when the alarm rings.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: (Theme.of(context).brightness == Brightness.dark
@@ -113,7 +266,9 @@ class _SetupScreenState extends State<SetupScreen> {
                     fontSize: 16,
                   ),
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 24),
+                _buildWakeObjectPicker(),
+                const SizedBox(height: 36),
                 BlocConsumer<BleConnectionBloc, BleState>(
                   listener: (context, state) async {
                     if (state is BleConnected) {

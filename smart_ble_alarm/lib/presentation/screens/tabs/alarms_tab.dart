@@ -201,7 +201,7 @@ class AlarmsTab extends StatelessWidget {
                                               ).colorScheme.primary,
                                             ),
                                             label: Text(
-                                              'Print QR',
+                                              'Print Backup',
                                               style: TextStyle(
                                                 color: Theme.of(
                                                   context,
@@ -243,12 +243,12 @@ class AlarmsTab extends StatelessWidget {
                                           ),
                                           ElevatedButton.icon(
                                             icon: const Icon(
-                                              Icons.qr_code_scanner,
+                                              Icons.center_focus_strong,
                                               size: 16,
                                               color: Colors.white,
                                             ),
                                             label: const Text(
-                                              'Dismiss',
+                                              'Verify',
                                               style: TextStyle(
                                                 color: Colors.white,
                                               ),

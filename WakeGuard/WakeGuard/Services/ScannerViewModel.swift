@@ -20,9 +20,9 @@ enum CameraPermissionState: Equatable {
     var message: String {
         switch self {
         case .notDetermined:
-            return "WakeGuard needs camera access to scan QR codes and prepare future object recognition."
+            return "WakeGuard needs camera access to verify your wake object and scan backup codes."
         case .authorized:
-            return "Point the camera at a QR code or object when scanner support is connected."
+            return "Point the camera at your wake object. Backup-code scanning remains available until AI verification is connected."
         case .denied:
             return "Enable camera access in Settings to use scanner workflows."
         case .restricted:
@@ -34,7 +34,7 @@ enum CameraPermissionState: Equatable {
 @MainActor
 final class ScannerViewModel: ObservableObject {
     @Published var permissionState: CameraPermissionState = .notDetermined
-    @Published var selectedMode: ScannerMode = .qrCode
+    @Published var selectedMode: ScannerMode = .objectRecognition
     @Published var isProcessing = false
     @Published var result: RecognitionResult?
     @Published var manualObjectName = ""
@@ -76,7 +76,7 @@ final class ScannerViewModel: ObservableObject {
         case .qrCode:
             result = RecognitionResult(
                 mode: .qrCode,
-                label: "WakeGuard QR placeholder",
+                label: "WakeGuard backup code placeholder",
                 confidence: 0.96,
                 needsManualConfirmation: false
             )

@@ -130,16 +130,87 @@ struct WakeTimer: Identifiable, Codable, Equatable {
     }
 }
 
+enum WakeChallenge {
+    static let defaultObject = "Bathroom sink"
+    static let suggestedObjects = [
+        defaultObject,
+        "Toothbrush",
+        "Coffee maker",
+        "Medication",
+        "Kitchen sink",
+        "Front door"
+    ]
+
+    static func cleanedObjectName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? defaultObject : trimmed
+    }
+}
+
 struct ClockSettings: Codable, Equatable {
     var uses24HourClock = false
     var automaticTimeSync = true
     var animationsEnabled = true
     var notificationsEnabled = false
+    var wakeChallengeObject = WakeChallenge.defaultObject
     var brightness = 0.72
     var backlightEnabled = true
     var automaticDimmingEnabled = true
     var sleepScheduleEnabled = false
     var developerModeEnabled = false
+
+    enum CodingKeys: String, CodingKey {
+        case uses24HourClock
+        case automaticTimeSync
+        case animationsEnabled
+        case notificationsEnabled
+        case wakeChallengeObject
+        case brightness
+        case backlightEnabled
+        case automaticDimmingEnabled
+        case sleepScheduleEnabled
+        case developerModeEnabled
+    }
+
+    init(
+        uses24HourClock: Bool = false,
+        automaticTimeSync: Bool = true,
+        animationsEnabled: Bool = true,
+        notificationsEnabled: Bool = false,
+        wakeChallengeObject: String = WakeChallenge.defaultObject,
+        brightness: Double = 0.72,
+        backlightEnabled: Bool = true,
+        automaticDimmingEnabled: Bool = true,
+        sleepScheduleEnabled: Bool = false,
+        developerModeEnabled: Bool = false
+    ) {
+        self.uses24HourClock = uses24HourClock
+        self.automaticTimeSync = automaticTimeSync
+        self.animationsEnabled = animationsEnabled
+        self.notificationsEnabled = notificationsEnabled
+        self.wakeChallengeObject = WakeChallenge.cleanedObjectName(wakeChallengeObject)
+        self.brightness = brightness
+        self.backlightEnabled = backlightEnabled
+        self.automaticDimmingEnabled = automaticDimmingEnabled
+        self.sleepScheduleEnabled = sleepScheduleEnabled
+        self.developerModeEnabled = developerModeEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        uses24HourClock = try container.decodeIfPresent(Bool.self, forKey: .uses24HourClock) ?? false
+        automaticTimeSync = try container.decodeIfPresent(Bool.self, forKey: .automaticTimeSync) ?? true
+        animationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .animationsEnabled) ?? true
+        notificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? false
+        wakeChallengeObject = WakeChallenge.cleanedObjectName(
+            try container.decodeIfPresent(String.self, forKey: .wakeChallengeObject) ?? WakeChallenge.defaultObject
+        )
+        brightness = try container.decodeIfPresent(Double.self, forKey: .brightness) ?? 0.72
+        backlightEnabled = try container.decodeIfPresent(Bool.self, forKey: .backlightEnabled) ?? true
+        automaticDimmingEnabled = try container.decodeIfPresent(Bool.self, forKey: .automaticDimmingEnabled) ?? true
+        sleepScheduleEnabled = try container.decodeIfPresent(Bool.self, forKey: .sleepScheduleEnabled) ?? false
+        developerModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .developerModeEnabled) ?? false
+    }
 }
 
 struct ClockDevice: Identifiable, Equatable {
@@ -174,7 +245,7 @@ enum ScannerMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .qrCode: "QR Code"
+        case .qrCode: "Backup Code"
         case .objectRecognition: "Object"
         }
     }

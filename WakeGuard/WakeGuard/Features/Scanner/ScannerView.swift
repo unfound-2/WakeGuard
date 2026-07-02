@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ScannerView: View {
     @EnvironmentObject private var theme: ThemeManager
+    @EnvironmentObject private var settingsStore: SettingsStore
     @EnvironmentObject private var scanner: ScannerViewModel
     @State private var initialMode: ScannerMode
 
@@ -36,7 +37,7 @@ struct ScannerView: View {
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(theme.palette.text)
 
-            Text("Architecture is ready for QR scanning, VisionKit, Vision framework, or an external AI recognition service.")
+            Text("Verify \(settingsStore.clockSettings.wakeChallengeObject) to complete a protected wake challenge. The production AI verifier can connect through Vision or an external recognition service.")
                 .font(.body)
                 .foregroundStyle(theme.palette.secondaryText)
                 .lineSpacing(4)
@@ -104,7 +105,7 @@ struct ScannerView: View {
                 }
             }
         case .authorized:
-            WakePrimaryButton(title: scanner.isProcessing ? "Processing..." : "Run Placeholder Scan", systemImage: "viewfinder") {
+            WakePrimaryButton(title: scanner.isProcessing ? "Processing..." : "Run Demo Verification", systemImage: "viewfinder") {
                 Task {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     await scanner.runPlaceholderScan()

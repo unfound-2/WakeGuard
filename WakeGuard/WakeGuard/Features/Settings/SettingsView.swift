@@ -17,6 +17,7 @@ struct SettingsView: View {
                     profileHeader
                     appearanceSection
                     timeSection
+                    challengeSection
                     notificationsSection
                     generalSection
                     advancedSection
@@ -51,7 +52,7 @@ struct SettingsView: View {
                     Text("WakeGuard")
                         .font(.title2.weight(.bold))
                         .foregroundStyle(theme.palette.text)
-                    Text("Autonomous smart alarm companion")
+                    Text("Bluetooth wake challenge companion")
                         .font(.subheadline)
                         .foregroundStyle(theme.palette.mutedText)
                 }
@@ -91,6 +92,33 @@ struct SettingsView: View {
         }
     }
 
+    private var challengeSection: some View {
+        WakeSection("Wake Challenge", subtitle: "Choose the morning-routine object you will verify away from bed.") {
+            WakeCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    Picker("Wake Object", selection: $settingsStore.clockSettings.wakeChallengeObject) {
+                        ForEach(WakeChallenge.suggestedObjects, id: \.self) { object in
+                            Text(object).tag(object)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    TextField("Custom object", text: $settingsStore.clockSettings.wakeChallengeObject)
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.words)
+                        .onSubmit {
+                            settingsStore.clockSettings.wakeChallengeObject = WakeChallenge.cleanedObjectName(settingsStore.clockSettings.wakeChallengeObject)
+                        }
+
+                    Label("AI object verification is the target dismissal flow. The current implementation keeps backup-code dismissal available until the verifier is connected.", systemImage: "sparkles")
+                        .font(.footnote)
+                        .foregroundStyle(theme.palette.mutedText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
     private var notificationsSection: some View {
         WakeSection("Notifications") {
             WakeCard {
@@ -116,7 +144,7 @@ struct SettingsView: View {
 
                     Divider().overlay(theme.palette.divider)
 
-                    SettingsRow(title: "Privacy", subtitle: "Camera and Bluetooth stay user controlled", systemImage: "hand.raised.fill") {}
+                    SettingsRow(title: "Privacy", subtitle: "Camera verification and Bluetooth stay user controlled", systemImage: "hand.raised.fill") {}
 
                     Divider().overlay(theme.palette.divider)
 
@@ -242,7 +270,7 @@ private struct AboutView: View {
                             .font(.largeTitle.weight(.bold))
                             .foregroundStyle(theme.palette.text)
 
-                        Text("WakeGuard configures autonomous BLE alarms, syncs clock state, and prepares QR-based alarm dismissal workflows.")
+                        Text("WakeGuard pairs with a Bluetooth alarm clock and requires a personalized object wake challenge before protected alarms can be dismissed.")
                             .font(.body)
                             .foregroundStyle(theme.palette.secondaryText)
                             .multilineTextAlignment(.center)

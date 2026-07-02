@@ -156,16 +156,15 @@ struct WakeGuardLogoMark: View {
         Image("WakeGuardMark")
             .resizable()
             .interpolation(.high)
-            .scaledToFit()
-            .padding(size * 0.08)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
                     .stroke(theme.palette.divider, lineWidth: 1)
             }
-        .frame(width: size, height: size)
-        .shadow(color: Color.black.opacity(theme.mode == .dark ? 0.28 : 0.12), radius: 18, y: 8)
-        .accessibilityHidden(true)
+            .shadow(color: Color.black.opacity(theme.mode == .dark ? 0.28 : 0.12), radius: 18, y: 8)
+            .accessibilityHidden(true)
     }
 }
 

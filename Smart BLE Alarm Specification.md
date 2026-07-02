@@ -1,5 +1,7 @@
 # **Technical Design Specification: Autonomous Smart Alarm Clock System**
 
+> Product direction update: this legacy technical specification documents the earlier QR-code dismissal concept. The current WakeGuard product direction is AI-powered object verification with a secure backup-code path. Bluetooth alarm synchronization and hardware autonomy remain valid, but QR-first dismissal requirements should be treated as legacy implementation notes rather than the primary user experience.
+
 ## **1\. Executive Summary**
 
 This document serves as the absolute technical design specification and source of truth for the development, assembly, and deployment of an Autonomous Smart Alarm Clock System. The platform is engineered on a cooperative-edge architecture, distributing processing loads between a local hardware node and a master mobile client application running on iOS 26\.  

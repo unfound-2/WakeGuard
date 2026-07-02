@@ -25,7 +25,7 @@ class SecureKeyDatasource {
   Future<List<int>> getDailyToken(int alarmId) async {
     final key = await _getOrGenerateKey(alarmId);
 
-    // Payload = AlarmID (static so printed QR code is permanently valid)
+    // Payload = AlarmID (static so printed backup code is permanently valid)
     List<int> payload = [alarmId];
 
     var hmac = Hmac(sha256, key);

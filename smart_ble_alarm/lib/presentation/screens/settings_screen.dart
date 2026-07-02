@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/challenge/wake_challenge_options.dart';
 import '../../core/theme/app_colors.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
@@ -130,16 +131,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ]),
 
+                  _buildSectionHeader('WAKE CHALLENGE'),
+                  _buildCard([
+                    _buildListTile(
+                      title: 'Wake Object',
+                      subtitle: settingsState.wakeObjectName,
+                      icon: Icons.center_focus_strong,
+                      trailing: Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: (Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF8B9BB4)
+                            : const Color(0xFF6B7280)),
+                      ),
+                      onTap: () => _showWakeObjectSheet(settingsState),
+                    ),
+                    _buildListTile(
+                      title: 'Verification Method',
+                      subtitle:
+                          'AI object recognition is the target flow. This build still uses the secure camera fallback for dismissal.',
+                      icon: Icons.auto_awesome,
+                    ),
+                  ]),
+
                   _buildSectionHeader('ALARM PREFERENCES'),
                   _buildCard([
                     _buildSwitchTile(
-                      title: 'Default Require QR Scan',
-                      subtitle: 'New alarms require QR scan by default',
+                      title: 'Default Require Wake Challenge',
+                      subtitle:
+                          'New alarms require app verification by default',
                       value: settingsState.defaultQrRequired,
                       onChanged: (val) => context.read<SettingsBloc>().add(
                         ToggleDefaultQrRequiredEvent(val),
                       ),
-                      icon: Icons.qr_code,
+                      icon: Icons.task_alt,
                     ),
                   ]),
 
@@ -164,6 +189,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: 'Location Permission',
                       icon: Icons.location_on,
                       permission: Permission.locationWhenInUse,
+                    ),
+                    _buildPermissionTile(
+                      title: 'Camera Permission',
+                      icon: Icons.photo_camera,
+                      permission: Permission.camera,
                     ),
                     _buildListTile(
                       title: 'Open System Settings',
@@ -191,6 +221,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             filterQuality: FilterQuality.high,
                           ),
                         ),
+                        children: const [
+                          Text(
+                            'WakeGuard pairs with a compatible Bluetooth alarm clock and requires a wake challenge before protected alarms can be dismissed.',
+                          ),
+                        ],
                       ),
                     ),
                     _buildListTile(
@@ -395,6 +430,118 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       },
     );
+  }
+
+  void _showWakeObjectSheet(SettingsState settingsState) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Choose Wake Object',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ),
+              ...WakeChallengeOptions.suggestedObjects.map(
+                (option) => ListTile(
+                  title: Text(
+                    option,
+                    style: TextStyle(
+                      color: settingsState.wakeObjectName == option
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  trailing: settingsState.wakeObjectName == option
+                      ? Icon(
+                          Icons.check,
+                          color: Theme.of(context).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () {
+                    context.read<SettingsBloc>().add(
+                      UpdateWakeObjectEvent(option),
+                    );
+                    Navigator.pop(sheetContext);
+                  },
+                ),
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.edit,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                title: Text(
+                  'Custom object',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showCustomWakeObjectDialog(settingsState.wakeObjectName);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCustomWakeObjectDialog(String currentValue) {
+    final controller = TextEditingController(text: currentValue);
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          title: Text(
+            'Custom wake object',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              hintText: 'Bathroom sink, coffee maker, medication...',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('CANCEL'),
+            ),
+            TextButton(
+              onPressed: () {
+                context.read<SettingsBloc>().add(
+                  UpdateWakeObjectEvent(controller.text),
+                );
+                Navigator.pop(dialogContext);
+              },
+              child: Text(
+                'SAVE',
+                style: TextStyle(color: Theme.of(context).colorScheme.primary),
+              ),
+            ),
+          ],
+        );
+      },
+    ).whenComplete(controller.dispose);
   }
 
   void _showConfirmationDialog(

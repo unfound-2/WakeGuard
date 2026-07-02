@@ -27,7 +27,7 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>WakeGuard connects to your smart alarm clock to sync alarms, timers, time, and display settings.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>WakeGuard uses the camera to scan printed QR codes and prepare future scanner workflows.</string>
+	<string>WakeGuard uses the camera to verify your wake object and scan backup dismissal codes.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#050508",
     "theme_color": "#FF5500",
-    "description": "Companion app for a BLE smart alarm clock with QR dismissal.",
+    "description": "Companion app for a Bluetooth alarm clock with AI object wake challenges.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

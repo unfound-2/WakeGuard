@@ -45,7 +45,7 @@ struct AlarmsView: View {
             if alarmStore.alarms.isEmpty {
                 EmptyStateView(
                     title: "No alarms yet",
-                    message: "Create your first WakeGuard alarm and choose whether QR dismissal is required.",
+                    message: "Create your first WakeGuard alarm and choose whether a wake challenge is required.",
                     systemImage: "alarm"
                 )
             } else {
@@ -127,7 +127,7 @@ private struct AlarmRow: View {
                     StatusPill(title: alarm.nextOccurrenceDescription(), systemImage: "calendar", color: theme.palette.mutedText)
 
                     if alarm.requiresQRCode {
-                        StatusPill(title: "QR", systemImage: "qrcode", color: theme.mode == .dark ? theme.palette.primary : theme.palette.secondary)
+                        StatusPill(title: "Challenge", systemImage: "sparkle.magnifyingglass", color: theme.mode == .dark ? theme.palette.primary : theme.palette.secondary)
                     }
                 }
 
@@ -218,7 +218,7 @@ struct AlarmEditorView: View {
                         TextField("Label", text: $label)
                             .textInputAutocapitalization(.words)
 
-                        Toggle("Require QR code dismissal", isOn: $requiresQRCode)
+                        Toggle("Require wake challenge", isOn: $requiresQRCode)
                     }
 
                     Section("Repeat") {
@@ -285,4 +285,3 @@ struct AlarmEditorView: View {
         }
     }
 }
-

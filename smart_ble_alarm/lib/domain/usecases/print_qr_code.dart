@@ -23,7 +23,7 @@ class PrintQrCodeUseCase {
               mainAxisAlignment: pw.MainAxisAlignment.center,
               children: [
                 pw.Text(
-                  'Smart Alarm Key',
+                  'WakeGuard Backup Code',
                   style: const pw.TextStyle(fontSize: 14),
                 ),
                 pw.Text(
@@ -39,7 +39,7 @@ class PrintQrCodeUseCase {
                 ),
                 pw.SizedBox(height: 12),
                 pw.Text(
-                  'Scan to dismiss alarm',
+                  'Use only if object verification is unavailable',
                   style: const pw.TextStyle(fontSize: 8),
                 ),
               ],
@@ -52,7 +52,7 @@ class PrintQrCodeUseCase {
     // Triggers the Android Print Manager seamlessly (previously iOS AirPrint)
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => doc.save(),
-      name: 'Smart_Alarm_QR_$alarmId.pdf',
+      name: 'WakeGuard_Backup_Code_$alarmId.pdf',
     );
   }
 }

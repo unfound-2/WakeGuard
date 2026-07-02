@@ -10,15 +10,16 @@ private struct OnboardingPage: Identifiable {
 
 struct OnboardingView: View {
     @EnvironmentObject private var theme: ThemeManager
+    @EnvironmentObject private var settingsStore: SettingsStore
     @State private var selectedPage = 0
     let onFinished: () -> Void
 
     private let pages = [
         OnboardingPage(
             title: "Welcome to WakeGuard",
-            message: "A smarter alarm companion built around movement, synchronization, and a clock that keeps working when your phone is away.",
+            message: "A smarter alarm companion built for people who need a purposeful first step before an alarm can be dismissed.",
             systemImage: "shield.checkered",
-            highlights: ["Autonomous alarm clock", "Physical QR dismissal", "Polished iPhone control"]
+            highlights: ["Autonomous alarm clock", "AI object wake challenge", "Polished iPhone control"]
         ),
         OnboardingPage(
             title: "Bluetooth That Stays Honest",
@@ -33,10 +34,16 @@ struct OnboardingView: View {
             highlights: ["Local hardware autonomy", "Time synchronization", "No duplicate alarm intent"]
         ),
         OnboardingPage(
+            title: "Choose a Wake Object",
+            message: "Pick something away from bed that naturally starts your day, like your bathroom sink, toothbrush, coffee maker, or medication.",
+            systemImage: "sparkle.magnifyingglass",
+            highlights: ["Personalized verification", "Morning-routine objects", "Editable in Settings"]
+        ),
+        OnboardingPage(
             title: "Permissions With Context",
-            message: "Camera access powers QR dismissal today and leaves room for future object scanning. Bluetooth access connects to the clock.",
+            message: "Camera access powers object verification and backup-code scanning. Bluetooth access connects to the clock.",
             systemImage: "lock.shield.fill",
-            highlights: ["Camera for QR scans", "Bluetooth for pairing", "Settings remain reversible"]
+            highlights: ["Camera for verification", "Bluetooth for pairing", "Settings remain reversible"]
         ),
         OnboardingPage(
             title: "Ready to Connect",
@@ -76,6 +83,10 @@ struct OnboardingView: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
                 VStack(spacing: 18) {
+                    if pages[selectedPage].title == "Choose a Wake Object" {
+                        wakeObjectPicker
+                    }
+
                     PageDots(count: pages.count, selectedIndex: selectedPage)
 
                     WakePrimaryButton(
@@ -107,6 +118,27 @@ struct OnboardingView: View {
                 .padding(.bottom, 24)
             }
         }
+    }
+
+    private var wakeObjectPicker: some View {
+        WakeCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Wake Object", selection: $settingsStore.clockSettings.wakeChallengeObject) {
+                    ForEach(WakeChallenge.suggestedObjects, id: \.self) { object in
+                        Text(object).tag(object)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                TextField("Custom object", text: $settingsStore.clockSettings.wakeChallengeObject)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.words)
+                    .onSubmit {
+                        settingsStore.clockSettings.wakeChallengeObject = WakeChallenge.cleanedObjectName(settingsStore.clockSettings.wakeChallengeObject)
+                    }
+            }
+        }
+        .padding(.horizontal, 24)
     }
 }
 

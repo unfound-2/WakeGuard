@@ -15,7 +15,7 @@ struct ClockView: View {
                     displaySection
                     bluetoothSection
                     syncSection
-                    qrSection
+                    backupCodeSection
                 }
                 .padding(20)
             }
@@ -153,8 +153,8 @@ struct ClockView: View {
         }
     }
 
-    private var qrSection: some View {
-        WakeSection("QR Code", subtitle: "Use printed codes for protected alarm dismissal.") {
+    private var backupCodeSection: some View {
+        WakeSection("Backup Code", subtitle: "Use printed codes only when object verification is unavailable.") {
             WakeCard {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 12) {
@@ -163,10 +163,10 @@ struct ClockView: View {
                             .foregroundStyle(theme.mode == .dark ? theme.palette.primary : theme.palette.secondary)
 
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("Dismissal QR")
+                            Text("Secure Backup Code")
                                 .font(.headline)
                                 .foregroundStyle(theme.palette.text)
-                            Text("QR generation and AirPrint can attach here when the signed token pipeline is available.")
+                            Text("Signed backup-code generation can attach here while AI object verification remains the primary dismissal flow.")
                                 .font(.subheadline)
                                 .foregroundStyle(theme.palette.mutedText)
                         }
@@ -175,7 +175,7 @@ struct ClockView: View {
                     NavigationLink {
                         ScannerView(initialMode: .qrCode)
                     } label: {
-                        Label("Open QR Scanner", systemImage: "qrcode.viewfinder")
+                        Label("Open Backup Scanner", systemImage: "qrcode.viewfinder")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 48)

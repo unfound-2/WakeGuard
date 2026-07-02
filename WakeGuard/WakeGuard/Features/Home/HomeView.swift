@@ -130,8 +130,8 @@ struct HomeView: View {
                     alarmStore.addTimer(title: "Focus Timer", duration: 25 * 60)
                 }
 
-                QuickActionNavigationButton(title: "Scan QR Code", systemImage: "qrcode.viewfinder") {
-                    ScannerView(initialMode: .qrCode)
+                QuickActionNavigationButton(title: "Verify Object", systemImage: "sparkle.magnifyingglass") {
+                    ScannerView(initialMode: .objectRecognition)
                 }
 
                 QuickActionNavigationButton(title: "Clock Controls", systemImage: "slider.horizontal.3") {
@@ -154,9 +154,9 @@ struct HomeView: View {
                     Divider().overlay(theme.palette.divider)
 
                     ActivityRow(
-                        title: "Protected dismissal",
-                        subtitle: "QR dismissal is ready when alarms require it",
-                        systemImage: "qrcode"
+                        title: "Wake challenge",
+                        subtitle: "Verify \(settingsStore.clockSettings.wakeChallengeObject) when a protected alarm rings",
+                        systemImage: "sparkle.magnifyingglass"
                     )
                 }
             }
@@ -264,4 +264,3 @@ private struct ActivityRow: View {
         }
     }
 }
-
