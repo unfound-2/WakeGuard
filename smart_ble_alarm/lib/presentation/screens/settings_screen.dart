@@ -179,7 +179,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.info_outline,
                       onTap: () => showAboutDialog(
                         context: context,
-                        applicationName: 'Smart BLE Alarm',
+                        applicationName: 'WakeGuard',
                         applicationVersion: '1.0.0 (Build 42)',
                       ),
                     ),
@@ -193,7 +193,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.description_outlined,
                       onTap: () => showLicensePage(
                         context: context,
-                        applicationName: 'Smart BLE Alarm',
+                        applicationName: 'WakeGuard',
                         applicationVersion: '1.0.0 (Build 42)',
                       ),
                     ),

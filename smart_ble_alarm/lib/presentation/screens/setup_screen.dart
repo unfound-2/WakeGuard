@@ -74,7 +74,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
                 const SizedBox(height: 32),
                 Text(
-                  'Smart BLE Alarm',
+                  'WakeGuard',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,

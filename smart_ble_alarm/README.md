@@ -1,4 +1,4 @@
-# WakeGuard Smart BLE Alarm
+# WakeGuard
 
 Flutter companion app for an autonomous HM-10 BLE alarm clock. The app pairs with the clock, syncs time, alarms, timers, and display settings, and prints QR dismissal codes that must be scanned to silence protected alarms.
 
