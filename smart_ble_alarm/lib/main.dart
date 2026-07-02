@@ -89,7 +89,7 @@ class SmartAlarmApp extends StatelessWidget {
             bool isDark = settingsState.themeString != 'Light';
 
             return MaterialApp(
-              title: 'Smart BLE Alarm',
+              title: 'WakeGuard',
               theme: AppTheme.getTheme(
                 accentColor: accentColor,
                 isDarkMode: isDark,

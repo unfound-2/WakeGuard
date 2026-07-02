@@ -67,14 +67,34 @@ class _SetupScreenState extends State<SetupScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(
-                  Icons.watch,
-                  size: 100,
-                  color: Theme.of(context).colorScheme.primary,
+                Semantics(
+                  label: 'WakeGuard logo',
+                  image: true,
+                  child: Container(
+                    width: 112,
+                    height: 112,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha(35),
+                          blurRadius: 22,
+                          offset: const Offset(0, 12),
+                        ),
+                      ],
+                    ),
+                    child: Image.asset(
+                      'assets/branding/wakeguard_logo.png',
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 32),
                 Text(
-                  'Smart BLE Alarm',
+                  'WakeGuard',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,

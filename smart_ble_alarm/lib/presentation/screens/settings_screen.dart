@@ -179,8 +179,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.info_outline,
                       onTap: () => showAboutDialog(
                         context: context,
-                        applicationName: 'Smart BLE Alarm',
+                        applicationName: 'WakeGuard',
                         applicationVersion: '1.0.0 (Build 42)',
+                        applicationIcon: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Image.asset(
+                            'assets/branding/wakeguard_logo.png',
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                          ),
+                        ),
                       ),
                     ),
                     _buildListTile(
@@ -193,7 +203,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.description_outlined,
                       onTap: () => showLicensePage(
                         context: context,
-                        applicationName: 'Smart BLE Alarm',
+                        applicationName: 'WakeGuard',
                         applicationVersion: '1.0.0 (Build 42)',
                       ),
                     ),
