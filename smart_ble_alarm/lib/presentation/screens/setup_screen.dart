@@ -187,6 +187,54 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
+  Widget _buildPairingProgress(BleState state) {
+    final isConnecting = state is BleConnecting;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 240),
+      child: Container(
+        key: ValueKey(state.runtimeType),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.68),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Column(
+          children: [
+            CircularProgressIndicator(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isConnecting
+                  ? 'Connecting to your WakeGuard clock'
+                  : 'Searching for your WakeGuard clock',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              isConnecting
+                  ? 'Keeping the pairing handoff secure and synchronized.'
+                  : 'Make sure the clock is powered on and nearby.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF8B9BB4)
+                    : const Color(0xFF6B7280),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -211,123 +259,120 @@ class _SetupScreenState extends State<SetupScreen> {
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Semantics(
-                  label: 'WakeGuard logo',
-                  image: true,
-                  child: Center(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(28),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x35000000),
-                            blurRadius: 22,
-                            offset: Offset(0, 12),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(28),
-                        child: Image.asset(
-                          'assets/branding/wakeguard_logo.png',
-                          width: 112,
-                          height: 112,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.high,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 32),
-                Text(
-                  'WakeGuard',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Pair your clock and choose the object you will verify when the alarm rings.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: (Theme.of(context).brightness == Brightness.dark
-                        ? const Color(0xFF8B9BB4)
-                        : const Color(0xFF6B7280)),
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                _buildWakeObjectPicker(),
-                const SizedBox(height: 36),
-                BlocConsumer<BleConnectionBloc, BleState>(
-                  listener: (context, state) async {
-                    if (state is BleConnected) {
-                      await widget.prefs.setString(
-                        'rememberedDeviceId',
-                        state.device.remoteId.str,
-                      );
-                      if (!context.mounted) return;
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (_) => const MainScreen()),
-                      );
-                    }
-                  },
-                  builder: (context, state) {
-                    if (state is BleScanning || state is BleConnecting) {
-                      return Column(
-                        children: [
-                          CircularProgressIndicator(
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Searching...',
-                            style: TextStyle(
-                              color:
-                                  (Theme.of(context).brightness ==
-                                      Brightness.dark
-                                  ? const Color(0xFF8B9BB4)
-                                  : const Color(0xFF6B7280)),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Semantics(
+                        label: 'WakeGuard logo',
+                        image: true,
+                        child: Center(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(28),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x35000000),
+                                  blurRadius: 22,
+                                  offset: Offset(0, 12),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(28),
+                              child: Image.asset(
+                                'assets/branding/wakeguard_logo.png',
+                                width: 112,
+                                height: 112,
+                                fit: BoxFit.cover,
+                                filterQuality: FilterQuality.high,
+                              ),
                             ),
                           ),
-                        ],
-                      );
-                    }
-                    return ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      onPressed: () {
-                        _startScan();
-                      },
-                      child: const Text(
-                        'SEARCH FOR CLOCK',
+                      const SizedBox(height: 32),
+                      Text(
+                        'WakeGuard',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 16,
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 28,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
                         ),
                       ),
-                    );
-                  },
+                      const SizedBox(height: 16),
+                      Text(
+                        'Pair your clock and choose the object you will verify when the alarm rings.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color:
+                              (Theme.of(context).brightness == Brightness.dark
+                              ? const Color(0xFF8B9BB4)
+                              : const Color(0xFF6B7280)),
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _buildWakeObjectPicker(),
+                      const SizedBox(height: 36),
+                      BlocConsumer<BleConnectionBloc, BleState>(
+                        listener: (context, state) async {
+                          if (state is BleConnected) {
+                            await widget.prefs.setString(
+                              'rememberedDeviceId',
+                              state.device.remoteId.str,
+                            );
+                            if (!context.mounted) return;
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const MainScreen(),
+                              ),
+                            );
+                          }
+                        },
+                        builder: (context, state) {
+                          if (state is BleScanning || state is BleConnecting) {
+                            return _buildPairingProgress(state);
+                          }
+                          return ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primary,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            onPressed: () {
+                              _startScan();
+                            },
+                            child: const Text(
+                              'SEARCH FOR CLOCK',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),

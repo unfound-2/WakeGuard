@@ -69,6 +69,12 @@ struct PairingView: View {
                 }
 
                 Spacer()
+
+                if isInProgress {
+                    ProgressView()
+                        .tint(theme.mode == .dark ? theme.palette.primary : theme.palette.secondary)
+                        .accessibilityLabel(bluetoothService.status == .scanning ? "Searching" : "Connecting")
+                }
             }
         }
     }
@@ -153,6 +159,15 @@ struct PairingView: View {
 
     private var searchButtonTitle: String {
         bluetoothService.status == .scanning ? "Searching..." : "Search For Clock"
+    }
+
+    private var isInProgress: Bool {
+        switch bluetoothService.status {
+        case .scanning, .connecting:
+            return true
+        default:
+            return false
+        }
     }
 
     private var statusSymbol: String {

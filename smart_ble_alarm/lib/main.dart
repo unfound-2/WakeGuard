@@ -11,6 +11,7 @@ import 'presentation/blocs/ble_bloc/ble_event.dart';
 import 'presentation/blocs/alarm_bloc/alarm_bloc.dart';
 import 'presentation/blocs/settings_bloc/settings_bloc.dart';
 import 'presentation/screens/main_screen.dart';
+import 'presentation/screens/onboarding_screen.dart';
 import 'presentation/screens/setup_screen.dart';
 
 void main() async {
@@ -95,7 +96,9 @@ class SmartAlarmApp extends StatelessWidget {
                 isDarkMode: isDark,
               ),
               home: prefs.getString('rememberedDeviceId') == null
-                  ? SetupScreen(prefs: prefs)
+                  ? (prefs.getBool('hasSeenOnboarding') ?? false
+                        ? SetupScreen(prefs: prefs)
+                        : OnboardingScreen(prefs: prefs))
                   : const MainScreen(),
               debugShowCheckedModeBanner: false,
             );
