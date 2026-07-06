@@ -9,11 +9,22 @@ import 'glass.dart';
 /// The native WakeCard drop shadow: soft, low, and wide.
 List<BoxShadow> wakeCardShadow(BuildContext context) {
   final dark = GlassTheme.of(context).brightness == Brightness.dark;
+  // Two layered shadows with a negative spread so the blur is pulled *inside*
+  // the card's footprint and only diffuses softly downward. A purely vertical
+  // offset with no spread put the shadow's left/right edges exactly on the
+  // card's sides, which read as a hard straight line running down each edge.
   return [
     BoxShadow(
-      color: Colors.black.withValues(alpha: dark ? 0.24 : 0.08),
-      blurRadius: 18,
-      offset: const Offset(0, 10),
+      color: Colors.black.withValues(alpha: dark ? 0.30 : 0.10),
+      blurRadius: 24,
+      spreadRadius: -10,
+      offset: const Offset(0, 14),
+    ),
+    BoxShadow(
+      color: Colors.black.withValues(alpha: dark ? 0.18 : 0.05),
+      blurRadius: 8,
+      spreadRadius: -6,
+      offset: const Offset(0, 4),
     ),
   ];
 }

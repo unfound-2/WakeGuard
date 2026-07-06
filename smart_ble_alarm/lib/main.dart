@@ -88,6 +88,22 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
     previous.dispose();
   }
 
+  /// Reverse of [_enterDeveloperMode]: drop the simulated clock, rebind to a
+  /// fresh real BLE backend, forget the remembered device, and fall back to the
+  /// pairing screen so the user can onboard a physical clock. Surfaced as a
+  /// Settings button that only appears while the simulator is active.
+  void _exitDeveloperMode() {
+    final previous = _bleRepository;
+    // Also clear the persisted id so a relaunch doesn't resurrect the simulator.
+    widget.prefs.remove('rememberedDeviceId');
+    setState(() {
+      _bleRepository = BleRepositoryImpl();
+      _rememberedDeviceId = null;
+      _backendGeneration++;
+    });
+    previous.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return KeyedSubtree(
@@ -171,7 +187,15 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                               onEnterDeveloperMode: _enterDeveloperMode,
                             )
                           : OnboardingScreen(prefs: widget.prefs))
-                    : const MainScreen(),
+                    : MainScreen(
+                        // Offer the "leave the simulator" action only while the
+                        // simulated backend is active; on a real clock it's null
+                        // so the Settings button stays hidden.
+                        onExitDeveloperMode:
+                            _bleRepository is SimulatedBleRepositoryImpl
+                            ? _exitDeveloperMode
+                            : null,
+                      ),
                 debugShowCheckedModeBanner: false,
               );
             },

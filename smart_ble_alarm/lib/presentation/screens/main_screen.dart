@@ -17,7 +17,11 @@ import 'tabs/clock_tab.dart';
 import 'settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  /// When non-null, the app is running on the simulated clock and Settings shows
+  /// a button to leave developer mode and return to pairing a real clock.
+  final VoidCallback? onExitDeveloperMode;
+
+  const MainScreen({super.key, this.onExitDeveloperMode});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -27,11 +31,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
   StreamSubscription<List<int>>? _frameSubscription;
 
-  final List<Widget> _tabs = [
-    const HomeTab(),
+  void _openTab(int index) => setState(() => _currentIndex = index);
+
+  // Built per-frame so HomeTab can receive a live callback into the Alarms tab
+  // (e.g. tapping the next-alarm or live-timer card). IndexedStack keeps each
+  // tab's element/state alive regardless of these widgets being rebuilt.
+  List<Widget> _buildTabs() => [
+    HomeTab(onOpenAlarms: () => _openTab(1)),
     const AlarmsTab(),
     const ClockTab(),
-    const SettingsScreen(isTab: true),
+    SettingsScreen(
+      isTab: true,
+      onExitDeveloperMode: widget.onExitDeveloperMode,
+    ),
   ];
 
   @override
@@ -282,7 +294,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             // IndexedStack keeps every tab mounted so scroll position and
             // in-tab state (e.g. live timer tickers) survive tab switches.
             Expanded(
-              child: IndexedStack(index: _currentIndex, children: _tabs),
+              child: IndexedStack(index: _currentIndex, children: _buildTabs()),
             ),
           ],
         ),

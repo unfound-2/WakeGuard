@@ -237,10 +237,38 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     _rescheduleBackupAlarms(loadedAlarms);
   }
 
-  void _onSetRingingAlarm(
+  Future<void> _onSetRingingAlarm(
     SetRingingAlarmEvent event,
     Emitter<AlarmState> emit,
-  ) {
+  ) async {
+    // An alarm just stopped ringing — either the user dismissed it (QR/item
+    // scan) or the clock reported it stopped (0x89). If the alarm that was
+    // ringing is a one-time alarm (no repeat days), disable it in the app so it
+    // doesn't linger as "active" after it has already fired.
+    if (event.alarmId == null && state.ringingAlarmId != null) {
+      final index = state.alarms.indexWhere(
+        (a) => a.id == state.ringingAlarmId,
+      );
+      if (index >= 0) {
+        final ringing = state.alarms[index];
+        final isOneTime = (ringing.dayMask & 0x7F) == 0;
+        if (isOneTime && ringing.isActive) {
+          final updatedAlarms = List<Alarm>.from(state.alarms);
+          // Clear the 0x80 "active" bit; one-time alarms carry no day bits, so
+          // this leaves an inactive alarm the user can re-enable later.
+          updatedAlarms[index] = ringing.copyWith(
+            dayMask: ringing.dayMask & 0x7F,
+          );
+          emit(
+            state.copyWith(alarms: updatedAlarms, clearRingingAlarm: true),
+          );
+          await _saveAlarms(updatedAlarms);
+          _rescheduleBackupAlarms(updatedAlarms);
+          return;
+        }
+      }
+    }
+
     emit(
       state.copyWith(
         ringingAlarmId: event.alarmId,

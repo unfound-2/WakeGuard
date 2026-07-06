@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -9,22 +10,35 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/glass.dart';
 import '../../../core/theme/wake_widgets.dart';
 import '../../../core/utils/alarm_time_utils.dart';
+import '../../../data/datasources/secure_key_datasource.dart';
 import '../../../domain/entities/alarm.dart';
+import '../../../domain/usecases/print_qr_code.dart';
 import '../../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../blocs/ble_bloc/ble_bloc.dart';
 import '../../blocs/ble_bloc/ble_state.dart';
 import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../../blocs/timer_cubit/countdown_timer_cubit.dart';
+import '../../widgets/create_timer_sheet.dart';
 import '../alarm_edit_screen.dart';
 
-/// The Alarms tab, ported from the native WakeGuard AlarmsView: the alarm
-/// list (AlarmRow-style cards) followed by a live "Timers" section
-/// (TimerRow-style cards) merged into a single scrollable screen.
-class AlarmsTab extends StatelessWidget {
+/// The Alarms tab, ported from the native WakeGuard AlarmsView. A sliding
+/// segmented control at the top splits the screen into two subtabs: "Alarm"
+/// (the AlarmRow-style schedule list) and "Timer" (live TimerRow-style
+/// mirrors). Only one subtab is on screen at a time.
+class AlarmsTab extends StatefulWidget {
   const AlarmsTab({super.key});
 
   @override
+  State<AlarmsTab> createState() => _AlarmsTabState();
+}
+
+class _AlarmsTabState extends State<AlarmsTab> {
+  // 0 = Alarm subtab, 1 = Timer subtab.
+  int _segment = 0;
+
+  @override
   Widget build(BuildContext context) {
+    final isAlarms = _segment == 0;
     return GlassBackground(
       child: SafeArea(
         bottom: false,
@@ -40,36 +54,50 @@ class AlarmsTab extends StatelessWidget {
                     letterSpacing: -0.5,
                   ),
                 ),
-                Text(
-                  'Schedules sync to the physical clock when connected.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontSize: 14,
-                  ),
-                ),
+                const SizedBox(height: 16),
+                _buildSegmentedControl(context),
                 const SizedBox(height: 20),
-                _buildAlarmsList(),
-                const SizedBox(height: 24),
-                const WakeSection(
-                  title: 'Timers',
-                  subtitle:
-                      'The clock runs timers on its own; these are live '
-                      'mirrors.',
-                  child: _TimersSection(),
-                ),
+                if (isAlarms) ...[
+                  Text(
+                    'Schedules sync to the physical clock when connected.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildAlarmsList(),
+                ] else ...[
+                  Text(
+                    'The clock runs timers on its own; these are live mirrors.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const _TimersSection(),
+                ],
               ],
             ),
-            // The floating tab bar occupies the bottom edge, so the FAB sits
-            // above it instead of using the Scaffold slot.
+            // The FAB adds an alarm or a timer depending on the active subtab.
+            // It sits above the floating tab bar rather than in the Scaffold
+            // slot.
             Positioned(
               right: 20,
               bottom: 120,
               child: FloatingActionButton(
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AlarmEditScreen()),
-                  );
+                  if (isAlarms) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AlarmEditScreen(),
+                      ),
+                    );
+                  } else {
+                    _showCreateTimer(context);
+                  }
                 },
                 backgroundColor: Theme.of(context).colorScheme.primary,
                 child: Icon(
@@ -80,6 +108,63 @@ class AlarmsTab extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// The Alarm | Timer subtab switcher, styled to match the AM/PM control on
+  /// the alarm editor (sliding thumb in the accent colour over a faint track).
+  Widget _buildSegmentedControl(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final primary = Theme.of(context).colorScheme.primary;
+    return SizedBox(
+      width: double.infinity,
+      child: CupertinoSlidingSegmentedControl<int>(
+        groupValue: _segment,
+        backgroundColor: onSurface.withValues(alpha: 0.06),
+        thumbColor: primary,
+        children: {
+          0: _segmentLabel(
+            'Alarm',
+            Icons.alarm_rounded,
+            selected: _segment == 0,
+            onSurface: onSurface,
+          ),
+          1: _segmentLabel(
+            'Timer',
+            Icons.timer_rounded,
+            selected: _segment == 1,
+            onSurface: onSurface,
+          ),
+        },
+        onValueChanged: (value) {
+          if (value == null || value == _segment) return;
+          HapticFeedback.selectionClick();
+          setState(() => _segment = value);
+        },
+      ),
+    );
+  }
+
+  Widget _segmentLabel(
+    String text,
+    IconData icon, {
+    required bool selected,
+    required Color onSurface,
+  }) {
+    final color = selected ? Colors.white : onSurface;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 17, color: color),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(fontWeight: FontWeight.w700, color: color),
+          ),
+        ],
       ),
     );
   }
@@ -239,6 +324,16 @@ class AlarmsTab extends StatelessWidget {
                     ),
                 ],
               ),
+              // QR-challenge alarms carry a printable backup code (item-scan
+              // alarms don't). Each alarm's code is unique to its id.
+              if (alarm.qrRequired && !alarm.usesItemScan) ...[
+                const SizedBox(height: 14),
+                WakeSecondaryButton(
+                  label: 'Print backup code',
+                  icon: Icons.print_rounded,
+                  onPressed: () => _printCode(context, alarm.id),
+                ),
+              ],
             ],
           ),
         ),
@@ -315,11 +410,36 @@ class AlarmsTab extends StatelessWidget {
     );
   }
 
+  /// Opens the glass timer-creation sheet (wheel picker styled like the alarm
+  /// editor). On confirm the sheet sends the duration to the clock and mirrors
+  /// it into the live timer list.
+  void _showCreateTimer(BuildContext context) {
+    showCreateTimerSheet(context);
+  }
+
+  /// Opens the OS print dialog for [alarmId]'s unique backup QR code.
+  Future<void> _printCode(BuildContext context, int alarmId) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final usecase = PrintQrCodeUseCase(
+      secureKeyDatasource: SecureKeyDatasource(),
+    );
+    try {
+      await usecase.execute(alarmId);
+    } catch (_) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Unable to open the print dialog.'),
+          backgroundColor: scheme.error,
+        ),
+      );
+    }
+  }
 }
 
-/// Live view of app-side timer mirrors, rendered below the alarm list.
-/// Rebuilds every second so countdowns tick, and lets the user clear finished
-/// (or unwanted) timers from the list.
+/// Live view of app-side timer mirrors, shown on the Timer subtab. Rebuilds
+/// every second so countdowns tick, and lets the user clear finished (or
+/// unwanted) timers from the list.
 class _TimersSection extends StatefulWidget {
   const _TimersSection();
 
@@ -367,7 +487,7 @@ class _TimersSectionState extends State<_TimersSection> {
         if (timers.isEmpty) {
           return const WakeEmptyState(
             title: 'No timers running',
-            message: 'Start one from the Home tab quick actions.',
+            message: 'Tap + to start a timer on the clock.',
             icon: Icons.timer_outlined,
           );
         }

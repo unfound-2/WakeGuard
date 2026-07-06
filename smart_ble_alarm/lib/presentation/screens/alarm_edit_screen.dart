@@ -863,108 +863,163 @@ class _TimeWheelPickerState extends State<_TimeWheelPicker> {
       color: onSurface,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
-    final unitStyle = TextStyle(
-      fontSize: 15,
-      fontWeight: FontWeight.w600,
-      color: theme.colorScheme.onSurfaceVariant,
-    );
     final hourCount = widget.is24Hour ? 24 : 12;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          height: 180,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Single continuous liquid-glass selection band behind both wheels.
-              IgnorePointer(
-                child: Container(
-                  height: _itemExtent,
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  decoration: BoxDecoration(
-                    color: primary.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: primary.withValues(alpha: 0.18)),
-                  ),
-                ),
+    // Hour + minute wheels sharing one liquid-glass selection band. Both wheels
+    // are the same width and zero-padded to two digits so the numbers sit at a
+    // consistent rhythm, and the gap between them is wide enough to read as two
+    // separate values rather than a single run of digits.
+    final wheels = SizedBox(
+      height: 180,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          IgnorePointer(
+            child: Container(
+              height: _itemExtent,
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: primary.withValues(alpha: 0.18)),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _wheel(
-                    controller: _hourController,
-                    itemCount: hourCount,
-                    label: (i) => widget.is24Hour
-                        ? i.toString().padLeft(2, '0')
-                        : (i + 1).toString(),
-                    unit: 'hr',
-                    numberStyle: numberStyle,
-                    unitStyle: unitStyle,
-                    onSel: (i) {
-                      _hourIndex = i;
-                      _haptic();
-                      _emit();
-                    },
-                  ),
-                  const SizedBox(width: 18),
-                  _wheel(
-                    controller: _minuteController,
-                    itemCount: 60,
-                    label: (i) => i.toString().padLeft(2, '0'),
-                    unit: 'min',
-                    numberStyle: numberStyle,
-                    unitStyle: unitStyle,
-                    onSel: (i) {
-                      _minuteIndex = i;
-                      _haptic();
-                      _emit();
-                    },
-                  ),
-                ],
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _wheel(
+                controller: _hourController,
+                itemCount: hourCount,
+                label: (i) => widget.is24Hour
+                    ? i.toString().padLeft(2, '0')
+                    : (i + 1).toString().padLeft(2, '0'),
+                numberStyle: numberStyle,
+                onSel: (i) {
+                  _hourIndex = i;
+                  _haptic();
+                  _emit();
+                },
+              ),
+              const SizedBox(width: 32),
+              _wheel(
+                controller: _minuteController,
+                itemCount: 60,
+                label: (i) => i.toString().padLeft(2, '0'),
+                numberStyle: numberStyle,
+                onSel: (i) {
+                  _minuteIndex = i;
+                  _haptic();
+                  _emit();
+                },
               ),
             ],
           ),
-        ),
+        ],
+      ),
+    );
+
+    // In 12-hour mode the AM/PM control sits directly beside the numbers as a
+    // vertical slider (matching the accent-thumb style of the other segmented
+    // controls); 24-hour mode drops it entirely.
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(child: wheels),
         if (!widget.is24Hour) ...[
-          const SizedBox(height: 18),
-          SizedBox(
-            width: 200,
-            child: CupertinoSlidingSegmentedControl<int>(
-              groupValue: _isPm ? 1 : 0,
-              backgroundColor: onSurface.withValues(alpha: 0.06),
-              thumbColor: primary,
-              children: {
-                0: _segmentLabel('AM', selected: !_isPm, onSurface: onSurface),
-                1: _segmentLabel('PM', selected: _isPm, onSurface: onSurface),
-              },
-              onValueChanged: (value) {
-                if (value == null) return;
-                setState(() => _isPm = value == 1);
-                _haptic();
-                _emit();
-              },
-            ),
-          ),
+          const SizedBox(width: 20),
+          _amPmSlider(onSurface, primary),
         ],
       ],
     );
   }
 
-  Widget _segmentLabel(
+  /// Vertical AM/PM slider: a rounded track with an accent thumb that slides
+  /// between the two stacked segments. Mirrors the look of the horizontal
+  /// segmented controls used elsewhere, rotated to sit next to the wheels.
+  Widget _amPmSlider(Color onSurface, Color primary) {
+    const double segW = 58;
+    const double segH = 40;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: SizedBox(
+        width: segW,
+        height: segH * 2,
+        child: Stack(
+          children: [
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: _isPm ? Alignment.bottomCenter : Alignment.topCenter,
+              child: Container(
+                width: segW,
+                height: segH,
+                decoration: BoxDecoration(
+                  color: primary,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _amPmSegment(
+                  'AM',
+                  isPm: false,
+                  selected: !_isPm,
+                  width: segW,
+                  height: segH,
+                  onSurface: onSurface,
+                ),
+                _amPmSegment(
+                  'PM',
+                  isPm: true,
+                  selected: _isPm,
+                  width: segW,
+                  height: segH,
+                  onSurface: onSurface,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _amPmSegment(
     String text, {
+    required bool isPm,
     required bool selected,
+    required double width,
+    required double height,
     required Color onSurface,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontWeight: FontWeight.w700,
-          color: selected ? Colors.white : onSurface,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (_isPm == isPm) return;
+        setState(() => _isPm = isPm);
+        _haptic();
+        _emit();
+      },
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: selected ? Colors.white : onSurface,
+            ),
+          ),
         ),
       ),
     );
@@ -974,37 +1029,27 @@ class _TimeWheelPickerState extends State<_TimeWheelPicker> {
     required FixedExtentScrollController controller,
     required int itemCount,
     required String Function(int) label,
-    required String unit,
     required TextStyle numberStyle,
-    required TextStyle unitStyle,
     required ValueChanged<int> onSel,
   }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: 58,
-          height: 180,
-          child: CupertinoPicker(
-            scrollController: controller,
-            itemExtent: _itemExtent,
-            squeeze: 1.1,
-            diameterRatio: 1.35,
-            useMagnifier: true,
-            magnification: 1.06,
-            backgroundColor: Colors.transparent,
-            selectionOverlay: const SizedBox.shrink(),
-            onSelectedItemChanged: onSel,
-            children: [
-              for (int i = 0; i < itemCount; i++)
-                Center(child: Text(label(i), style: numberStyle)),
-            ],
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(unit, style: unitStyle),
-      ],
+    return SizedBox(
+      width: 60,
+      height: 180,
+      child: CupertinoPicker(
+        scrollController: controller,
+        itemExtent: _itemExtent,
+        squeeze: 1.1,
+        diameterRatio: 1.35,
+        useMagnifier: true,
+        magnification: 1.06,
+        backgroundColor: Colors.transparent,
+        selectionOverlay: const SizedBox.shrink(),
+        onSelectedItemChanged: onSel,
+        children: [
+          for (int i = 0; i < itemCount; i++)
+            Center(child: Text(label(i), style: numberStyle)),
+        ],
+      ),
     );
   }
 }

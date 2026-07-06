@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/challenge/wake_challenge_options.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/glass.dart';
 import '../../core/theme/wake_widgets.dart';
@@ -19,7 +18,17 @@ import 'dismissal_history_screen.dart';
 /// Bluetooth, sync, factory reset) live in the Clock tab, not here.
 class SettingsScreen extends StatefulWidget {
   final bool isTab;
-  const SettingsScreen({super.key, this.isTab = false});
+
+  /// Non-null only while the app runs on the simulated (developer-mode) clock.
+  /// When provided, the Advanced section shows a button to leave the simulator
+  /// and return to pairing a real clock.
+  final VoidCallback? onExitDeveloperMode;
+
+  const SettingsScreen({
+    super.key,
+    this.isTab = false,
+    this.onExitDeveloperMode,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -27,14 +36,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const List<String> _themeOptions = ['System', 'Light', 'Dark'];
-
-  final TextEditingController _customObjectController = TextEditingController();
-
-  @override
-  void dispose() {
-    _customObjectController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -294,89 +295,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ---- Wake Challenge -----------------------------------------------------
 
   Widget _buildChallengeSection(SettingsState settings) {
-    final scheme = Theme.of(context).colorScheme;
-    final glass = GlassTheme.of(context);
-    final objects = List<String>.from(WakeChallengeOptions.suggestedObjects);
-    if (!objects.contains(settings.wakeObjectName)) {
-      objects.add(settings.wakeObjectName);
-    }
     return WakeSection(
       title: 'Wake Challenge',
-      subtitle: 'Choose the morning-routine object you verify away from bed.',
+      subtitle:
+          'Set the default for new alarms. Pick the object to verify per '
+          'alarm in the alarm editor.',
       child: GlassCard(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+        padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
         shadows: wakeCardShadow(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                SizedBox(
-                  width: 30,
-                  child: Icon(
-                    Icons.center_focus_strong_rounded,
-                    size: 20,
-                    color: scheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Text(
-                    'Wake object',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                ),
-                DropdownButton<String>(
-                  value: settings.wakeObjectName,
-                  underline: const SizedBox.shrink(),
-                  borderRadius: BorderRadius.circular(14),
-                  items: [
-                    for (final object in objects)
-                      DropdownMenuItem(value: object, child: Text(object)),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      context.read<SettingsBloc>().add(
-                        UpdateWakeObjectEvent(value),
-                      );
-                    }
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _customObjectController,
-              textCapitalization: TextCapitalization.words,
-              textInputAction: TextInputAction.done,
-              onSubmitted: _submitCustomObject,
-              decoration: InputDecoration(
-                hintText: 'Custom object',
-                hintStyle: TextStyle(
-                  fontSize: 14,
-                  color: scheme.onSurfaceVariant,
-                ),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: glass.stroke),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: scheme.primary),
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Divider(height: 17, color: Theme.of(context).dividerColor),
             WakeSettingsRow(
               icon: Icons.verified_user_rounded,
               title: 'Require challenge for new alarms',
@@ -389,22 +318,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             _footnote(
-              'Wake challenges use on-device AI object verification; printed '
-              'backup codes stay available.',
+              'Choose each alarm\'s wake object when you create or edit it. '
+              'Challenges use on-device AI verification; printed backup codes '
+              'stay available.',
               icon: Icons.auto_awesome,
             ),
           ],
         ),
       ),
     );
-  }
-
-  void _submitCustomObject(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) return;
-    context.read<SettingsBloc>().add(UpdateWakeObjectEvent(trimmed));
-    _customObjectController.clear();
-    FocusScope.of(context).unfocus();
   }
 
   // ---- Notifications ------------------------------------------------------
@@ -578,6 +500,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         shadows: wakeCardShadow(context),
         child: Column(
           children: [
+            if (widget.onExitDeveloperMode != null) ...[
+              WakeSettingsRow(
+                icon: Icons.link_off_rounded,
+                title: 'Disconnect Simulated Clock',
+                subtitle: 'Exit developer mode and pair your real clock',
+                onTap: _confirmExitDeveloperMode,
+              ),
+              Divider(height: 1, color: Theme.of(context).dividerColor),
+            ],
             WakeSettingsRow(
               icon: Icons.replay_rounded,
               title: 'Replay Onboarding',
@@ -596,6 +527,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmExitDeveloperMode() async {
+    final onExit = widget.onExitDeveloperMode;
+    if (onExit == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Disconnect simulated clock?'),
+        content: const Text(
+          'This leaves the demo clock and returns to pairing so you can '
+          'connect your real WakeGuard clock. Your alarms, timers, and '
+          'settings stay on this phone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              'Disconnect',
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    // Swaps the whole BLE backend subtree and drops back to the pairing screen,
+    // so there is nothing left to do on this (now-unmounted) screen afterward.
+    if (confirmed == true) onExit();
   }
 
   Future<void> _replayOnboarding() async {
