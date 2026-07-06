@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Stray build output (the real app builds under smart_ble_alarm/)
+/build/
+
+# IDE / editor
+.idea/
+*.iml
+*.swp
+
+# Logs
+*.log
