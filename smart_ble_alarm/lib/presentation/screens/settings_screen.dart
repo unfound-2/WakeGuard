@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/challenge/wake_challenge_options.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/glass.dart';
 import '../../core/theme/wake_widgets.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
+import '../blocs/ble_bloc/ble_event.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/history_cubit/dismissal_history_cubit.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
@@ -24,10 +26,16 @@ class SettingsScreen extends StatefulWidget {
   /// and return to pairing a real clock.
   final VoidCallback? onExitDeveloperMode;
 
+  /// Non-null only while a real clock is paired. When provided, the Advanced
+  /// section shows "Unpair Device", which hands off to the app-level callback
+  /// (in `main.dart`) that forgets the clock and restarts onboarding.
+  final VoidCallback? onUnpairDevice;
+
   const SettingsScreen({
     super.key,
     this.isTab = false,
     this.onExitDeveloperMode,
+    this.onUnpairDevice,
   });
 
   @override
@@ -190,8 +198,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Divider(height: 17, color: Theme.of(context).dividerColor),
             WakeSettingsRow(
               icon: Icons.animation_rounded,
-              title: 'Smooth animations',
-              subtitle: 'Enable UI transitions and effects',
+              title: 'Animated controls',
+              subtitle: 'Animate the day picker and use haptics when editing '
+                  'alarms',
               trailing: Switch(
                 value: settings.animationsEnabled,
                 onChanged: (val) => context.read<SettingsBloc>().add(
@@ -317,10 +326,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
+            Divider(height: 1, color: Theme.of(context).dividerColor),
+            WakeSettingsRow(
+              icon: Icons.center_focus_strong_rounded,
+              title: 'Default wake object',
+              subtitle: settings.wakeObjectName,
+              onTap: () => _showWakeObjectPicker(settings.wakeObjectName),
+            ),
             _footnote(
-              'Choose each alarm\'s wake object when you create or edit it. '
-              'Challenges use on-device AI verification; printed backup codes '
-              'stay available.',
+              'New object-verification alarms start with this wake object; '
+              'change it per alarm in the alarm editor. Challenges use '
+              'on-device AI verification, with printed backup codes as a '
+              'fallback.',
               icon: Icons.auto_awesome,
             ),
           ],
@@ -508,6 +525,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: _confirmExitDeveloperMode,
               ),
               Divider(height: 1, color: Theme.of(context).dividerColor),
+            ] else if (widget.onUnpairDevice != null) ...[
+              WakeSettingsRow(
+                icon: Icons.bluetooth_disabled_rounded,
+                title: 'Unpair Device',
+                subtitle: 'Forget this clock and set up a new one',
+                onTap: _confirmUnpair,
+              ),
+              Divider(height: 1, color: Theme.of(context).dividerColor),
             ],
             WakeSettingsRow(
               icon: Icons.replay_rounded,
@@ -562,6 +587,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Swaps the whole BLE backend subtree and drops back to the pairing screen,
     // so there is nothing left to do on this (now-unmounted) screen afterward.
     if (confirmed == true) onExit();
+  }
+
+  Future<void> _confirmUnpair() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Unpair this clock?'),
+        content: const Text(
+          'WakeGuard will disconnect and forget this clock, then restart setup '
+          'so you can pair a clock again. Your alarms, timers, and settings stay '
+          'on this phone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              'Unpair',
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    final onUnpair = widget.onUnpairDevice;
+    if (confirmed != true || onUnpair == null || !mounted) return;
+
+    // Drop the live link and stop auto-reconnect, then hand off to the app-level
+    // callback, which forgets the clock and flips the declarative `home:` route
+    // back to onboarding. Routing the transition through that shared callback —
+    // rather than mutating prefs and pushing a route from here — keeps the
+    // widget tree and the persisted prefs from disagreeing about whether a
+    // clock is paired (which could otherwise resurrect the "forgotten" clock on
+    // the next app-level rebuild). OnboardingScreen finishes by pushing
+    // SetupScreen, which pairs the next clock.
+    context.read<BleConnectionBloc>().add(ForgetDeviceEvent());
+    onUnpair();
   }
 
   Future<void> _replayOnboarding() async {
@@ -624,6 +692,96 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const SnackBar(
         content: Text('Local alarms, timers, and history cleared.'),
       ),
+    );
+  }
+
+  // ---- Wake object picker -------------------------------------------------
+
+  /// Sentinel returned by the picker sheet to mean "let me type my own".
+  static const String _customWakeObjectSentinel = '__wakeguard_custom__';
+
+  Future<void> _showWakeObjectPicker(String current) async {
+    final settingsBloc = context.read<SettingsBloc>();
+    final scheme = Theme.of(context).colorScheme;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: GlassCard(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            shadows: wakeCardShadow(sheetContext),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+                  child: Text(
+                    'Default wake object',
+                    style: Theme.of(sheetContext).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                for (final option in WakeChallengeOptions.suggestedObjects)
+                  ListTile(
+                    title: Text(option),
+                    trailing: option == current
+                        ? Icon(Icons.check_rounded, color: scheme.primary)
+                        : null,
+                    onTap: () => Navigator.pop(sheetContext, option),
+                  ),
+                ListTile(
+                  leading: Icon(Icons.edit_rounded, color: scheme.primary),
+                  title: const Text('Custom object…'),
+                  onTap: () =>
+                      Navigator.pop(sheetContext, _customWakeObjectSentinel),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == _customWakeObjectSentinel) {
+      await _showCustomWakeObjectDialog(current);
+      return;
+    }
+    settingsBloc.add(
+      UpdateWakeObjectEvent(WakeChallengeOptions.cleanObjectName(choice)),
+    );
+  }
+
+  Future<void> _showCustomWakeObjectDialog(String current) async {
+    final controller = TextEditingController(text: current);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Custom wake object'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(hintText: 'e.g. Bathroom sink'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    context.read<SettingsBloc>().add(
+      UpdateWakeObjectEvent(WakeChallengeOptions.cleanObjectName(result)),
     );
   }
 

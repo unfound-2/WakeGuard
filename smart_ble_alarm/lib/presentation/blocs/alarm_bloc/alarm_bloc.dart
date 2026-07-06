@@ -191,12 +191,28 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     this.notificationService,
   }) : secureKeyDatasource = secureKeyDatasource ?? SecureKeyDatasource(),
        super(const AlarmState()) {
-    on<LoadAlarmsEvent>(_onLoadAlarms);
-    on<AddOrUpdateAlarmEvent>(_onAddOrUpdateAlarm);
-    on<DeleteAlarmEvent>(_onDeleteAlarm);
-    on<SyncAlarmsToDeviceEvent>(_onSyncAlarmsToDevice);
-    on<SetRingingAlarmEvent>(_onSetRingingAlarm);
+    // Process every alarm event to completion before starting the next. Bloc's
+    // default (concurrent) transformer lets two handlers interleave across their
+    // `await`s — each snapshots a Set/Map from `state` before awaiting a BLE
+    // write, then emits that stale snapshot afterwards, silently clobbering the
+    // other handler's pending-delete / sync-status updates. Serialising the
+    // handlers removes that race entirely (none of them await a sibling event,
+    // so there is no deadlock risk).
+    on<LoadAlarmsEvent>(_onLoadAlarms, transformer: _sequential());
+    on<AddOrUpdateAlarmEvent>(_onAddOrUpdateAlarm, transformer: _sequential());
+    on<DeleteAlarmEvent>(_onDeleteAlarm, transformer: _sequential());
+    on<SyncAlarmsToDeviceEvent>(
+      _onSyncAlarmsToDevice,
+      transformer: _sequential(),
+    );
+    on<SetRingingAlarmEvent>(_onSetRingingAlarm, transformer: _sequential());
   }
+
+  /// Serialising event transformer: runs one handler's stream to completion
+  /// before mapping the next event. Prevents the emit-stale-snapshot race
+  /// described in the constructor.
+  static EventTransformer<E> _sequential<E>() =>
+      (events, mapper) => events.asyncExpand(mapper);
 
   void _onLoadAlarms(LoadAlarmsEvent event, Emitter<AlarmState> emit) {
     emit(state.copyWith(isLoading: true));

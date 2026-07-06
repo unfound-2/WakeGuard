@@ -9,7 +9,6 @@ import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/history_cubit/dismissal_history_cubit.dart';
-import '../blocs/settings_bloc/settings_bloc.dart';
 import '../../domain/repositories/ble_repository.dart';
 
 class ScannerScreen extends StatefulWidget {
@@ -122,7 +121,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         title: const Text(
-          'Verify Wake Object',
+          'Scan Backup Code',
           style: TextStyle(color: Colors.white),
         ),
         backgroundColor: Colors.transparent,
@@ -186,61 +185,58 @@ class _ScannerScreenState extends State<ScannerScreen> {
             ],
           ),
 
-          // "Verify <object>" guidance panel, framed in a dark glass card.
+          // Backup-code guidance panel, framed in a dark glass card. This is
+          // the printed-QR fallback for dismissal; the object-verification
+          // ("photograph the item") flow lives in the item-scan screen.
           Positioned(
             left: 20,
             right: 20,
             bottom: 24,
             child: SafeArea(
-              child: BlocBuilder<SettingsBloc, SettingsState>(
-                builder: (context, settingsState) {
-                  return GlassCard(
-                    borderRadius: 24,
-                    blurSigma: 20,
-                    tintColor: Colors.black,
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: accent.withValues(alpha: 0.18),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.center_focus_strong_rounded,
-                            color: accent,
-                            size: 26,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Verify ${settingsState.wakeObjectName}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'AI photo verification is the WakeGuard target flow. '
-                          'This build currently scans the secure backup code to '
-                          'complete dismissal.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.82),
-                            fontSize: 13,
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
+              child: GlassCard(
+                borderRadius: 24,
+                blurSigma: 20,
+                tintColor: Colors.black,
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.18),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.qr_code_2_rounded,
+                        color: accent,
+                        size: 26,
+                      ),
                     ),
-                  );
-                },
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Scan your backup code',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Scan this alarm\'s printed backup code to confirm you\'re '
+                      'up and dismiss it.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.82),
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

@@ -260,7 +260,7 @@ class _NearbyClocksSection extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return WakeSection(
       title: 'Nearby Clocks',
-      subtitle: 'Keep your HM-10 module powered and nearby while searching.',
+      subtitle: 'Keep your WakeGuard clock powered on and nearby while searching.',
       child: scanning
           ? GlassCard(
               padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 18),
@@ -293,8 +293,8 @@ class _NearbyClocksSection extends StatelessWidget {
                 const WakeEmptyState(
                   title: 'No clocks yet',
                   message:
-                      'Tap Search For Clock while your HM-10 module is powered '
-                      'and nearby.',
+                      'Tap Search For Clock while your WakeGuard clock is '
+                      'powered on and nearby.',
                   icon: Icons.settings_input_antenna_rounded,
                 ),
                 const SizedBox(height: 12),

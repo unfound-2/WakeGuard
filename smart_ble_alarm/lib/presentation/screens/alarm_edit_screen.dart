@@ -68,10 +68,13 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
       _selectedTime = TimeOfDay.now();
       _isOneTime = true;
       _selectedDaysMask = 0;
-      _requireDismissalTask = context
-          .read<SettingsBloc>()
-          .state
-          .defaultQrRequired;
+      final settings = context.read<SettingsBloc>().state;
+      _requireDismissalTask = settings.defaultQrRequired;
+      // Seed the per-alarm object from the global "default wake object" so a
+      // new object-verification alarm starts with the user's chosen object
+      // (still changeable below). Only persisted if item verification is on,
+      // so this is a harmless default for QR/no-challenge alarms.
+      _itemLabel = settings.wakeObjectName;
     }
   }
 
@@ -423,7 +426,9 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Let this alarm be snoozed before the wake challenge',
+                            'Saved with this alarm. Snoozing is handled by the '
+                            'clock hardware — this preference isn\'t sent over '
+                            'Bluetooth yet.',
                             style: TextStyle(
                               fontSize: 13,
                               color: Theme.of(

@@ -70,14 +70,11 @@
 //  USER CONFIGURATION
 // ============================================================================
 
-// The phone transmits time as a UTC Unix epoch (see BlePayloads.currentEpochSeconds
-// -> DateTime.now().millisecondsSinceEpoch). Alarm hour/minute, however, are the
-// LOCAL wall-clock values the user picked. Add your local UTC offset here so the
-// clock face and alarm matching use local time. Examples:
-//   UTC        :        0L
-//   US Central : -6L * 3600L   (add +3600 during DST, or leave standard)
-//   US Eastern : -5L * 3600L
-//   IST        :  5L * 3600L + 1800L
+// The phone now transmits its LOCAL wall-clock as the epoch (BlePayloads
+// .currentEpochSeconds adds the phone's UTC offset), so this should stay 0 and
+// the clock will match the phone automatically, DST included. Only set a nonzero
+// value if you are pairing with an OLD app build that still sends UTC — e.g.
+// US Eastern: -5L * 3600L. Normally: leave it at 0.
 static const long TIMEZONE_OFFSET_SECONDS = 0L;
 
 #define USE_24H_DISPLAY   1        // 1 = HH:MM:SS 24h, 0 = hh:mm:ss AM/PM
@@ -199,6 +196,8 @@ uint32_t timerDoneStartMs = 0;
 
 // ---- Sync UI ---------------------------------------------------------------
 bool     syncing        = false;
+bool     alarmsDirty    = false;  // alarm table changed but not yet flushed to
+                                  // EEPROM (writes are batched during a sync)
 uint32_t syncBannerUntilMs = 0;   // show "SYNCED" briefly after 0x05
 
 // ---- Connection heuristic --------------------------------------------------
@@ -360,6 +359,29 @@ void eepromSaveAlarms() {
   EEPROM.update(EE_MAGIC_ADDR, EE_MAGIC);
 }
 
+// Persist the alarm table, but coalesce the burst of per-frame changes that
+// arrive during a sync (0x02 upserts / 0x07 tokens / 0x03 deletes) into a
+// single flush at CMD_SYNC_END. A full eepromSaveAlarms() rewrites up to
+// 5*15 bytes and blocks for tens–hundreds of ms while the EEPROM cells settle;
+// doing that once per frame can back up the 64-byte SoftwareSerial RX buffer
+// mid-burst and drop bytes, corrupting the sync. Deferring keeps the UART
+// drained during the burst. Outside a sync we still write immediately.
+void persistAlarms() {
+  if (syncing) alarmsDirty = true;
+  else eepromSaveAlarms();
+}
+
+// Belt-and-suspenders for the batched writes above: if a sync's closing 0x05 is
+// ever lost, don't leave the alarm changes unpersisted (or the clock stuck in
+// "syncing"). Once the link has gone idle past the timeout, flush and clear.
+void serviceSyncFlush() {
+  if (!syncing && !alarmsDirty) return;
+  if (lastFrameMs != 0 && (uint32_t)(millis() - lastFrameMs) >= LINK_TIMEOUT_MS) {
+    if (alarmsDirty) { eepromSaveAlarms(); alarmsDirty = false; }
+    syncing = false;
+  }
+}
+
 void eepromLoadAll() {
   if (EEPROM.read(EE_MAGIC_ADDR) != EE_MAGIC) {
     // First boot / uninitialised EEPROM: start empty and stamp it.
@@ -426,7 +448,7 @@ void upsertAlarm(uint8_t id, uint8_t hour, uint8_t minute,
   }
   a.used = 1;
   lastFiredMinute[slot] = 0xFFFFFFFF; // don't retro-fire on load/edit
-  eepromSaveAlarms();
+  persistAlarms();
 }
 
 void deleteAlarm(uint8_t id) {
@@ -435,7 +457,7 @@ void deleteAlarm(uint8_t id) {
   // If this alarm is currently ringing, stop it.
   if (ringLatched && ringAlarmId == id) endRing(false);
   memset(&alarms[slot], 0, sizeof(AlarmConfig));
-  eepromSaveAlarms();
+  persistAlarms();
 }
 
 void storeToken(uint8_t id, const uint8_t *token) {
@@ -444,7 +466,7 @@ void storeToken(uint8_t id, const uint8_t *token) {
   alarms[slot].hasToken = 1;
   memcpy(alarms[slot].token, token, 8);
   alarms[slot].used = 1;
-  eepromSaveAlarms();
+  persistAlarms();
 }
 
 // ============================================================================
@@ -478,12 +500,22 @@ void applyTimeSync(uint32_t epoch) {
     // Only calibrate over a long-enough window for a stable measurement.
     if (realElapsed >= 600UL && realElapsed <= 7UL * 24UL * 3600UL) {
       int32_t errSec = ourElapsed - (int32_t)realElapsed;  // + => we ran fast
-      // ppm adjustment that would have cancelled this error over the window.
-      int32_t adj = (int32_t)(((int64_t)(-errSec) * 1000000L) / (int32_t)realElapsed);
-      driftPPM += adj;
-      if (driftPPM >  30000) driftPPM =  30000;
-      if (driftPPM < -30000) driftPPM = -30000;
-      eepromSaveDrift();
+      // Reject implausible corrections. A real resonator drifts at most a few
+      // percent, so over `realElapsed` seconds the counted error cannot exceed
+      // ~realElapsed/20 (5%). A bigger gap means the phone's WALL clock moved —
+      // the epoch we receive is LOCAL time, so a DST change or timezone hop adds
+      // a ±3600s step that is not oscillator drift. Re-base the clock to it (we
+      // always do, below) but don't poison the drift estimate with it.
+      int32_t maxPlausible = (int32_t)(realElapsed / 20UL) + 5;
+      if (errSec > -maxPlausible && errSec < maxPlausible) {
+        // ppm adjustment that would have cancelled this error over the window.
+        int32_t adj =
+            (int32_t)(((int64_t)(-errSec) * 1000000L) / (int32_t)realElapsed);
+        driftPPM += adj;
+        if (driftPPM >  30000) driftPPM =  30000;
+        if (driftPPM < -30000) driftPPM = -30000;
+        eepromSaveDrift();
+      }
     }
   }
   currentEpoch  = epoch;
@@ -633,6 +665,9 @@ void handleFrame(uint8_t *body, uint8_t n) {
       break;
     case CMD_SYNC_END:
       syncing = false;
+      // Commit the whole sync's alarm changes in one EEPROM write now that the
+      // frame burst is over (see persistAlarms).
+      if (alarmsDirty) { eepromSaveAlarms(); alarmsDirty = false; }
       syncBannerUntilMs = millis() + 1200UL;
       sendAck(ACK_SYNC_END);
       break;
@@ -750,9 +785,13 @@ void buttonOnRing() {
 // Scan the alarm table once per loop and fire anything due this minute.
 void checkAlarms() {
   if (!haveTime) return;
-  LocalTime t = localNow();
-  if (t.ss != 0) return;                       // fire on the top of the minute
   if (ringLatched) return;                     // one ring at a time
+  LocalTime t = localNow();
+  // Fire on a minute-boundary match rather than the exact ss==0 instant: a
+  // TIME_SYNC that jumps the clock across hh:mm:00, or a blocking EEPROM/LCD
+  // write straddling that second, can mean no loop iteration ever observes
+  // ss==0 — which would silently skip the alarm. Matching hh:mm and de-duping
+  // on minuteIndex fires each alarm exactly once in its minute despite jitter.
   uint32_t minuteIndex = currentEpoch / 60UL;
 
   for (int i = 0; i < MAX_ALARMS; i++) {
@@ -900,7 +939,9 @@ void serviceBacklight() {
 
   if (ringActive || timerDone) {
     wantOn = true;
-  } else if (millis() < backlightWakeUntilMs) {
+  } else if ((int32_t)(millis() - backlightWakeUntilMs) < 0) {
+    // Signed difference stays correct across the ~49.7-day millis() rollover,
+    // unlike a bare `millis() < deadline` absolute comparison.
     wantOn = true;
   } else {
     bool inSleep = false;
@@ -1079,7 +1120,7 @@ void renderLcd() {
     padLine(line0);
     strcpy(line1, "  Please wait");
     padLine(line1);
-  } else if (nowMs < syncBannerUntilMs) {
+  } else if ((int32_t)(nowMs - syncBannerUntilMs) < 0) { // rollover-safe compare
     strcpy(line0, "   SYNC OK!");
     padLine(line0);
     buildClockLine1();
@@ -1136,5 +1177,6 @@ void loop() {
   serviceBuzzer();  // 6. step the non-blocking tone pattern
   serviceButton();  // 7. read the physical button
   serviceBacklight();// 8. sleep-window / ambient / wake backlight control
-  renderLcd();      // 9. refresh the display (diffed)
+  serviceSyncFlush();// 9. flush batched alarm writes if a sync's 0x05 was lost
+  renderLcd();      // 10. refresh the display (diffed)
 }

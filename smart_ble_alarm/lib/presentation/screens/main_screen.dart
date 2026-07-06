@@ -21,7 +21,17 @@ class MainScreen extends StatefulWidget {
   /// a button to leave developer mode and return to pairing a real clock.
   final VoidCallback? onExitDeveloperMode;
 
-  const MainScreen({super.key, this.onExitDeveloperMode});
+  /// When non-null (a real clock is paired), Settings shows an "Unpair Device"
+  /// action that forgets the clock and restarts onboarding. Wired up in
+  /// `main.dart` so the app-level remembered-device state and the persisted
+  /// prefs stay in agreement.
+  final VoidCallback? onUnpairDevice;
+
+  const MainScreen({
+    super.key,
+    this.onExitDeveloperMode,
+    this.onUnpairDevice,
+  });
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -43,6 +53,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     SettingsScreen(
       isTab: true,
       onExitDeveloperMode: widget.onExitDeveloperMode,
+      onUnpairDevice: widget.onUnpairDevice,
     ),
   ];
 
@@ -153,9 +164,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   ),
                   style: TextButton.styleFrom(
                     foregroundColor: theme.colorScheme.error,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    // Keep a ≥44px hit area for accessibility rather than the
+                    // previous shrink-wrapped (sub-44px) target.
+                    minimumSize: const Size(48, 44),
                   ),
                   child: const Text(
                     'Retry',

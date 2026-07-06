@@ -14,8 +14,15 @@ class BlePayloads {
   }
 
   static List<int> currentEpochSeconds([DateTime? now]) {
-    final timestamp = (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
-    return uint32(timestamp);
+    // Send the phone's LOCAL wall-clock as an epoch (UTC seconds + local UTC
+    // offset). The clock hardware has no timezone, and alarm hour/minute are set
+    // in local time, so transmitting local time keeps the clock face and alarm
+    // matching aligned with the phone — and DST is handled here by the phone
+    // rather than by a hand-set offset on the device.
+    final dt = now ?? DateTime.now();
+    final localSeconds =
+        dt.millisecondsSinceEpoch ~/ 1000 + dt.timeZoneOffset.inSeconds;
+    return uint32(localSeconds);
   }
 
   static int _byte(String field, int value) {

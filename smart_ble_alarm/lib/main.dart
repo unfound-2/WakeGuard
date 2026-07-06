@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -104,6 +105,24 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
     previous.dispose();
   }
 
+  /// Forget the currently-paired real clock and restart onboarding so the user
+  /// can pair again. Unlike [_exitDeveloperMode] this keeps the existing BLE
+  /// backend and bloc tree alive (the caller disconnects first via
+  /// ForgetDeviceEvent) and does NOT bump [_backendGeneration] — it only flips
+  /// the declarative `home:` route by clearing the remembered device. Driving
+  /// the transition through this shared field (rather than SettingsScreen
+  /// mutating prefs and pushing a route on its own) keeps the widget tree and
+  /// the persisted prefs from disagreeing about whether a clock is paired.
+  void _unpairDevice() {
+    // Update the in-memory cache first (synchronous) so the rebuild below sees
+    // the new values immediately; the disk writes settle asynchronously.
+    widget.prefs.remove('rememberedDeviceId');
+    widget.prefs.setBool('hasSeenOnboarding', false);
+    setState(() {
+      _rememberedDeviceId = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return KeyedSubtree(
@@ -184,7 +203,11 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                     ? ((widget.prefs.getBool('hasSeenOnboarding') ?? false)
                           ? SetupScreen(
                               prefs: widget.prefs,
-                              onEnterDeveloperMode: _enterDeveloperMode,
+                              // Developer mode swaps the app onto the simulated
+                              // clock — a debug affordance only. Hide it from
+                              // release builds so end users never hit it.
+                              onEnterDeveloperMode:
+                                  kDebugMode ? _enterDeveloperMode : null,
                             )
                           : OnboardingScreen(prefs: widget.prefs))
                     : MainScreen(
@@ -195,6 +218,13 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                             _bleRepository is SimulatedBleRepositoryImpl
                             ? _exitDeveloperMode
                             : null,
+                        // On a real clock, expose Unpair; in the simulator the
+                        // "Disconnect Simulated Clock" row takes its place, so
+                        // only one of the two ever shows.
+                        onUnpairDevice:
+                            _bleRepository is SimulatedBleRepositoryImpl
+                            ? null
+                            : _unpairDevice,
                       ),
                 debugShowCheckedModeBanner: false,
               );
