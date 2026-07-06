@@ -234,10 +234,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
             child: selected
-                ? const Icon(
+                ? Icon(
                     Icons.check_rounded,
                     size: 18,
-                    color: Colors.white,
+                    // Contrast the check against the swatch itself so it stays
+                    // visible on light accents (Mint/Sky) and dark ones alike.
+                    color:
+                        ThemeData.estimateBrightnessForColor(color) ==
+                            Brightness.dark
+                        ? Colors.white
+                        : Colors.black,
                   )
                 : null,
           ),

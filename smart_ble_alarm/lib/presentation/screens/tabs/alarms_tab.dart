@@ -9,17 +9,13 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/glass.dart';
 import '../../../core/theme/wake_widgets.dart';
 import '../../../core/utils/alarm_time_utils.dart';
-import '../../../data/datasources/secure_key_datasource.dart';
 import '../../../domain/entities/alarm.dart';
-import '../../../domain/usecases/print_qr_code.dart';
 import '../../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../blocs/ble_bloc/ble_bloc.dart';
 import '../../blocs/ble_bloc/ble_state.dart';
 import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../../blocs/timer_cubit/countdown_timer_cubit.dart';
 import '../alarm_edit_screen.dart';
-import '../item_scan_screen.dart';
-import '../scanner_screen.dart';
 
 /// The Alarms tab, ported from the native WakeGuard AlarmsView: the alarm
 /// list (AlarmRow-style cards) followed by a live "Timers" section
@@ -123,7 +119,9 @@ class AlarmsTab extends StatelessWidget {
   }
 
   /// One alarm in the native AlarmRow layout: big time + label with the
-  /// enable switch, a row of status pills, then a text-button action row.
+  /// enable switch and a row of status pills. Swipe left to delete (with
+  /// undo); tap to edit. Dismissal-by-scan lives on the Home ring screen, so
+  /// the card itself stays uncluttered.
   Widget _buildAlarmCard(
     BuildContext context,
     Alarm alarm,
@@ -133,139 +131,116 @@ class AlarmsTab extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final nextOccurrence = AlarmTimeUtils.nextOccurrence(alarm);
 
-    return GestureDetector(
-      onTap: () => _openEditor(context, alarm),
-      child: GlassCard(
-        padding: const EdgeInsets.all(18),
-        shadows: wakeCardShadow(context),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          AlarmTimeUtils.formatTime(
-                            alarm.hour,
-                            alarm.minute,
-                            is24Hour: is24Hour,
+    return Dismissible(
+      key: ValueKey('alarm-${alarm.id}'),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) => _deleteWithUndo(context, alarm),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 26),
+        decoration: BoxDecoration(
+          color: scheme.error,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: const Icon(Icons.delete_rounded, color: Colors.white, size: 26),
+      ),
+      child: GestureDetector(
+        onTap: () => _openEditor(context, alarm),
+        child: GlassCard(
+          padding: const EdgeInsets.all(18),
+          shadows: wakeCardShadow(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            AlarmTimeUtils.formatTime(
+                              alarm.hour,
+                              alarm.minute,
+                              is24Hour: is24Hour,
+                            ),
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 38,
+                              fontWeight: FontWeight.w800,
+                              color: alarm.isActive
+                                  ? scheme.onSurface
+                                  : scheme.onSurfaceVariant,
+                            ),
                           ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          alarm.displayName,
                           maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 38,
-                            fontWeight: FontWeight.w800,
-                            color: alarm.isActive
-                                ? scheme.onSurface
-                                : scheme.onSurfaceVariant,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        alarm.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Switch(
-                  value: alarm.isActive,
-                  onChanged: (val) {
-                    final updatedMask = val
-                        ? (alarm.dayMask | 0x80)
-                        : (alarm.dayMask & 0x7F);
-                    context.read<AlarmBloc>().add(
-                      AddOrUpdateAlarmEvent(
-                        alarm.copyWith(dayMask: updatedMask),
-                        _connectedDevice(context),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                WakeStatusPill(
-                  label: AlarmTimeUtils.formatDays(alarm.dayMask),
-                  icon: Icons.repeat_rounded,
-                  color: scheme.onSurfaceVariant,
-                ),
-                if (nextOccurrence != null)
-                  WakeStatusPill(
-                    label: AlarmTimeUtils.formatNextOccurrence(
-                      nextOccurrence,
-                      DateTime.now(),
+                      ],
                     ),
-                    icon: Icons.event_rounded,
+                  ),
+                  const SizedBox(width: 12),
+                  Switch(
+                    value: alarm.isActive,
+                    onChanged: (val) {
+                      final updatedMask = val
+                          ? (alarm.dayMask | 0x80)
+                          : (alarm.dayMask & 0x7F);
+                      context.read<AlarmBloc>().add(
+                        AddOrUpdateAlarmEvent(
+                          alarm.copyWith(dayMask: updatedMask),
+                          _connectedDevice(context),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  WakeStatusPill(
+                    label: AlarmTimeUtils.formatDays(alarm.dayMask),
+                    icon: Icons.repeat_rounded,
                     color: scheme.onSurfaceVariant,
                   ),
-                if (alarm.qrRequired)
-                  WakeStatusPill(
-                    label: 'Challenge',
-                    icon: Icons.center_focus_strong_rounded,
-                    color: scheme.primary,
-                  ),
-                _syncPill(context, syncStatus),
-                if (alarm.snoozeEnabled)
-                  WakeStatusPill(
-                    label: alarm.snoozeMaxCount > 0
-                        ? 'Snooze ×${alarm.snoozeMaxCount}'
-                        : 'Snooze on',
-                    icon: Icons.snooze_rounded,
-                    color: scheme.onSurfaceVariant,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 2,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                _actionButton(
-                  context,
-                  'Edit',
-                  () => _openEditor(context, alarm),
-                ),
-                _actionButton(
-                  context,
-                  'Duplicate',
-                  () => _duplicateAlarm(context, alarm),
-                ),
-                if (alarm.qrRequired && !alarm.usesItemScan)
-                  _actionButton(
-                    context,
-                    'Print Code',
-                    () => _printCode(context, alarm),
-                  ),
-                _actionButton(
-                  context,
-                  'Delete',
-                  () => _deleteWithUndo(context, alarm),
-                  color: scheme.error,
-                ),
-                if (alarm.qrRequired) _dismissButton(context, alarm),
-              ],
-            ),
-          ],
+                  if (nextOccurrence != null)
+                    WakeStatusPill(
+                      label: AlarmTimeUtils.formatNextOccurrence(
+                        nextOccurrence,
+                        DateTime.now(),
+                      ),
+                      icon: Icons.event_rounded,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  _syncPill(context, syncStatus),
+                  if (alarm.snoozeEnabled)
+                    WakeStatusPill(
+                      label: alarm.snoozeMaxCount > 0
+                          ? 'Snooze ×${alarm.snoozeMaxCount}'
+                          : 'Snooze on',
+                      icon: Icons.snooze_rounded,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -297,64 +272,6 @@ class AlarmsTab extends StatelessWidget {
     return WakeStatusPill(label: label, icon: icon, color: color);
   }
 
-  Widget _actionButton(
-    BuildContext context,
-    String label,
-    VoidCallback onPressed, {
-    Color? color,
-  }) {
-    return TextButton(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        foregroundColor: color ?? Theme.of(context).colorScheme.primary,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-      ),
-    );
-  }
-
-  /// The dismissal entry point for challenge-protected alarms: item-scan
-  /// alarms open the item camera, QR alarms open the code scanner.
-  Widget _dismissButton(BuildContext context, Alarm alarm) {
-    final scheme = Theme.of(context).colorScheme;
-    return TextButton.icon(
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => alarm.usesItemScan
-                ? ItemScanScreen(alarm: alarm)
-                : ScannerScreen(alarmId: alarm.id),
-          ),
-        );
-      },
-      icon: Icon(
-        alarm.usesItemScan
-            ? Icons.center_focus_strong
-            : Icons.qr_code_scanner,
-        size: 16,
-      ),
-      label: Text(
-        alarm.usesItemScan ? 'Scan Item' : 'Dismiss',
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-      ),
-      style: TextButton.styleFrom(
-        foregroundColor: scheme.error,
-        backgroundColor: scheme.error.withValues(alpha: 0.12),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-      ),
-    );
-  }
-
   void _openEditor(BuildContext context, Alarm alarm) {
     Navigator.push(
       context,
@@ -362,47 +279,9 @@ class AlarmsTab extends StatelessWidget {
     );
   }
 
-  Future<void> _printCode(BuildContext context, Alarm alarm) async {
-    final usecase = PrintQrCodeUseCase(
-      secureKeyDatasource: SecureKeyDatasource(),
-    );
-    try {
-      await usecase.execute(alarm.id);
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Unable to open the print dialog.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
-  }
-
   BluetoothDevice? _connectedDevice(BuildContext context) {
     final bleState = context.read<BleConnectionBloc>().state;
     return bleState is BleConnected ? bleState.device : null;
-  }
-
-  void _duplicateAlarm(BuildContext context, Alarm alarm) {
-    final alarmBloc = context.read<AlarmBloc>();
-    if (alarmBloc.state.alarms.length >= AlarmBloc.maxHardwareAlarms) {
-      _showError(
-        context,
-        'The clock supports up to 5 alarms. Delete one before duplicating.',
-      );
-      return;
-    }
-
-    final duplicate = alarm.copyWith(id: _nextAlarmId(alarmBloc.state.alarms));
-    // A duplicate is a new alarm with a new id → give it its own dismissal key.
-    alarmBloc.add(
-      AddOrUpdateAlarmEvent(
-        duplicate,
-        _connectedDevice(context),
-        rotateSecureKey: true,
-      ),
-    );
   }
 
   void _deleteWithUndo(BuildContext context, Alarm alarm) {
@@ -436,22 +315,6 @@ class AlarmsTab extends StatelessWidget {
     );
   }
 
-  int _nextAlarmId(List<Alarm> alarms) {
-    final usedIds = alarms.map((alarm) => alarm.id).toSet();
-    for (var id = 1; id <= 255; id++) {
-      if (!usedIds.contains(id)) return id;
-    }
-    throw StateError('No alarm identifiers are available.');
-  }
-
-  void _showError(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Theme.of(context).colorScheme.error,
-      ),
-    );
-  }
 }
 
 /// Live view of app-side timer mirrors, rendered below the alarm list.
@@ -591,7 +454,7 @@ class _TimersSectionState extends State<_TimersSection> {
             ),
           ),
           IconButton(
-            tooltip: done ? 'Dismiss' : 'Clear',
+            tooltip: 'Clear from list',
             icon: Icon(Icons.close_rounded, color: accent),
             onPressed: () {
               HapticFeedback.selectionClick();

@@ -72,16 +72,16 @@ class _HomeTabState extends State<HomeTab> {
           children: [
             _buildHeader(),
             const SizedBox(height: 20),
-            _buildConnectionOverview(),
-            const SizedBox(height: 24),
-            _buildMetricsGrid(),
-            const SizedBox(height: 24),
-            // The next-alarm card carries its own bottom spacing so nothing is
-            // left behind when it collapses (no active alarms).
+            // The next-alarm card leads the dashboard; it carries its own
+            // bottom spacing and collapses to nothing when no alarm is active.
             _PeriodicRebuild(
               interval: const Duration(seconds: 30),
               builder: (context) => _buildNextAlarm(context),
             ),
+            _buildConnectionOverview(),
+            const SizedBox(height: 24),
+            _buildMetricsGrid(),
+            const SizedBox(height: 24),
             _buildQuickActions(),
             const SizedBox(height: 24),
             _buildRecentActivity(),
@@ -186,8 +186,6 @@ class _HomeTabState extends State<HomeTab> {
 
         // Reconnect on demand when disconnected; the clock keeps running
         // alarms on its own, so we don't hold the connection continuously.
-        // A GestureDetector (not GlassCard.onTap) keeps the Sync Now button
-        // inside the card tappable — nested tappables win the gesture arena.
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: reconnectable
@@ -236,15 +234,6 @@ class _HomeTabState extends State<HomeTab> {
                       color: pillColor,
                     ),
                   ],
-                ),
-                _buildSyncSummary(),
-                const SizedBox(height: 16),
-                WakeSecondaryButton(
-                  label: 'Sync Now',
-                  icon: Icons.sync_rounded,
-                  // Always enabled: when disconnected the flow explains why it
-                  // can't sync instead of silently disabling the button.
-                  onPressed: () => _syncNow(context),
                 ),
               ],
             ),
@@ -654,16 +643,6 @@ class _HomeTabState extends State<HomeTab> {
             icon: Icons.timer_rounded,
             onTap: () => _showTimerDialog(context),
           ),
-          WakeQuickAction(
-            title: 'Wake Challenge',
-            icon: Icons.center_focus_strong_rounded,
-            onTap: () => _openScanner(context),
-          ),
-          WakeQuickAction(
-            title: 'Sync Now',
-            icon: Icons.sync_rounded,
-            onTap: () => _syncNow(context),
-          ),
         ],
       ),
     );
@@ -697,19 +676,14 @@ class _HomeTabState extends State<HomeTab> {
                     icon: Icons.sync_rounded,
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Divider(
-                    height: 1,
-                    color: Theme.of(context).dividerColor,
-                  ),
-                ),
-                WakeActivityRow(
-                  title: 'Wake challenge',
-                  subtitle:
-                      'Verify ${settingsState.wakeObjectName} when a '
-                      'protected alarm rings',
-                  icon: Icons.center_focus_strong_rounded,
+                _buildSyncSummary(),
+                const SizedBox(height: 16),
+                WakeSecondaryButton(
+                  label: 'Sync Now',
+                  icon: Icons.sync_rounded,
+                  // Always enabled: when disconnected the flow explains why it
+                  // can't sync instead of silently disabling the button.
+                  onPressed: () => _syncNow(context),
                 ),
               ],
             );
@@ -875,88 +849,6 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  void _openScanner(BuildContext context) {
-    final alarmState = context.read<AlarmBloc>().state;
-    final ringingAlarmId = alarmState.ringingAlarmId;
-    if (ringingAlarmId != null) {
-      final ringing = alarmState.alarms.where((a) => a.id == ringingAlarmId);
-      if (ringing.isNotEmpty) {
-        _pushDismissal(context, ringing.first);
-        return;
-      }
-    }
-
-    final taskAlarms = alarmState.alarms
-        .where((alarm) => alarm.qrRequired)
-        .toList();
-    if (taskAlarms.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('No challenge-protected alarms are available.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-      return;
-    }
-
-    if (taskAlarms.length == 1) {
-      _pushDismissal(context, taskAlarms.first);
-      return;
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'Choose alarm',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-              ),
-              for (final alarm in taskAlarms)
-                ListTile(
-                  leading: Icon(
-                    alarm.usesItemScan
-                        ? Icons.center_focus_strong
-                        : Icons.qr_code,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  title: Text(
-                    AlarmTimeUtils.formatTime(
-                      alarm.hour,
-                      alarm.minute,
-                      is24Hour: context.read<SettingsBloc>().state.is24HourTime,
-                    ),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  subtitle: Text(
-                    AlarmTimeUtils.formatDays(alarm.dayMask),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _pushDismissal(context, alarm);
-                  },
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 }
 
 /// Rebuilds [builder] on a fixed [interval] so relative time labels (the live

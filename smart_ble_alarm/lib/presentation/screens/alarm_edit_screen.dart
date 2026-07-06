@@ -6,7 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/theme/glass.dart';
 import '../../core/theme/wake_widgets.dart';
 import '../../data/datasources/image_recognition_datasource.dart';
+import '../../data/datasources/secure_key_datasource.dart';
 import '../../domain/entities/alarm.dart';
+import '../../domain/usecases/print_qr_code.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
@@ -380,6 +382,16 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                     const SizedBox(height: 16),
                     _buildItemCapture(),
                   ],
+                  // Existing QR alarms can reprint their backup code here; new
+                  // alarms get a code once saved. Item-scan alarms have no code.
+                  if (!_useItemScan && widget.alarm != null) ...[
+                    const SizedBox(height: 16),
+                    WakeSecondaryButton(
+                      label: 'Print backup code',
+                      icon: Icons.print_rounded,
+                      onPressed: () => _printCode(widget.alarm!.id),
+                    ),
+                  ],
                 ],
               ],
             ),
@@ -411,7 +423,7 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Let this alarm be snoozed before the scan task',
+                            'Let this alarm be snoozed before the wake challenge',
                             style: TextStyle(
                               fontSize: 13,
                               color: Theme.of(
@@ -556,6 +568,23 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _printCode(int alarmId) async {
+    final usecase = PrintQrCodeUseCase(
+      secureKeyDatasource: SecureKeyDatasource(),
+    );
+    try {
+      await usecase.execute(alarmId);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Unable to open the print dialog.'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 
   Widget _methodChip(
