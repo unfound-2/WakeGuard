@@ -4,6 +4,8 @@ Implement the application's UI according to the following specification unless a
 
 The application should feel like a polished, premium Android application with smooth animations, clean spacing, rounded components, and a modern appearance.
 
+WakeGuard's primary dismissal experience is the AI-powered Wake Challenge: users choose a morning-routine object away from bed during onboarding or in Settings, then verify that object before a protected alarm can be dismissed. Secure printed codes may remain as a backup path while the AI verifier is being integrated, but QR should not be presented as the primary product experience.
+
 ## Global Design Requirements
 
 * Use the **Inter** font throughout the entire application.
@@ -47,7 +49,7 @@ Provide quick action cards for:
 * Create Alarm
 * Start Timer
 * Sync Now
-* Scan QR Code
+* Wake Challenge
 * Clock Controls
 
 Recent activity (optional):
@@ -131,10 +133,10 @@ Sections:
 * Sync Settings
 * Last Sync Status
 
-## QR Code
+## Backup Code
 
-* Generate QR
-* View QR
+* Generate backup code
+* View backup code
 * Regenerate
 * Print Instructions
 
@@ -156,6 +158,13 @@ Organize settings into categories.
 
 * **24-Hour (Military Time) Toggle** *(Required)*
 * Automatic Time Sync
+
+## Wake Challenge
+
+* Wake object selection
+* Custom object entry
+* Verification method status
+* Default challenge requirement for new alarms
 
 ## Notifications
 

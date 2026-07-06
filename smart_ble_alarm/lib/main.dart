@@ -14,6 +14,7 @@ import 'presentation/blocs/settings_bloc/settings_bloc.dart';
 import 'presentation/blocs/timer_cubit/countdown_timer_cubit.dart';
 import 'presentation/blocs/history_cubit/dismissal_history_cubit.dart';
 import 'presentation/screens/main_screen.dart';
+import 'presentation/screens/onboarding_screen.dart';
 import 'presentation/screens/setup_screen.dart';
 
 void main() async {
@@ -164,10 +165,12 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                 ),
                 themeMode: themeMode,
                 home: _rememberedDeviceId == null
-                    ? SetupScreen(
-                        prefs: widget.prefs,
-                        onEnterDeveloperMode: _enterDeveloperMode,
-                      )
+                    ? ((widget.prefs.getBool('hasSeenOnboarding') ?? false)
+                          ? SetupScreen(
+                              prefs: widget.prefs,
+                              onEnterDeveloperMode: _enterDeveloperMode,
+                            )
+                          : OnboardingScreen(prefs: widget.prefs))
                     : const MainScreen(),
                 debugShowCheckedModeBanner: false,
               );

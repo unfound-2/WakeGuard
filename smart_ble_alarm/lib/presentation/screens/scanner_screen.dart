@@ -8,6 +8,7 @@ import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/history_cubit/dismissal_history_cubit.dart';
+import '../blocs/settings_bloc/settings_bloc.dart';
 import '../../domain/repositories/ble_repository.dart';
 
 class ScannerScreen extends StatefulWidget {
@@ -46,7 +47,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text(
-                  'QR is valid, but the clock is not connected.',
+                  'Challenge code is valid, but the clock is not connected.',
                 ),
                 backgroundColor: Theme.of(context).colorScheme.error,
               ),
@@ -69,7 +70,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text(
-                  'QR is valid, but dismissal could not be sent to the clock.',
+                  'Challenge verified, but dismissal could not be sent to the clock.',
                 ),
                 backgroundColor: Theme.of(context).colorScheme.error,
               ),
@@ -90,7 +91,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
           HapticFeedback.heavyImpact();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Alarm Dismissed!'),
+              content: Text('Wake challenge complete. Alarm dismissed.'),
               backgroundColor: AppColors.success,
             ),
           );
@@ -100,7 +101,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Invalid QR Code'),
+              content: Text('Object or backup code not recognized.'),
               backgroundColor: AppColors.error,
             ),
           );
@@ -119,7 +120,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Scan QR to Dismiss',
+          'Verify Wake Object',
           style: TextStyle(color: Colors.white),
         ),
         backgroundColor: Colors.transparent,
@@ -153,6 +154,47 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 color: Colors.white.withValues(alpha: 0.9),
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 24,
+            child: SafeArea(
+              child: BlocBuilder<SettingsBloc, SettingsState>(
+                builder: (context, settingsState) {
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: AppColors.primaryOrange.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Verify ${settingsState.wakeObjectName}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'AI photo verification is the WakeGuard target flow. This build currently scans the secure backup code to complete dismissal.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Color(0xFFE5E7EB)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
           ),

@@ -1,6 +1,8 @@
 # WakeGuard
 
-Flutter companion app for an autonomous HM-10 BLE alarm clock. The app pairs with the clock, syncs time, alarms, timers, and display settings, and prints QR dismissal codes that must be scanned to silence protected alarms.
+Flutter companion app for a WakeGuard Bluetooth alarm clock. The app pairs with the clock, syncs time, alarms, timers, and display settings, and requires a wake challenge before protected alarms can be dismissed.
+
+The product target is AI-powered object verification: users choose a morning-routine object away from bed, then verify that object from the app when the alarm rings. This build includes the object-selection UX and secure backup-code dismissal path; the production AI verifier still needs to be connected before QR fallback can be removed.
 
 ## Getting Started
 

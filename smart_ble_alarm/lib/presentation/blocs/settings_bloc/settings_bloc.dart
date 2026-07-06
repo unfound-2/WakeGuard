@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/challenge/wake_challenge_options.dart';
 
 // --- Events ---
 abstract class SettingsEvent extends Equatable {
@@ -23,6 +24,13 @@ class ToggleDefaultQrRequiredEvent extends SettingsEvent {
   const ToggleDefaultQrRequiredEvent(this.required);
   @override
   List<Object?> get props => [required];
+}
+
+class UpdateWakeObjectEvent extends SettingsEvent {
+  final String objectName;
+  const UpdateWakeObjectEvent(this.objectName);
+  @override
+  List<Object?> get props => [objectName];
 }
 
 class UpdateThemeEvent extends SettingsEvent {
@@ -73,6 +81,7 @@ class UpdateClockConfigEvent extends SettingsEvent {
 class SettingsState extends Equatable {
   final bool is24HourTime;
   final bool defaultQrRequired;
+  final String wakeObjectName;
   final String themeString;
   final String accentColorString;
   final bool animationsEnabled;
@@ -87,6 +96,7 @@ class SettingsState extends Equatable {
   const SettingsState({
     this.is24HourTime = false, // false = 12h default
     this.defaultQrRequired = true,
+    this.wakeObjectName = WakeChallengeOptions.defaultObject,
     this.themeString = 'Dark',
     this.accentColorString = 'Neon Orange',
     this.animationsEnabled = true,
@@ -100,6 +110,7 @@ class SettingsState extends Equatable {
   SettingsState copyWith({
     bool? is24HourTime,
     bool? defaultQrRequired,
+    String? wakeObjectName,
     String? themeString,
     String? accentColorString,
     bool? animationsEnabled,
@@ -112,6 +123,7 @@ class SettingsState extends Equatable {
     return SettingsState(
       is24HourTime: is24HourTime ?? this.is24HourTime,
       defaultQrRequired: defaultQrRequired ?? this.defaultQrRequired,
+      wakeObjectName: wakeObjectName ?? this.wakeObjectName,
       themeString: themeString ?? this.themeString,
       accentColorString: accentColorString ?? this.accentColorString,
       animationsEnabled: animationsEnabled ?? this.animationsEnabled,
@@ -127,6 +139,7 @@ class SettingsState extends Equatable {
   List<Object?> get props => [
     is24HourTime,
     defaultQrRequired,
+    wakeObjectName,
     themeString,
     accentColorString,
     animationsEnabled,
@@ -146,6 +159,7 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<LoadSettingsEvent>(_onLoadSettings);
     on<Toggle24HourTimeEvent>(_onToggle24HourTime);
     on<ToggleDefaultQrRequiredEvent>(_onToggleDefaultQrRequired);
+    on<UpdateWakeObjectEvent>(_onUpdateWakeObject);
     on<UpdateThemeEvent>(_onUpdateTheme);
     on<UpdateAccentColorEvent>(_onUpdateAccentColor);
     on<ToggleAnimationsEvent>(_onToggleAnimations);
@@ -157,6 +171,9 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
       state.copyWith(
         is24HourTime: prefs.getBool('is24HourTime') ?? false,
         defaultQrRequired: prefs.getBool('defaultQrRequired') ?? true,
+        wakeObjectName:
+            prefs.getString('wakeObjectName') ??
+            WakeChallengeOptions.defaultObject,
         themeString: prefs.getString('themeString') ?? 'Dark',
         accentColorString:
             prefs.getString('accentColorString') ?? 'Neon Orange',
@@ -184,6 +201,15 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
   ) async {
     await prefs.setBool('defaultQrRequired', event.required);
     emit(state.copyWith(defaultQrRequired: event.required));
+  }
+
+  void _onUpdateWakeObject(
+    UpdateWakeObjectEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    final objectName = WakeChallengeOptions.cleanObjectName(event.objectName);
+    await prefs.setString('wakeObjectName', objectName);
+    emit(state.copyWith(wakeObjectName: objectName));
   }
 
   void _onUpdateTheme(
