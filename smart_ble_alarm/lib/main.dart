@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_colors.dart';
+import 'core/notifications/notification_service.dart';
 import 'data/repositories/ble_repository_impl.dart';
 import 'data/repositories/simulated_ble_repository_impl.dart';
 import 'domain/repositories/ble_repository.dart';
@@ -27,11 +28,20 @@ void main() async {
     bleRepository = BleRepositoryImpl();
   }
 
+  // Phone-side backup alarm scheduler. Initialised before the app so the first
+  // LoadAlarmsEvent can schedule notifications immediately; a failure here must
+  // not stop the app from launching, hence the try/catch.
+  final notificationService = NotificationService();
+  try {
+    await notificationService.init();
+  } catch (_) {}
+
   runApp(
     SmartAlarmApp(
       prefs: prefs,
       rememberedDeviceId: rememberedDeviceId,
       bleRepository: bleRepository,
+      notificationService: notificationService,
     ),
   );
 }
@@ -40,12 +50,14 @@ class SmartAlarmApp extends StatefulWidget {
   final SharedPreferences prefs;
   final String? rememberedDeviceId;
   final BleRepository bleRepository;
+  final NotificationService notificationService;
 
   const SmartAlarmApp({
     super.key,
     required this.prefs,
     this.rememberedDeviceId,
     required this.bleRepository,
+    required this.notificationService,
   });
 
   @override
@@ -104,6 +116,7 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
               create: (context) => AlarmBloc(
                 bleRepository: context.read<BleRepository>(),
                 prefs: widget.prefs,
+                notificationService: widget.notificationService,
               )..add(LoadAlarmsEvent()),
             ),
             BlocProvider<CountdownTimerCubit>(

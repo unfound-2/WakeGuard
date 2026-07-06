@@ -48,6 +48,7 @@ class HomeTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 _buildConnectionStatus(),
+                _buildSyncSummary(),
                 const SizedBox(height: 16),
                 _PeriodicRebuild(
                   interval: const Duration(seconds: 30),
@@ -205,6 +206,62 @@ class HomeTab extends StatelessWidget {
                       blurRadius: 8,
                     ),
                   ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Compact "N of M alarms synced" line under the connection card, so the user
+  /// can trust at a glance that the clock actually has their alarms — the app is
+  /// usually disconnected (on-demand BLE), so "saved" and "live" can diverge.
+  Widget _buildSyncSummary() {
+    return BlocBuilder<AlarmBloc, AlarmState>(
+      builder: (context, state) {
+        final total = state.alarms.length;
+        if (total == 0) return const SizedBox.shrink();
+
+        final synced = state.syncedAlarmCount;
+        final failed = state.alarms
+            .where((a) => state.syncStatusFor(a) == AlarmSyncStatus.failed)
+            .length;
+        final allSynced = synced == total;
+
+        final Color color;
+        final IconData icon;
+        final String text;
+        if (allSynced) {
+          color = AppColors.success;
+          icon = Icons.cloud_done_rounded;
+          text = total == 1 ? 'Alarm synced to clock' : 'All $total alarms synced';
+        } else {
+          color = failed > 0
+              ? Theme.of(context).colorScheme.error
+              : const Color(0xFFF59E0B);
+          icon = failed > 0
+              ? Icons.error_outline_rounded
+              : Icons.cloud_upload_rounded;
+          final pending = total - synced;
+          text = failed > 0
+              ? '$synced of $total synced · $failed failed'
+              : '$synced of $total synced · $pending pending';
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 10, left: 4),
+          child: Row(
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Text(
+                text,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
                 ),
               ),
             ],

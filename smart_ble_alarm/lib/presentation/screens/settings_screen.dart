@@ -11,6 +11,7 @@ import '../blocs/ble_bloc/ble_state.dart';
 import '../../domain/repositories/ble_repository.dart';
 import 'setup_screen.dart';
 import 'dismissal_history_screen.dart';
+import 'clock_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final bool isTab;
@@ -36,6 +37,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _buildSectionHeader('CLOCK'),
+                  _buildCard([
+                    _buildListTile(
+                      title: 'Clock Settings',
+                      subtitle: 'Display, sleep mode & Bluetooth',
+                      icon: Icons.watch,
+                      trailing: Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ClockSettingsScreen(),
+                        ),
+                      ),
+                    ),
+                  ]),
+
                   _buildSectionHeader('APPEARANCE'),
                   _buildCard([
                     _buildListTile(

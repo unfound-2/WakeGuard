@@ -6,11 +6,13 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
   flutter_blue_plus_winrt
   flutter_secure_storage_windows
+  flutter_timezone
   permission_handler_windows
   printing
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  flutter_local_notifications_windows
   jni
 )
 

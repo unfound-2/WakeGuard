@@ -4,10 +4,28 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/ble/ble_payloads.dart';
+import '../../../core/notifications/notification_service.dart';
 import '../../../data/datasources/secure_key_datasource.dart';
 import '../../../domain/entities/alarm.dart';
 import '../../../domain/repositories/ble_repository.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+
+/// Whether an alarm's current settings are actually programmed into the clock.
+///
+/// With on-demand BLE the app is often disconnected while alarms are edited, so
+/// "saved locally" and "live on the hardware" can diverge — this makes that
+/// state visible instead of silently pretending every alarm will ring.
+enum AlarmSyncStatus {
+  /// The clock has confirmed this alarm's current settings.
+  synced,
+
+  /// Saved on the phone but not yet uploaded (never synced, edited since the
+  /// last sync, or waiting for the clock to reconnect).
+  pending,
+
+  /// The most recent attempt to write this alarm to the clock failed.
+  failed,
+}
 
 // --- Events ---
 abstract class AlarmEvent extends Equatable {
@@ -65,6 +83,17 @@ class SetRingingAlarmEvent extends AlarmEvent {
 class AlarmState extends Equatable {
   final List<Alarm> alarms;
   final Set<int> pendingDeleteIds;
+
+  /// Per-alarm fingerprint (id → [Alarm.syncHash]) of the settings the clock has
+  /// most recently confirmed. Compared against each alarm's current hash to tell
+  /// whether it is live on the hardware. Persisted across launches.
+  final Map<int, int> syncedHashes;
+
+  /// Alarm ids whose most recent write to the clock failed. Transient (not
+  /// persisted): a failure is meaningful only for the current session; on the
+  /// next launch such an alarm simply reads as [AlarmSyncStatus.pending].
+  final Set<int> syncFailedIds;
+
   final int driftPpm;
   final bool isLoading;
   final int? ringingAlarmId;
@@ -73,6 +102,8 @@ class AlarmState extends Equatable {
   const AlarmState({
     this.alarms = const [],
     this.pendingDeleteIds = const {},
+    this.syncedHashes = const {},
+    this.syncFailedIds = const {},
     this.driftPpm = 0,
     this.isLoading = false,
     this.ringingAlarmId,
@@ -82,6 +113,8 @@ class AlarmState extends Equatable {
   AlarmState copyWith({
     List<Alarm>? alarms,
     Set<int>? pendingDeleteIds,
+    Map<int, int>? syncedHashes,
+    Set<int>? syncFailedIds,
     int? driftPpm,
     bool? isLoading,
     int? ringingAlarmId,
@@ -92,6 +125,8 @@ class AlarmState extends Equatable {
     return AlarmState(
       alarms: alarms ?? this.alarms,
       pendingDeleteIds: pendingDeleteIds ?? this.pendingDeleteIds,
+      syncedHashes: syncedHashes ?? this.syncedHashes,
+      syncFailedIds: syncFailedIds ?? this.syncFailedIds,
       driftPpm: driftPpm ?? this.driftPpm,
       isLoading: isLoading ?? this.isLoading,
       ringingAlarmId: clearRingingAlarm
@@ -101,10 +136,23 @@ class AlarmState extends Equatable {
     );
   }
 
+  /// How [alarm]'s current settings compare to what the clock has confirmed.
+  AlarmSyncStatus syncStatusFor(Alarm alarm) {
+    if (syncFailedIds.contains(alarm.id)) return AlarmSyncStatus.failed;
+    if (syncedHashes[alarm.id] == alarm.syncHash) return AlarmSyncStatus.synced;
+    return AlarmSyncStatus.pending;
+  }
+
+  /// Count of alarms whose settings are confirmed live on the clock.
+  int get syncedAlarmCount =>
+      alarms.where((a) => syncStatusFor(a) == AlarmSyncStatus.synced).length;
+
   @override
   List<Object?> get props => [
     alarms,
     pendingDeleteIds,
+    syncedHashes,
+    syncFailedIds,
     driftPpm,
     isLoading,
     ringingAlarmId,
@@ -118,8 +166,20 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
   final SharedPreferences prefs;
   final SecureKeyDatasource secureKeyDatasource;
 
+  /// Optional phone-side backup scheduler. Injected in production; left null in
+  /// tests so the bloc has no platform-channel dependency. Every change to the
+  /// alarm set is mirrored to it so a dead/out-of-range clock still wakes the
+  /// user.
+  final NotificationService? notificationService;
+
   static const String _alarmsKey = 'saved_alarms';
   static const String _pendingDeletesKey = 'pending_alarm_deletes';
+  static const String _syncedHashesKey = 'synced_alarm_hashes';
+
+  /// Version of the persisted [_alarmsKey] envelope. Bump when the stored shape
+  /// changes so [_onLoadAlarms] can migrate older data instead of dropping it.
+  /// v1 = a bare JSON list (no envelope); v2 = `{"version":2,"alarms":[...]}`.
+  static const int _alarmsSchemaVersion = 2;
 
   /// The hardware clock only has room for this many alarm slots.
   static const int maxHardwareAlarms = 5;
@@ -128,6 +188,7 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     required this.bleRepository,
     required this.prefs,
     SecureKeyDatasource? secureKeyDatasource,
+    this.notificationService,
   }) : secureKeyDatasource = secureKeyDatasource ?? SecureKeyDatasource(),
        super(const AlarmState()) {
     on<LoadAlarmsEvent>(_onLoadAlarms);
@@ -141,15 +202,10 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     emit(state.copyWith(isLoading: true));
     var loadedAlarms = const <Alarm>[];
     var pendingDeleteIds = const <int>{};
+    var syncedHashes = const <int, int>{};
 
     try {
-      final alarmsJson = prefs.getString(_alarmsKey);
-      if (alarmsJson != null) {
-        final List<dynamic> decoded = jsonDecode(alarmsJson);
-        loadedAlarms = decoded
-            .map((e) => Alarm.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
+      loadedAlarms = parseStoredAlarms(prefs.getString(_alarmsKey));
     } catch (_) {}
 
     try {
@@ -160,13 +216,25 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
       }
     } catch (_) {}
 
+    try {
+      final syncedHashesJson = prefs.getString(_syncedHashesKey);
+      if (syncedHashesJson != null) {
+        final Map<String, dynamic> decoded = jsonDecode(syncedHashesJson);
+        syncedHashes = decoded.map(
+          (id, hash) => MapEntry(int.parse(id), hash as int),
+        );
+      }
+    } catch (_) {}
+
     emit(
       state.copyWith(
         alarms: loadedAlarms,
         pendingDeleteIds: pendingDeleteIds,
+        syncedHashes: syncedHashes,
         isLoading: false,
       ),
     );
+    _rescheduleBackupAlarms(loadedAlarms);
   }
 
   void _onSetRingingAlarm(
@@ -226,14 +294,33 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     );
     await _saveAlarms(updatedAlarms);
     await _savePendingDeletes(pendingDeletes);
+    // Refresh the phone-side backup regardless of clock connectivity — this is
+    // the fallback for exactly the case where the clock isn't reachable.
+    _rescheduleBackupAlarms(updatedAlarms);
 
     if (event.connectedDevice == null) return;
 
     try {
       await _sendAlarmToDevice(event.connectedDevice!, event.alarm);
-    } catch (_) {
+      // Confirmed on the hardware: record the fingerprint and clear any prior
+      // failure so the UI can show this alarm as live on the clock.
+      final syncedHashes = Map<int, int>.from(state.syncedHashes)
+        ..[event.alarm.id] = event.alarm.syncHash;
+      final syncFailedIds = Set<int>.from(state.syncFailedIds)
+        ..remove(event.alarm.id);
+      await _saveSyncedHashes(syncedHashes);
       emit(
         state.copyWith(
+          syncedHashes: syncedHashes,
+          syncFailedIds: syncFailedIds,
+        ),
+      );
+    } catch (_) {
+      final syncFailedIds = Set<int>.from(state.syncFailedIds)
+        ..add(event.alarm.id);
+      emit(
+        state.copyWith(
+          syncFailedIds: syncFailedIds,
           syncError:
               'Alarm saved locally, but it could not be synced to the clock.',
         ),
@@ -246,15 +333,27 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
         .where((a) => a.id != event.alarmId)
         .toList();
     final pendingDeletes = Set<int>.from(state.pendingDeleteIds);
+    // Drop any sync-status tracking for the removed id so a future alarm that
+    // reuses it can't inherit a stale "synced" fingerprint.
+    final syncedHashes = Map<int, int>.from(state.syncedHashes)
+      ..remove(event.alarmId);
+    final syncFailedIds = Set<int>.from(state.syncFailedIds)
+      ..remove(event.alarmId);
 
     emit(
       state.copyWith(
         alarms: updatedAlarms,
         pendingDeleteIds: pendingDeletes,
+        syncedHashes: syncedHashes,
+        syncFailedIds: syncFailedIds,
         clearSyncError: true,
       ),
     );
     await _saveAlarms(updatedAlarms);
+    await _saveSyncedHashes(syncedHashes);
+    // Drop this alarm's phone-side backup so a deleted alarm can't keep ringing
+    // the notification fallback.
+    _rescheduleBackupAlarms(updatedAlarms);
     // NOTE: the secure key is intentionally *kept* here so a delete can be
     // undone (or re-printed) with the same QR still valid. A genuinely new
     // alarm that later reuses this id rotates the key instead — see
@@ -318,17 +417,37 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
       final alarmsToSync = (List<Alarm>.from(
         state.alarms,
       )..sort((a, b) => a.id.compareTo(b.id))).take(maxHardwareAlarms);
+      final syncedHashes = Map<int, int>.from(state.syncedHashes);
+      final syncFailedIds = Set<int>.from(state.syncFailedIds);
       for (final alarm in alarmsToSync) {
         try {
           await _sendAlarmToDevice(event.connectedDevice, alarm);
+          // Confirmed live on the hardware — fingerprint it and clear failure.
+          syncedHashes[alarm.id] = alarm.syncHash;
+          syncFailedIds.remove(alarm.id);
         } catch (_) {
+          syncFailedIds.add(alarm.id);
           const message = 'Some alarms could not be synced to the clock.';
-          emit(state.copyWith(syncError: message));
+          await _saveSyncedHashes(syncedHashes);
+          emit(
+            state.copyWith(
+              syncedHashes: syncedHashes,
+              syncFailedIds: syncFailedIds,
+              syncError: message,
+            ),
+          );
           _completeSync(event.completer, error: Exception(message));
           return;
         }
       }
 
+      await _saveSyncedHashes(syncedHashes);
+      emit(
+        state.copyWith(
+          syncedHashes: syncedHashes,
+          syncFailedIds: syncFailedIds,
+        ),
+      );
       _completeSync(event.completer);
     } catch (e) {
       // A failure here (e.g. emit after the bloc is closed mid-sync) must still
@@ -350,13 +469,55 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
   }
 
   Future<void> _saveAlarms(List<Alarm> alarms) {
-    final encoded = jsonEncode(alarms.map((a) => a.toJson()).toList());
-    return prefs.setString(_alarmsKey, encoded);
+    return prefs.setString(_alarmsKey, encodeStoredAlarms(alarms));
+  }
+
+  /// Serialise alarms into the versioned storage envelope so future shape
+  /// changes can be migrated on load rather than silently dropped. Exposed for
+  /// tests. See [_alarmsSchemaVersion].
+  static String encodeStoredAlarms(List<Alarm> alarms) => jsonEncode({
+    'version': _alarmsSchemaVersion,
+    'alarms': alarms.map((a) => a.toJson()).toList(),
+  });
+
+  /// Parse the persisted alarms string, accepting both the legacy v1 shape (a
+  /// bare list, no envelope) and the v2 `{"version":n,"alarms":[...]}` envelope.
+  /// Unknown future versions still read the alarms array; additive field
+  /// changes are absorbed by the per-field defaults in [Alarm.fromJson].
+  /// Exposed for tests.
+  static List<Alarm> parseStoredAlarms(String? alarmsJson) {
+    if (alarmsJson == null) return const [];
+    final decoded = jsonDecode(alarmsJson);
+    final List<dynamic> rawAlarms;
+    if (decoded is List) {
+      rawAlarms = decoded;
+    } else if (decoded is Map<String, dynamic>) {
+      rawAlarms = (decoded['alarms'] as List<dynamic>?) ?? const [];
+    } else {
+      rawAlarms = const [];
+    }
+    return rawAlarms
+        .map((e) => Alarm.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Mirror the current alarm set to the phone-side backup scheduler. Fire and
+  /// forget: the notification is a safety net, never the source of truth, so a
+  /// failure here must not block a save or a BLE write.
+  void _rescheduleBackupAlarms(List<Alarm> alarms) {
+    final pending = notificationService?.syncAlarms(alarms);
+    if (pending != null) unawaited(pending);
   }
 
   Future<void> _savePendingDeletes(Set<int> pendingDeletes) {
     final ids = pendingDeletes.toList()..sort();
     return prefs.setString(_pendingDeletesKey, jsonEncode(ids));
+  }
+
+  Future<void> _saveSyncedHashes(Map<int, int> syncedHashes) {
+    // JSON object keys must be strings; ids are parsed back on load.
+    final encoded = syncedHashes.map((id, hash) => MapEntry('$id', hash));
+    return prefs.setString(_syncedHashesKey, jsonEncode(encoded));
   }
 
   void _completeSync(Completer<void>? completer, {Object? error}) {

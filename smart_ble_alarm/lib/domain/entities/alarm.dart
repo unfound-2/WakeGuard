@@ -53,6 +53,18 @@ class Alarm extends Equatable {
   String get displayName =>
       (label != null && label!.trim().isNotEmpty) ? label!.trim() : 'Alarm';
 
+  /// Deterministic fingerprint of the fields that actually reach the clock over
+  /// BLE — the fixed 0x02 payload: hour, minute, dayMask and the secured-dismiss
+  /// flag. App-side-only metadata (label, item target, snooze) is deliberately
+  /// excluded so cosmetic edits don't mark an alarm as out-of-sync. Computed by
+  /// hand (not [Object.hash], whose seed isn't stable across runs) so it can be
+  /// persisted and compared later to detect changes the clock hasn't received.
+  int get syncHash =>
+      ((hour & 0xFF) << 24) |
+      ((minute & 0xFF) << 16) |
+      ((dayMask & 0xFF) << 8) |
+      (qrRequired ? 1 : 0);
+
   bool isDayActive(int dayIndex) {
     // dayIndex: 0 = Sun, 1 = Mon, ..., 6 = Sat
     return (dayMask & (1 << dayIndex)) != 0;

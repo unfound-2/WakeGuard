@@ -33,6 +33,13 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
   String? _statusMessage;
   List<RecognizedItem> _lastDetected = const [];
 
+  /// Failed match attempts this session. On-device labelling can simply never
+  /// recognise the target (bad lighting, unusual object), which would otherwise
+  /// trap the user with a ringing clock. After [_maxAttemptsBeforeFallback]
+  /// misses we surface a manual dismissal escape hatch.
+  int _failedAttempts = 0;
+  static const int _maxAttemptsBeforeFallback = 3;
+
   @override
   void dispose() {
     _recognizer.close();
@@ -65,6 +72,7 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
       if (!matched) {
         setState(() {
           _isProcessing = false;
+          _failedAttempts++;
           _lastDetected = detected.take(3).toList();
           _statusMessage = detected.isEmpty
               ? "Couldn't recognise anything. Try again with better lighting."
@@ -229,6 +237,21 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
                             ),
                           ),
                       ],
+                    ),
+                  ),
+                if (_failedAttempts >= _maxAttemptsBeforeFallback)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextButton.icon(
+                      onPressed: _isProcessing ? null : _dismiss,
+                      icon: const Icon(Icons.lock_open_rounded, size: 18),
+                      label: const Text(
+                        "Can't scan the item? Dismiss anyway",
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 SizedBox(

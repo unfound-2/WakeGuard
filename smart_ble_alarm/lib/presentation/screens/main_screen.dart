@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as dart_ui;
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/ble/ble_payloads.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
@@ -11,7 +12,7 @@ import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../domain/repositories/ble_repository.dart';
 import 'tabs/home_tab.dart';
 import 'tabs/alarms_tab.dart';
-import 'tabs/clock_tab.dart';
+import 'tabs/timers_tab.dart';
 import 'settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -28,7 +29,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final List<Widget> _tabs = [
     const HomeTab(),
     const AlarmsTab(),
-    const ClockTab(),
+    const TimersTab(),
     const SettingsScreen(isTab: true),
   ];
 
@@ -129,6 +130,117 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// Top-of-screen connectivity banner. Surfaces three distinct states the app
+  /// previously collapsed into a bare "Disconnected":
+  ///  - the Bluetooth radio itself is off / unauthorised (the app can't scan at
+  ///    all — [adapterState] was exposed by the repository but never consumed);
+  ///  - a reconnect is actively in progress;
+  ///  - disconnected, now with a one-tap Retry instead of a dead end.
+  Widget _buildConnectivityBanner() {
+    return BlocBuilder<BleConnectionBloc, BleState>(
+      builder: (context, bleState) {
+        return StreamBuilder<BluetoothAdapterState>(
+          stream: context.read<BleRepository>().adapterState,
+          builder: (context, snapshot) {
+            final theme = Theme.of(context);
+            final adapter = snapshot.data;
+            final radioUnavailable =
+                adapter == BluetoothAdapterState.off ||
+                adapter == BluetoothAdapterState.unauthorized ||
+                adapter == BluetoothAdapterState.unavailable;
+
+            if (radioUnavailable) {
+              final unauthorized =
+                  adapter == BluetoothAdapterState.unauthorized;
+              return _statusBanner(
+                context,
+                color: theme.colorScheme.error,
+                icon: Icons.bluetooth_disabled_rounded,
+                message: unauthorized
+                    ? 'Bluetooth access is off — enable it in Settings to reach your clock.'
+                    : 'Bluetooth is off — turn it on to reach your clock.',
+              );
+            }
+
+            if (bleState is BleConnecting || bleState is BleScanning) {
+              return _statusBanner(
+                context,
+                color: theme.colorScheme.primary,
+                icon: Icons.bluetooth_searching_rounded,
+                message: 'Reconnecting to your clock…',
+              );
+            }
+
+            if (bleState is BleDisconnected) {
+              return _statusBanner(
+                context,
+                color: theme.colorScheme.error,
+                icon: Icons.cloud_off_rounded,
+                message:
+                    'Disconnected — changes save locally and sync when the clock reconnects.',
+                action: TextButton(
+                  onPressed: () => context.read<BleConnectionBloc>().add(
+                    ReconnectEvent(),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    'Retry',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              );
+            }
+
+            return const SizedBox.shrink();
+          },
+        );
+      },
+    );
+  }
+
+  Widget _statusBanner(
+    BuildContext context, {
+    required Color color,
+    required IconData icon,
+    required String message,
+    Widget? action,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 10,
+        bottom: 10,
+        left: 16,
+        right: 16,
+      ),
+      color: color.withValues(alpha: 0.14),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          if (action != null) ...[const SizedBox(width: 4), action],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiBlocListener(
@@ -199,47 +311,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         extendBody: true,
         body: Column(
           children: [
-            BlocBuilder<BleConnectionBloc, BleState>(
-              builder: (context, state) {
-                if (state is BleDisconnected) {
-                  return Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.only(
-                      top: MediaQuery.of(context).padding.top + 10,
-                      bottom: 10,
-                      left: 16,
-                      right: 16,
-                    ),
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.error.withValues(alpha: 0.14),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.cloud_off_rounded,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Disconnected — changes save locally and sync when the clock reconnects.',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
+            _buildConnectivityBanner(),
             // IndexedStack keeps every tab mounted so scroll position and
             // in-tab state (e.g. live timer tickers) survive tab switches.
             Expanded(
@@ -307,9 +379,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       label: 'Alarms',
                     ),
                     NavigationDestination(
-                      icon: Icon(Icons.watch_outlined),
-                      selectedIcon: Icon(Icons.watch),
-                      label: 'Clock',
+                      icon: Icon(Icons.timer_outlined),
+                      selectedIcon: Icon(Icons.timer),
+                      label: 'Timers',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.settings_outlined),
