@@ -1,4 +1,4 @@
-# WakeGuard — Smart BLE Alarm
+# WakeGuard — Smart Alarm
 
 WakeGuard is a companion mobile app for an **autonomous Bluetooth alarm clock** built to help people
 with narcolepsy (and other conditions that make waking difficult) actually get out of bed. Unlike a
