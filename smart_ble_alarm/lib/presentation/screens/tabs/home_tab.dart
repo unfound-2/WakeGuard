@@ -4,220 +4,260 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/ble/ble_payloads.dart';
-import '../../../core/utils/alarm_time_utils.dart';
+import '../../../core/ble/clock_sync.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/glass.dart';
+import '../../../core/theme/wake_widgets.dart';
+import '../../../core/utils/alarm_time_utils.dart';
+import '../../../domain/entities/alarm.dart';
 import '../../../domain/repositories/ble_repository.dart';
-import '../../blocs/ble_bloc/ble_bloc.dart';
-import '../../blocs/ble_bloc/ble_state.dart';
-import '../../blocs/ble_bloc/ble_event.dart';
 import '../../blocs/alarm_bloc/alarm_bloc.dart';
+import '../../blocs/ble_bloc/ble_bloc.dart';
+import '../../blocs/ble_bloc/ble_event.dart';
+import '../../blocs/ble_bloc/ble_state.dart';
 import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../../blocs/timer_cubit/countdown_timer_cubit.dart';
 import '../alarm_edit_screen.dart';
-import '../scanner_screen.dart';
 import '../item_scan_screen.dart';
-import '../../../domain/entities/alarm.dart';
+import '../scanner_screen.dart';
 
-class HomeTab extends StatelessWidget {
+/// The Home dashboard, matching the native WakeGuard HomeView: live header,
+/// connection overview, metric tiles, the next-alarm / ringing card, quick
+/// actions, and recent activity — all on the shared liquid-glass system.
+class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
+
+  @override
+  State<HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<HomeTab> {
+  static const List<String> _weekdays = [
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'Sun',
+  ];
+  static const List<String> _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    loadLastClockSync();
+  }
 
   @override
   Widget build(BuildContext context) {
     return GlassBackground(
       child: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Dashboard',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                Text(
-                  'Your clock, at a glance',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _buildConnectionStatus(),
-                _buildSyncSummary(),
-                const SizedBox(height: 16),
-                _PeriodicRebuild(
-                  interval: const Duration(seconds: 30),
-                  builder: (context) => _buildNextAlarm(context),
-                ),
-                const SizedBox(height: 28),
-                _sectionLabel(context, 'QUICK ACTIONS'),
-                const SizedBox(height: 14),
-                GridView.count(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  // Make cards taller as text scales up so large accessibility
-                  // font sizes don't overflow the card content.
-                  childAspectRatio:
-                      (1.1 / MediaQuery.textScalerOf(context).scale(1.0)).clamp(
-                        0.62,
-                        1.2,
-                      ),
-                  children: [
-                    _buildActionCard(
-                      context,
-                      'Create Alarm',
-                      Icons.add_alarm_rounded,
-                      () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AlarmEditScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildActionCard(
-                      context,
-                      'Start Timer',
-                      Icons.timer_rounded,
-                      () => _showTimerDialog(context),
-                    ),
-                    _buildActionCard(
-                      context,
-                      'Sync Now',
-                      Icons.sync_rounded,
-                      () => _syncNow(context),
-                    ),
-                    _buildActionCard(
-                      context,
-                      'Scan QR',
-                      Icons.qr_code_scanner_rounded,
-                      () => _openScanner(context),
-                    ),
-                  ],
-                ),
-              ],
+        bottom: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 130),
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 20),
+            _buildConnectionOverview(),
+            const SizedBox(height: 24),
+            _buildMetricsGrid(),
+            const SizedBox(height: 24),
+            // The next-alarm card carries its own bottom spacing so nothing is
+            // left behind when it collapses (no active alarms).
+            _PeriodicRebuild(
+              interval: const Duration(seconds: 30),
+              builder: (context) => _buildNextAlarm(context),
             ),
-          ),
+            _buildQuickActions(),
+            const SizedBox(height: 24),
+            _buildRecentActivity(),
+          ],
         ),
       ),
     );
   }
 
-  Widget _sectionLabel(BuildContext context, String text) {
-    return Text(
-      text,
-      style: TextStyle(
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 2,
-        fontSize: 12,
-      ),
+  // ---------------------------------------------------------------------
+  // Header
+  // ---------------------------------------------------------------------
+
+  String _dateTimeLine(bool is24Hour) {
+    final now = DateTime.now();
+    final time = AlarmTimeUtils.formatTime(
+      now.hour,
+      now.minute,
+      is24Hour: is24Hour,
+    );
+    return '${_weekdays[now.weekday - 1]}, '
+        '${_months[now.month - 1]} ${now.day} · $time';
+  }
+
+  Widget _buildHeader() {
+    return BlocBuilder<SettingsBloc, SettingsState>(
+      buildWhen: (prev, curr) => prev.is24HourTime != curr.is24HourTime,
+      builder: (context, settings) {
+        return Row(
+          children: [
+            const WakeLogoMark(size: 52),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _PeriodicRebuild(
+                    interval: const Duration(seconds: 15),
+                    builder: (context) => Text(
+                      _dateTimeLine(settings.is24HourTime),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Your clock at a glance',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildConnectionStatus() {
+  // ---------------------------------------------------------------------
+  // Connection overview
+  // ---------------------------------------------------------------------
+
+  Widget _buildConnectionOverview() {
     return BlocBuilder<BleConnectionBloc, BleState>(
       builder: (context, bleState) {
-        String deviceName = 'No Device Connected';
-        String status = 'Tap to Pair';
-        Color color = Theme.of(context).colorScheme.error;
-        IconData icon = Icons.bluetooth_disabled_rounded;
-
         final bool busy = bleState is BleConnecting || bleState is BleScanning;
+
+        final String title;
+        final String detail;
+        final String pillLabel;
+        final IconData pillIcon;
+        final Color pillColor;
         if (bleState is BleConnected) {
-          deviceName = bleState.device.platformName.isEmpty
-              ? 'Smart Clock'
+          title = bleState.device.platformName.isEmpty
+              ? 'WakeGuard Clock'
               : bleState.device.platformName;
-          status = 'Connected';
-          color = AppColors.success;
-          icon = Icons.bluetooth_connected_rounded;
+          detail = 'The hardware link is active.';
+          pillLabel = 'Connected';
+          pillIcon = Icons.check_circle_rounded;
+          pillColor = AppColors.success;
         } else if (busy) {
-          status = 'Connecting…';
-          color = Theme.of(context).colorScheme.primary;
-          icon = Icons.bluetooth_searching_rounded;
+          title = 'WakeGuard Clock';
+          detail = 'Re-establishing the link to your clock…';
+          pillLabel = 'Connecting';
+          pillIcon = Icons.sync_rounded;
+          pillColor = Theme.of(context).colorScheme.primary;
         } else {
-          // Disconnected: the app only holds the link while open, so offer a
-          // one-tap reconnect to the remembered clock.
-          status = 'Tap to connect';
+          title = 'Clock not connected';
+          detail = 'Tap to connect to your remembered clock.';
+          pillLabel = 'Disconnected';
+          pillIcon = Icons.error_outline_rounded;
+          pillColor = AppColors.warning;
         }
 
-        return GlassCard(
-          // Reconnect on demand when disconnected; the clock keeps running
-          // alarms on its own, so we don't hold the connection continuously.
-          onTap: (bleState is BleConnected || busy)
-              ? null
-              : () => context.read<BleConnectionBloc>().add(ReconnectEvent()),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.14),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: color.withValues(alpha: 0.4)),
-                ),
-                child: Icon(icon, color: color),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
+        final reconnectable = bleState is! BleConnected && !busy;
+
+        // Reconnect on demand when disconnected; the clock keeps running
+        // alarms on its own, so we don't hold the connection continuously.
+        // A GestureDetector (not GlassCard.onTap) keeps the Sync Now button
+        // inside the card tappable — nested tappables win the gesture arena.
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: reconnectable
+              ? () => context.read<BleConnectionBloc>().add(ReconnectEvent())
+              : null,
+          child: GlassCard(
+            padding: const EdgeInsets.all(18),
+            shadows: wakeCardShadow(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      deviceName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 17,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            detail,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Text(
-                      status,
-                      style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
+                    const SizedBox(width: 10),
+                    WakeStatusPill(
+                      label: pillLabel,
+                      icon: pillIcon,
+                      color: pillColor,
                     ),
                   ],
                 ),
-              ),
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.6),
-                      blurRadius: 8,
-                    ),
-                  ],
+                _buildSyncSummary(),
+                const SizedBox(height: 16),
+                WakeSecondaryButton(
+                  label: 'Sync Now',
+                  icon: Icons.sync_rounded,
+                  // Always enabled: when disconnected the flow explains why it
+                  // can't sync instead of silently disabling the button.
+                  onPressed: () => _syncNow(context),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  /// Compact "N of M alarms synced" line under the connection card, so the user
-  /// can trust at a glance that the clock actually has their alarms — the app is
-  /// usually disconnected (on-demand BLE), so "saved" and "live" can diverge.
+  /// Compact "N of M alarms synced" line inside the connection card, so the
+  /// user can trust at a glance that the clock actually has their alarms — the
+  /// app is usually disconnected (on-demand BLE), so "saved" and "live" can
+  /// diverge.
   Widget _buildSyncSummary() {
     return BlocBuilder<AlarmBloc, AlarmState>(
       builder: (context, state) {
@@ -236,11 +276,13 @@ class HomeTab extends StatelessWidget {
         if (allSynced) {
           color = AppColors.success;
           icon = Icons.cloud_done_rounded;
-          text = total == 1 ? 'Alarm synced to clock' : 'All $total alarms synced';
+          text = total == 1
+              ? 'Alarm synced to clock'
+              : 'All $total alarms synced';
         } else {
           color = failed > 0
               ? Theme.of(context).colorScheme.error
-              : const Color(0xFFF59E0B);
+              : AppColors.warning;
           icon = failed > 0
               ? Icons.error_outline_rounded
               : Icons.cloud_upload_rounded;
@@ -251,17 +293,19 @@ class HomeTab extends StatelessWidget {
         }
 
         return Padding(
-          padding: const EdgeInsets.only(top: 10, left: 4),
+          padding: const EdgeInsets.only(top: 12),
           child: Row(
             children: [
               Icon(icon, size: 15, color: color),
               const SizedBox(width: 6),
-              Text(
-                text,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12.5,
+              Expanded(
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
             ],
@@ -271,36 +315,141 @@ class HomeTab extends StatelessWidget {
     );
   }
 
+  // ---------------------------------------------------------------------
+  // Metrics grid
+  // ---------------------------------------------------------------------
+
+  /// The soonest upcoming occurrence across all active alarms, or null.
+  ({Alarm alarm, DateTime occurrence})? _nextAlarmEntry(
+    AlarmState state,
+    DateTime now,
+  ) {
+    final entries =
+        state.alarms
+            .where((a) => a.isActive)
+            .map(
+              (a) => (
+                alarm: a,
+                occurrence: AlarmTimeUtils.nextOccurrence(a, from: now),
+              ),
+            )
+            .where((e) => e.occurrence != null)
+            .map((e) => (alarm: e.alarm, occurrence: e.occurrence!))
+            .toList()
+          ..sort((a, b) => a.occurrence.compareTo(b.occurrence));
+    if (entries.isEmpty) return null;
+    return entries.first;
+  }
+
+  String _formatRemaining(Duration remaining) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final h = remaining.inHours;
+    final m = remaining.inMinutes.remainder(60);
+    final s = remaining.inSeconds.remainder(60);
+    return h > 0 ? '$h:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
+  }
+
+  Widget _buildMetricsGrid() {
+    return _PeriodicRebuild(
+      interval: const Duration(seconds: 30),
+      builder: (context) {
+        final now = DateTime.now();
+        return GridView.count(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          // Make tiles taller as text scales up so large accessibility font
+          // sizes don't overflow the tile content.
+          childAspectRatio:
+              (1.25 / MediaQuery.textScalerOf(context).scale(1.0)).clamp(
+                0.68,
+                1.3,
+              ),
+          children: [
+            BlocBuilder<BleConnectionBloc, BleState>(
+              builder: (context, bleState) => WakeMetricTile(
+                title: 'Device',
+                value: bleState is BleConnected
+                    ? (bleState.device.platformName.isEmpty
+                          ? 'WakeGuard Clock'
+                          : bleState.device.platformName)
+                    : 'Not paired',
+                icon: Icons.alarm_rounded,
+              ),
+            ),
+            BlocBuilder<AlarmBloc, AlarmState>(
+              builder: (context, alarmState) =>
+                  BlocBuilder<SettingsBloc, SettingsState>(
+                    buildWhen: (prev, curr) =>
+                        prev.is24HourTime != curr.is24HourTime,
+                    builder: (context, settings) {
+                      final entry = _nextAlarmEntry(alarmState, now);
+                      return WakeMetricTile(
+                        title: 'Next Alarm',
+                        value: entry == null
+                            ? 'None'
+                            : AlarmTimeUtils.formatTime(
+                                entry.alarm.hour,
+                                entry.alarm.minute,
+                                is24Hour: settings.is24HourTime,
+                              ),
+                        icon: Icons.notifications_active_rounded,
+                      );
+                    },
+                  ),
+            ),
+            BlocBuilder<CountdownTimerCubit, List<CountdownTimer>>(
+              builder: (context, timers) {
+                final running = timers.where((t) => !t.isDone(now)).toList()
+                  ..sort((a, b) => a.endEpochMs.compareTo(b.endEpochMs));
+                return WakeMetricTile(
+                  title: 'Active Timer',
+                  value: running.isEmpty
+                      ? 'None'
+                      : _formatRemaining(running.first.remaining(now)),
+                  icon: Icons.timer_rounded,
+                );
+              },
+            ),
+            BlocBuilder<SettingsBloc, SettingsState>(
+              buildWhen: (prev, curr) => prev.is24HourTime != curr.is24HourTime,
+              builder: (context, settings) =>
+                  ValueListenableBuilder<DateTime?>(
+                    valueListenable: lastClockSync,
+                    builder: (context, lastSync, _) => WakeMetricTile(
+                      title: 'Last Sync',
+                      value: lastSync == null
+                          ? 'Never'
+                          : AlarmTimeUtils.formatSyncTimestamp(
+                              lastSync,
+                              is24Hour: settings.is24HourTime,
+                            ),
+                      icon: Icons.history_rounded,
+                    ),
+                  ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Next alarm / ringing card
+  // ---------------------------------------------------------------------
+
   Widget _buildNextAlarm(BuildContext context) {
     return BlocBuilder<AlarmBloc, AlarmState>(
       builder: (context, alarmState) {
-        if (alarmState.alarms.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        final activeAlarms = alarmState.alarms
-            .where((a) => a.isActive)
-            .toList();
-        if (activeAlarms.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
         final now = DateTime.now();
-        final occurrences =
-            activeAlarms
-                .map(
-                  (alarm) => (
-                    alarm: alarm,
-                    occurrence: AlarmTimeUtils.nextOccurrence(alarm, from: now),
-                  ),
-                )
-                .where((entry) => entry.occurrence != null)
-                .toList()
-              ..sort((a, b) => a.occurrence!.compareTo(b.occurrence!));
+        final entry = _nextAlarmEntry(alarmState, now);
+        if (entry == null) return const SizedBox.shrink();
 
-        if (occurrences.isEmpty) return const SizedBox.shrink();
-        final activeNextAlarm = occurrences.first.alarm;
-        final nextOccurrence = occurrences.first.occurrence!;
+        final activeNextAlarm = entry.alarm;
+        final nextOccurrence = entry.occurrence;
         final isRinging = alarmState.ringingAlarmId == activeNextAlarm.id;
 
         return BlocBuilder<SettingsBloc, SettingsState>(
@@ -314,124 +463,153 @@ class HomeTab extends StatelessWidget {
             final error = Theme.of(context).colorScheme.error;
             final usesItem = activeNextAlarm.usesItemScan;
 
-            return GlassCard(
-              padding: const EdgeInsets.all(22),
-              tintColor: isRinging ? error : primary,
-              borderColor: isRinging ? error : primary.withValues(alpha: 0.4),
-              borderWidth: isRinging ? 2 : 1,
-              shadows: [
-                BoxShadow(
-                  color: (isRinging ? error : primary).withValues(alpha: 0.22),
-                  blurRadius: 24,
-                  spreadRadius: -4,
-                ),
-              ],
-              child: isRinging
-                  ? Column(
-                      children: [
-                        Text(
-                          'ALARM RINGING',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: error,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 2,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          timeStr,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            fontSize: 44,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: error,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            icon: Icon(
-                              usesItem
-                                  ? Icons.center_focus_strong_rounded
-                                  : Icons.qr_code_scanner_rounded,
-                              size: 26,
-                            ),
-                            label: Text(
-                              usesItem
-                                  ? 'SCAN ITEM TO DISMISS'
-                                  : 'SCAN QR TO DISMISS',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            onPressed: () =>
-                                _pushDismissal(context, activeNextAlarm),
-                          ),
-                        ),
-                      ],
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'NEXT ALARM',
-                              style: TextStyle(
-                                color: primary,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.5,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              timeStr,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurface,
-                                fontSize: 34,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              AlarmTimeUtils.formatNextOccurrence(
-                                nextOccurrence,
-                                now,
-                              ),
-                              style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: primary.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.alarm_on_rounded,
-                            color: primary,
-                            size: 34,
-                          ),
-                        ),
-                      ],
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: GlassCard(
+                padding: const EdgeInsets.all(22),
+                tintColor: isRinging ? error : primary,
+                borderColor: isRinging
+                    ? error
+                    : primary.withValues(alpha: 0.4),
+                borderWidth: isRinging ? 2 : 1,
+                shadows: [
+                  BoxShadow(
+                    color: (isRinging ? error : primary).withValues(
+                      alpha: 0.22,
                     ),
+                    blurRadius: 24,
+                    spreadRadius: -4,
+                  ),
+                ],
+                child: isRinging
+                    ? Column(
+                        children: [
+                          Text(
+                            'ALARM RINGING',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: error,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 2,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            timeStr,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
+                              fontSize: 44,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            usesItem
+                                ? 'Verify ${activeNextAlarm.itemLabel!} '
+                                      'to dismiss.'
+                                : 'Scan the printed backup code to dismiss.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: error,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                              ),
+                              icon: Icon(
+                                usesItem
+                                    ? Icons.center_focus_strong_rounded
+                                    : Icons.qr_code_scanner_rounded,
+                                size: 26,
+                              ),
+                              label: Text(
+                                usesItem
+                                    ? 'VERIFY WAKE OBJECT'
+                                    : 'SCAN BACKUP CODE',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              onPressed: () =>
+                                  _pushDismissal(context, activeNextAlarm),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'NEXT ALARM',
+                                style: TextStyle(
+                                  color: primary,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.5,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                timeStr,
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  fontSize: 34,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                AlarmTimeUtils.formatNextOccurrence(
+                                  nextOccurrence,
+                                  now,
+                                ),
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: primary.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.alarm_on_rounded,
+                              color: primary,
+                              size: 34,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
             );
           },
         );
@@ -439,45 +617,111 @@ class HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildActionCard(
-    BuildContext context,
-    String title,
-    IconData icon,
-    VoidCallback onTap,
-  ) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return GlassCard(
-      onTap: onTap,
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
+  // ---------------------------------------------------------------------
+  // Quick actions
+  // ---------------------------------------------------------------------
+
+  Widget _buildQuickActions() {
+    return WakeSection(
+      title: 'Quick Actions',
+      child: GridView.count(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        // Make tiles taller as text scales up so large accessibility font
+        // sizes don't overflow the tile content.
+        childAspectRatio:
+            (1.3 / MediaQuery.textScalerOf(context).scale(1.0)).clamp(
+              0.66,
+              1.32,
+            ),
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: primary.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: primary, size: 26),
+          WakeQuickAction(
+            title: 'Create Alarm',
+            icon: Icons.add_alarm_rounded,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AlarmEditScreen()),
+              );
+            },
           ),
-          const SizedBox(height: 10),
-          Flexible(
-            child: Text(
-              title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface,
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-              ),
-            ),
+          WakeQuickAction(
+            title: 'Start Timer',
+            icon: Icons.timer_rounded,
+            onTap: () => _showTimerDialog(context),
+          ),
+          WakeQuickAction(
+            title: 'Wake Challenge',
+            icon: Icons.center_focus_strong_rounded,
+            onTap: () => _openScanner(context),
+          ),
+          WakeQuickAction(
+            title: 'Sync Now',
+            icon: Icons.sync_rounded,
+            onTap: () => _syncNow(context),
           ),
         ],
       ),
     );
   }
+
+  // ---------------------------------------------------------------------
+  // Recent activity
+  // ---------------------------------------------------------------------
+
+  Widget _buildRecentActivity() {
+    return WakeSection(
+      title: 'Recent Activity',
+      child: GlassCard(
+        padding: const EdgeInsets.all(18),
+        shadows: wakeCardShadow(context),
+        child: BlocBuilder<SettingsBloc, SettingsState>(
+          builder: (context, settingsState) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ValueListenableBuilder<DateTime?>(
+                  valueListenable: lastClockSync,
+                  builder: (context, lastSync, _) => WakeActivityRow(
+                    title: 'Synchronization',
+                    subtitle: lastSync == null
+                        ? 'No sync completed yet'
+                        : AlarmTimeUtils.formatSyncTimestamp(
+                            lastSync,
+                            is24Hour: settingsState.is24HourTime,
+                          ),
+                    icon: Icons.sync_rounded,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(
+                    height: 1,
+                    color: Theme.of(context).dividerColor,
+                  ),
+                ),
+                WakeActivityRow(
+                  title: 'Wake challenge',
+                  subtitle:
+                      'Verify ${settingsState.wakeObjectName} when a '
+                      'protected alarm rings',
+                  icon: Icons.center_focus_strong_rounded,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Behaviors (unchanged flows)
+  // ---------------------------------------------------------------------
 
   void _showTimerDialog(BuildContext context) {
     Duration selectedDuration = const Duration(minutes: 15);
@@ -615,51 +859,7 @@ class HomeTab extends StatelessWidget {
       );
       return;
     }
-
-    final repo = context.read<BleRepository>();
-    final alarmBloc = context.read<AlarmBloc>();
-    final settings = context.read<SettingsBloc>().state;
-
-    try {
-      await repo.sendCommand(bleState.device, 0x04, const []);
-      await repo.sendCommand(
-        bleState.device,
-        0x01,
-        BlePayloads.currentEpochSeconds(),
-      );
-      final alarmSync = Completer<void>();
-      alarmBloc.add(
-        SyncAlarmsToDeviceEvent(bleState.device, completer: alarmSync),
-      );
-      await alarmSync.future;
-      await repo.sendCommand(
-        bleState.device,
-        0x06,
-        BlePayloads.clockSettings(
-          autoDim: settings.autoDim,
-          sleepStartHour: settings.sleepStartHour,
-          sleepStartMinute: settings.sleepStartMinute,
-          sleepEndHour: settings.sleepEndHour,
-          sleepEndMinute: settings.sleepEndMinute,
-        ),
-      );
-      await repo.sendCommand(bleState.device, 0x05, const []);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Clock sync complete.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Clock sync failed.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
+    await syncConnectedClock(context, bleState.device, showSuccess: true);
   }
 
   /// Routes to the correct dismissal flow for [alarm]: the item-recognition
@@ -692,7 +892,7 @@ class HomeTab extends StatelessWidget {
     if (taskAlarms.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('No protected alarms are available.'),
+          content: const Text('No challenge-protected alarms are available.'),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
@@ -759,8 +959,9 @@ class HomeTab extends StatelessWidget {
   }
 }
 
-/// Rebuilds [builder] on a fixed [interval] so relative time labels (e.g. the
-/// "next alarm in 7h 20m" countdown) stay current without a full screen rebuild.
+/// Rebuilds [builder] on a fixed [interval] so relative time labels (the live
+/// header clock, the "next alarm in 7h 20m" countdown, timer tiles) stay
+/// current without a full screen rebuild.
 class _PeriodicRebuild extends StatefulWidget {
   final Duration interval;
   final WidgetBuilder builder;

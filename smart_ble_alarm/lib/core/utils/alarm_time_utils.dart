@@ -79,4 +79,38 @@ class AlarmTimeUtils {
     const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return weekdays[occurrence.weekday - 1];
   }
+
+  /// Formats a past timestamp (e.g. the last successful clock sync) as
+  /// "Today 3:42 PM", "Yesterday 09:10", or "Jun 30, 3:42 PM", honouring the
+  /// app's 24-hour preference.
+  static String formatSyncTimestamp(
+    DateTime when, {
+    required bool is24Hour,
+    DateTime? now,
+  }) {
+    final reference = now ?? DateTime.now();
+    final time = formatTime(when.hour, when.minute, is24Hour: is24Hour);
+    final today = DateTime(reference.year, reference.month, reference.day);
+    final day = DateTime(when.year, when.month, when.day);
+    final days = today.difference(day).inDays;
+
+    if (days == 0) return 'Today $time';
+    if (days == 1) return 'Yesterday $time';
+
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[when.month - 1]} ${when.day}, $time';
+  }
 }

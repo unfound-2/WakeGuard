@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 import 'glass.dart';
 
-/// Builds the app's Material 3 themes for the "Liquid Glass" design language.
+/// Builds the app's Material 3 themes for the WakeGuard "Liquid Glass" design
+/// language.
 ///
 /// Both light and dark variants share the same accent and component shapes so
 /// the interface feels cohesive when the user switches modes. Screens read the
-/// translucency tokens from the attached [GlassTheme] extension.
+/// translucency tokens from the attached [GlassTheme] extension. Typography
+/// uses the platform system font (SF Pro on iOS) to match the native app.
 class AppTheme {
   AppTheme._();
 
@@ -17,6 +18,9 @@ class AppTheme {
   }) {
     final bg = isDarkMode ? AppColors.background : AppColors.lightBackground;
     final surface = isDarkMode ? AppColors.surface : AppColors.lightSurface;
+    final elevated = isDarkMode
+        ? AppColors.elevatedSurface
+        : AppColors.lightElevatedSurface;
     final textPrimary = isDarkMode
         ? AppColors.textPrimary
         : AppColors.textPrimaryLight;
@@ -52,9 +56,9 @@ class AppTheme {
       outlineVariant: stroke,
     );
 
-    final baseText = GoogleFonts.interTextTheme(
-      (isDarkMode ? ThemeData.dark() : ThemeData.light()).textTheme,
-    ).apply(bodyColor: textPrimary, displayColor: textPrimary);
+    final baseText = (isDarkMode ? ThemeData.dark() : ThemeData.light())
+        .textTheme
+        .apply(bodyColor: textPrimary, displayColor: textPrimary);
 
     return ThemeData(
       useMaterial3: true,
@@ -81,32 +85,32 @@ class AppTheme {
         elevation: 0,
         centerTitle: true,
         iconTheme: IconThemeData(color: textPrimary),
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: TextStyle(
           color: textPrimary,
-          fontSize: 20,
+          fontSize: 17,
           fontWeight: FontWeight.w700,
-          letterSpacing: 0.6,
+          letterSpacing: -0.2,
         ),
       ),
       cardTheme: CardThemeData(
-        color: surface.withValues(alpha: isDarkMode ? 0.6 : 0.8),
+        color: surface.withValues(alpha: isDarkMode ? 0.6 : 0.9),
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: isDarkMode ? const Color(0xFF1B1D2A) : Colors.white,
+        backgroundColor: elevated,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: TextStyle(
           color: textPrimary,
           fontSize: 20,
           fontWeight: FontWeight.w700,
         ),
-        contentTextStyle: GoogleFonts.inter(color: textSecondary, fontSize: 15),
+        contentTextStyle: TextStyle(color: textSecondary, fontSize: 15),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: isDarkMode ? const Color(0xFF1B1D2A) : Colors.white,
+        backgroundColor: elevated,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -149,12 +153,47 @@ class AppTheme {
           backgroundColor: accentColor,
           foregroundColor: onAccent,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+          minimumSize: const Size.fromHeight(54),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
-          textStyle: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 16,
+          ),
         ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: textPrimary,
+          side: BorderSide(color: stroke),
+          minimumSize: const Size(0, 48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: accentColor,
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
+      ),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: accentColor,
+        inactiveTrackColor: isDarkMode
+            ? Colors.white.withValues(alpha: 0.14)
+            : Colors.black.withValues(alpha: 0.10),
+        thumbColor: Colors.white,
+        overlayColor: accentColor.withValues(alpha: 0.12),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {

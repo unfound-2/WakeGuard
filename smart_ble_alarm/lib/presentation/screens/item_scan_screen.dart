@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/glass.dart';
+import '../../core/theme/wake_widgets.dart';
 import '../../data/datasources/image_recognition_datasource.dart';
 import '../../data/datasources/secure_key_datasource.dart';
 import '../../domain/entities/alarm.dart';
@@ -144,21 +145,23 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
     final target = widget.alarm.itemLabel ?? 'the item';
     final description = widget.alarm.itemDescription;
 
-    final primary = Theme.of(context).colorScheme.primary;
+    final scheme = Theme.of(context).colorScheme;
+    final primary = scheme.primary;
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(title: const Text('Scan Item to Dismiss')),
       body: GlassBackground(
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 12),
+                const Spacer(flex: 2),
                 Center(
                   child: Container(
-                    width: 112,
-                    height: 112,
+                    width: 118,
+                    height: 118,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: RadialGradient(
@@ -171,54 +174,61 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
                     ),
                     child: Icon(
                       Icons.center_focus_strong_rounded,
-                      size: 56,
+                      size: 58,
                       color: primary,
                     ),
                   ),
                 ),
                 const SizedBox(height: 24),
-                Text(
-                  'Find and photograph:',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontSize: 14,
-                    letterSpacing: 1,
+                GlassCard(
+                  borderRadius: 28,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 22,
+                  ),
+                  shadows: wakeCardShadow(context),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Find and photograph',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 13,
+                          letterSpacing: 0.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        description != null && description.trim().isNotEmpty
+                            ? description
+                            : target,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      WakeStatusPill(
+                        label: 'Recognises: $target',
+                        icon: Icons.search_rounded,
+                        color: primary,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  description != null && description.trim().isNotEmpty
-                      ? description
-                      : target,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Recognises: $target',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
+                const Spacer(flex: 3),
                 if (_statusMessage != null)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.only(bottom: 14),
                     child: Text(
                       _statusMessage!,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        fontSize: 15,
-                      ),
+                      style: TextStyle(color: scheme.onSurface, fontSize: 15),
                     ),
                   ),
                 if (_lastDetected.isNotEmpty)
@@ -230,11 +240,12 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
                       runSpacing: 8,
                       children: [
                         for (final item in _lastDetected)
-                          Chip(
-                            label: Text(
-                              '${item.label} '
-                              '(${(item.confidence * 100).round()}%)',
-                            ),
+                          WakeStatusPill(
+                            label:
+                                '${item.label} '
+                                '(${(item.confidence * 100).round()}%)',
+                            icon: Icons.label_outline_rounded,
+                            color: scheme.onSurfaceVariant,
                           ),
                       ],
                     ),
@@ -245,46 +256,18 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
                     child: TextButton.icon(
                       onPressed: _isProcessing ? null : _dismiss,
                       icon: const Icon(Icons.lock_open_rounded, size: 18),
-                      label: const Text(
-                        "Can't scan the item? Dismiss anyway",
-                      ),
+                      label: const Text("Can't scan the item? Dismiss anyway"),
                       style: TextButton.styleFrom(
-                        foregroundColor:
-                            Theme.of(context).colorScheme.onSurfaceVariant,
+                        foregroundColor: scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
-                SizedBox(
-                  height: 64,
-                  child: ElevatedButton.icon(
-                    onPressed: _isProcessing ? null : _scanItem,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    icon: _isProcessing
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.photo_camera, size: 26),
-                    label: Text(
-                      _isProcessing ? 'CHECKING…' : 'PHOTOGRAPH ITEM',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                WakePrimaryButton(
+                  label: _isProcessing ? 'Checking…' : 'Photograph Item',
+                  icon: Icons.photo_camera_rounded,
+                  onPressed: _isProcessing ? null : _scanItem,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 8),
               ],
             ),
           ),

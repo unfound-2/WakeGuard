@@ -8,6 +8,7 @@ import 'app_colors.dart';
 class GlassTheme extends ThemeExtension<GlassTheme> {
   final List<Color> backgroundGradient;
   final Color tint; // base colour of a glass fill
+  final Color elevated; // raised inner surfaces (tiles, secondary buttons)
   final Color stroke; // hairline border on glass
   final double blurSigma;
   final double fillOpacity;
@@ -16,6 +17,7 @@ class GlassTheme extends ThemeExtension<GlassTheme> {
   const GlassTheme({
     required this.backgroundGradient,
     required this.tint,
+    required this.elevated,
     required this.stroke,
     required this.blurSigma,
     required this.fillOpacity,
@@ -25,24 +27,28 @@ class GlassTheme extends ThemeExtension<GlassTheme> {
   static const GlassTheme dark = GlassTheme(
     backgroundGradient: [
       AppColors.backgroundGradientTop,
+      AppColors.backgroundGradientMid,
       AppColors.backgroundGradientBottom,
     ],
-    tint: Color(0xFFFFFFFF),
+    tint: AppColors.surface,
+    elevated: AppColors.elevatedSurface,
     stroke: AppColors.glassStrokeDark,
-    blurSigma: 22,
-    fillOpacity: 0.06,
+    blurSigma: 26,
+    fillOpacity: 0.52,
     brightness: Brightness.dark,
   );
 
   static const GlassTheme light = GlassTheme(
     backgroundGradient: [
       AppColors.lightBackgroundGradientTop,
+      AppColors.lightBackgroundGradientMid,
       AppColors.lightBackgroundGradientBottom,
     ],
     tint: Color(0xFFFFFFFF),
+    elevated: AppColors.lightElevatedSurface,
     stroke: AppColors.glassStrokeLight,
-    blurSigma: 22,
-    fillOpacity: 0.72,
+    blurSigma: 26,
+    fillOpacity: 0.78,
     brightness: Brightness.light,
   );
 
@@ -53,6 +59,7 @@ class GlassTheme extends ThemeExtension<GlassTheme> {
   GlassTheme copyWith({
     List<Color>? backgroundGradient,
     Color? tint,
+    Color? elevated,
     Color? stroke,
     double? blurSigma,
     double? fillOpacity,
@@ -61,6 +68,7 @@ class GlassTheme extends ThemeExtension<GlassTheme> {
     return GlassTheme(
       backgroundGradient: backgroundGradient ?? this.backgroundGradient,
       tint: tint ?? this.tint,
+      elevated: elevated ?? this.elevated,
       stroke: stroke ?? this.stroke,
       blurSigma: blurSigma ?? this.blurSigma,
       fillOpacity: fillOpacity ?? this.fillOpacity,
@@ -71,16 +79,20 @@ class GlassTheme extends ThemeExtension<GlassTheme> {
   @override
   GlassTheme lerp(ThemeExtension<GlassTheme>? other, double t) {
     if (other is! GlassTheme) return this;
+    final stops = backgroundGradient.length == other.backgroundGradient.length
+        ? List<Color>.generate(
+            backgroundGradient.length,
+            (i) => Color.lerp(
+              backgroundGradient[i],
+              other.backgroundGradient[i],
+              t,
+            )!,
+          )
+        : (t < 0.5 ? backgroundGradient : other.backgroundGradient);
     return GlassTheme(
-      backgroundGradient: [
-        Color.lerp(
-          backgroundGradient.first,
-          other.backgroundGradient.first,
-          t,
-        )!,
-        Color.lerp(backgroundGradient.last, other.backgroundGradient.last, t)!,
-      ],
+      backgroundGradient: stops,
       tint: Color.lerp(tint, other.tint, t)!,
+      elevated: Color.lerp(elevated, other.elevated, t)!,
       stroke: Color.lerp(stroke, other.stroke, t)!,
       blurSigma: lerpDouble(blurSigma, other.blurSigma, t)!,
       fillOpacity: lerpDouble(fillOpacity, other.fillOpacity, t)!,
@@ -89,9 +101,9 @@ class GlassTheme extends ThemeExtension<GlassTheme> {
   }
 }
 
-/// Full-bleed background: the theme gradient plus two soft accent glows that
-/// give screens depth and a sense of ambient, liquid light. Cheap to paint
-/// (no backdrop blur) so it can sit behind every screen.
+/// Full-bleed background: the diagonal charcoal-to-slate wash from the native
+/// WakeGuard app plus two soft accent glows for ambient, liquid light. Cheap to
+/// paint (no backdrop blur) so it can sit behind every screen.
 class GlassBackground extends StatelessWidget {
   final Widget child;
 
@@ -107,8 +119,8 @@ class GlassBackground extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
           colors: glass.backgroundGradient,
         ),
       ),
@@ -117,13 +129,13 @@ class GlassBackground extends StatelessWidget {
           if (showGlow) ...[
             _Glow(
               alignment: const Alignment(-1.1, -0.95),
-              color: accent.withValues(alpha: 0.22),
-              size: 340,
+              color: accent.withValues(alpha: 0.10),
+              size: 360,
             ),
             _Glow(
               alignment: const Alignment(1.2, 0.65),
-              color: accent.withValues(alpha: 0.14),
-              size: 300,
+              color: accent.withValues(alpha: 0.06),
+              size: 320,
             ),
           ],
           Positioned.fill(child: child),
@@ -181,7 +193,7 @@ class GlassCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding,
-    this.borderRadius = 26,
+    this.borderRadius = 28,
     this.onTap,
     this.borderColor,
     this.borderWidth = 1,
@@ -201,7 +213,7 @@ class GlassCard extends StatelessWidget {
           )
         : baseTint.withValues(alpha: glass.fillOpacity);
     final highlight = glass.brightness == Brightness.dark
-        ? Colors.white.withValues(alpha: 0.06)
+        ? Colors.white.withValues(alpha: 0.05)
         : Colors.white.withValues(alpha: 0.55);
 
     Widget content = ClipRRect(

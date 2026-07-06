@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/challenge/wake_challenge_options.dart';
+import '../../core/theme/glass.dart';
+import '../../core/theme/wake_widgets.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
 import 'setup_screen.dart';
 
@@ -225,16 +227,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: Theme.of(context).brightness == Brightness.dark
-                ? const [Color(0xFF0F111A), Colors.black]
-                : const [Color(0xFFF3F4F6), Colors.white],
-          ),
-        ),
+      body: GlassBackground(
         child: SafeArea(
           child: Stack(
             children: [
@@ -264,7 +257,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 10, 24, 18),
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
                     child: _OnboardingFooter(
                       selectedPage: _selectedPage,
                       pageCount: _pages.length,
@@ -312,17 +305,8 @@ class _OnboardingHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Image.asset(
-            'assets/branding/wakeguard_logo.png',
-            width: 48,
-            height: 48,
-            fit: BoxFit.cover,
-            filterQuality: FilterQuality.high,
-          ),
-        ),
-        const SizedBox(width: 12),
+        const WakeLogoMark(size: 52),
+        const SizedBox(width: 14),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,13 +315,19 @@ class _OnboardingHeader extends StatelessWidget {
                 'WakeGuard',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
               ),
+              const SizedBox(height: 2),
               Text(
                 'Step $currentPage of $pageCount',
-                style: Theme.of(context).textTheme.bodySmall,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -366,46 +356,35 @@ class _OnboardingPageView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: compactHeight ? 112 : 148,
-              height: compactHeight ? 112 : 148,
-              decoration: BoxDecoration(
-                color: colorScheme.primary.withValues(alpha: 0.14),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                page.icon,
-                color: colorScheme.primary,
-                size: compactHeight ? 54 : 72,
-              ),
-            ),
-          ),
+          Center(child: _IconHero(icon: page.icon, compact: compactHeight)),
           SizedBox(height: compactHeight ? 22 : 32),
           Text(
             page.eyebrow.toUpperCase(),
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
               color: colorScheme.primary,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.1,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(
             page.title,
-            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.w900,
-              height: 1.05,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              height: 1.08,
             ),
           ),
           const SizedBox(height: 14),
           Text(
             page.body,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(height: 1.45),
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.45,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           ...page.bullets.map(
             (bullet) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -413,16 +392,18 @@ class _OnboardingPageView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
-                    Icons.check_circle,
+                    Icons.check_circle_rounded,
                     color: colorScheme.primary,
                     size: 22,
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       bullet,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -431,52 +412,94 @@ class _OnboardingPageView extends StatelessWidget {
             ),
           ),
           if (page.showsWakeObjectPicker) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             BlocBuilder<SettingsBloc, SettingsState>(
               builder: (context, settingsState) {
-                return Material(
-                  color: colorScheme.surface.withValues(alpha: 0.74),
-                  borderRadius: BorderRadius.circular(18),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: onChooseWakeObject,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.center_focus_strong,
-                            color: colorScheme.primary,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Wake object',
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.w800),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  settingsState.wakeObjectName,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.chevron_right),
-                        ],
+                return GlassCard(
+                  borderRadius: 20,
+                  padding: const EdgeInsets.all(16),
+                  shadows: wakeCardShadow(context),
+                  onTap: onChooseWakeObject,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.center_focus_strong,
+                        color: colorScheme.primary,
                       ),
-                    ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Wake object',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              settingsState.wakeObjectName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ],
                   ),
                 );
               },
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Circular glass halo behind the page's SF-style symbol, echoing the native
+/// onboarding hero: a tinted accent disc with a hairline ring.
+class _IconHero extends StatelessWidget {
+  final IconData icon;
+  final bool compact;
+
+  const _IconHero({required this.icon, required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    final glass = GlassTheme.of(context);
+    final primary = Theme.of(context).colorScheme.primary;
+    final dimension = compact ? 112.0 : 150.0;
+    return Container(
+      width: dimension,
+      height: dimension,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [
+            primary.withValues(alpha: glass.brightness == Brightness.dark
+                ? 0.20
+                : 0.14),
+            primary.withValues(alpha: 0.02),
+          ],
+        ),
+        border: Border.all(color: glass.stroke),
+      ),
+      child: Icon(
+        icon,
+        color: primary,
+        size: compact ? 50 : 68,
       ),
     );
   }
@@ -509,7 +532,7 @@ class _OnboardingFooter extends StatelessWidget {
           children: List.generate(
             pageCount,
             (index) => AnimatedContainer(
-              duration: const Duration(milliseconds: 240),
+              duration: const Duration(milliseconds: 250),
               curve: Curves.easeOutCubic,
               margin: const EdgeInsets.symmetric(horizontal: 4),
               width: selectedPage == index ? 24 : 8,
@@ -524,30 +547,29 @@ class _OnboardingFooter extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: onContinue,
-            icon: Icon(
-              isLastPage ? Icons.arrow_forward : Icons.arrow_right_alt,
-            ),
-            label: Text(
-              isLastPage ? 'Prepare WakeGuard' : 'Continue',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size.fromHeight(54),
-              backgroundColor: colorScheme.primary,
-              foregroundColor: colorScheme.onPrimary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-            ),
-          ),
+        WakePrimaryButton(
+          label: isLastPage ? 'Prepare WakeGuard' : 'Continue',
+          icon: isLastPage
+              ? Icons.arrow_forward_rounded
+              : Icons.arrow_right_alt_rounded,
+          onPressed: onContinue,
         ),
         if (!isLastPage)
-          TextButton(onPressed: onSkip, child: const Text('Skip for now')),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: TextButton(
+              onPressed: onSkip,
+              style: TextButton.styleFrom(
+                foregroundColor: colorScheme.onSurfaceVariant,
+                minimumSize: const Size(0, 44),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: const Text('Skip for now'),
+            ),
+          ),
       ],
     );
   }
@@ -558,39 +580,42 @@ class _PreparingOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Positioned.fill(
       child: AbsorbPointer(
         child: ColoredBox(
-          color: Colors.black.withValues(alpha: 0.58),
+          color: Colors.black.withValues(alpha: 0.54),
           child: Center(
-            child: Container(
-              width: 280,
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Preparing WakeGuard',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: GlassCard(
+                padding: const EdgeInsets.all(24),
+                shadows: wakeCardShadow(context),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: colorScheme.primary),
+                    const SizedBox(height: 18),
+                    Text(
+                      'Preparing WakeGuard',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: colorScheme.onSurface,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Setting up your wake challenge and pairing flow.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      'Setting up your wake challenge and pairing flow.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

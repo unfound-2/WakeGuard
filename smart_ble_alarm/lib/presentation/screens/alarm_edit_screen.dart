@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/theme/glass.dart';
+import '../../core/theme/wake_widgets.dart';
 import '../../data/datasources/image_recognition_datasource.dart';
 import '../../domain/entities/alarm.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
@@ -114,132 +115,95 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 64,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary,
-                          shadowColor: Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.5),
-                          elevation: 10,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                        onPressed: () {
-                          final alarmBloc = context.read<AlarmBloc>();
-                          if (widget.alarm == null &&
-                              alarmBloc.state.alarms.length >=
-                                  AlarmBloc.maxHardwareAlarms) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Text(
-                                  'The clock supports up to 5 alarms. Delete one before adding another.',
-                                ),
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.error,
+                    WakePrimaryButton(
+                      label: widget.alarm == null ? 'Save Alarm' : 'Save Changes',
+                      icon: Icons.check_rounded,
+                      onPressed: () {
+                        final alarmBloc = context.read<AlarmBloc>();
+                        if (widget.alarm == null &&
+                            alarmBloc.state.alarms.length >=
+                                AlarmBloc.maxHardwareAlarms) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text(
+                                'The clock supports up to 5 alarms. Delete one before adding another.',
                               ),
-                            );
-                            return;
-                          }
-
-                          if (!_isOneTime && _selectedDaysMask == 0) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Text(
-                                  'Choose at least one repeat day, or switch back to one-time.',
-                                ),
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.error,
-                              ),
-                            );
-                            return;
-                          }
-
-                          final bool requiresItem =
-                              _requireDismissalTask && _useItemScan;
-                          if (requiresItem &&
-                              (_itemLabel == null || _itemLabel!.isEmpty)) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Text(
-                                  'Photograph the item this alarm should require first.',
-                                ),
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.error,
-                              ),
-                            );
-                            return;
-                          }
-
-                          int finalDayMask = _isOneTime ? 0 : _selectedDaysMask;
-                          final String description = _itemDescriptionController
-                              .text
-                              .trim();
-                          final String labelText = _labelController.text.trim();
-                          final alarm = Alarm(
-                            id:
-                                widget.alarm?.id ??
-                                _nextAlarmId(alarmBloc.state.alarms),
-                            hour: _selectedTime.hour,
-                            minute: _selectedTime.minute,
-                            dayMask:
-                                0x80 |
-                                finalDayMask, // Active flag (0x80) + selected days
-                            qrRequired: _requireDismissalTask,
-                            itemLabel: requiresItem ? _itemLabel : null,
-                            itemDescription:
-                                requiresItem && description.isNotEmpty
-                                ? description
-                                : null,
-                            label: labelText.isNotEmpty ? labelText : null,
-                            snoozeEnabled: _snoozeEnabled,
-                            snoozeMaxCount: _snoozeEnabled
-                                ? _snoozeMaxCount
-                                : 0,
-                          );
-
-                          HapticFeedback.mediumImpact();
-
-                          final bleState = context
-                              .read<BleConnectionBloc>()
-                              .state;
-                          BluetoothDevice? device;
-                          if (bleState is BleConnected) {
-                            device = bleState.device;
-                          }
-
-                          alarmBloc.add(
-                            AddOrUpdateAlarmEvent(
-                              alarm,
-                              device,
-                              // Fresh alarm → fresh dismissal key. Edits keep
-                              // the existing key (and any printed QR valid).
-                              rotateSecureKey: widget.alarm == null,
+                              backgroundColor: Theme.of(context).colorScheme.error,
                             ),
                           );
-                          Navigator.pop(context);
-                        },
-                        child: const FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            'SAVE ALARM',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              letterSpacing: 1.5,
+                          return;
+                        }
+
+                        if (!_isOneTime && _selectedDaysMask == 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text(
+                                'Choose at least one repeat day, or switch back to one-time.',
+                              ),
+                              backgroundColor: Theme.of(context).colorScheme.error,
                             ),
+                          );
+                          return;
+                        }
+
+                        final bool requiresItem =
+                            _requireDismissalTask && _useItemScan;
+                        if (requiresItem &&
+                            (_itemLabel == null || _itemLabel!.isEmpty)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text(
+                                'Photograph the item this alarm should require first.',
+                              ),
+                              backgroundColor: Theme.of(context).colorScheme.error,
+                            ),
+                          );
+                          return;
+                        }
+
+                        int finalDayMask = _isOneTime ? 0 : _selectedDaysMask;
+                        final String description =
+                            _itemDescriptionController.text.trim();
+                        final String labelText = _labelController.text.trim();
+                        final alarm = Alarm(
+                          id:
+                              widget.alarm?.id ??
+                              _nextAlarmId(alarmBloc.state.alarms),
+                          hour: _selectedTime.hour,
+                          minute: _selectedTime.minute,
+                          dayMask:
+                              0x80 |
+                              finalDayMask, // Active flag (0x80) + selected days
+                          qrRequired: _requireDismissalTask,
+                          itemLabel: requiresItem ? _itemLabel : null,
+                          itemDescription: requiresItem && description.isNotEmpty
+                              ? description
+                              : null,
+                          label: labelText.isNotEmpty ? labelText : null,
+                          snoozeEnabled: _snoozeEnabled,
+                          snoozeMaxCount: _snoozeEnabled ? _snoozeMaxCount : 0,
+                        );
+
+                        HapticFeedback.mediumImpact();
+
+                        final bleState =
+                            context.read<BleConnectionBloc>().state;
+                        BluetoothDevice? device;
+                        if (bleState is BleConnected) {
+                          device = bleState.device;
+                        }
+
+                        alarmBloc.add(
+                          AddOrUpdateAlarmEvent(
+                            alarm,
+                            device,
+                            // Fresh alarm → fresh dismissal key. Edits keep
+                            // the existing key (and any printed QR valid).
+                            rotateSecureKey: widget.alarm == null,
                           ),
-                        ),
-                      ),
+                        );
+                        Navigator.pop(context);
+                      },
                     ),
                     const SizedBox(height: 20),
                   ],
@@ -270,173 +234,218 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
   }
 
   Widget _buildOptions(bool animationsEnabled) {
-    return GlassCard(
-      borderRadius: 24,
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          TextField(
-            controller: _labelController,
-            textCapitalization: TextCapitalization.sentences,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-            decoration: InputDecoration(
-              labelText: 'Label (optional)',
-              hintText: 'e.g. Wake up, Meds, Work',
-              labelStyle: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              prefixIcon: Icon(
-                Icons.label_outline,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              border: const OutlineInputBorder(),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Divider(color: Theme.of(context).dividerColor, height: 1),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'One-Time Alarm',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              Switch(
-                value: _isOneTime,
-                onChanged: (val) => setState(() => _isOneTime = val),
-              ),
-            ],
-          ),
-          if (!_isOneTime) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16.0),
-              child: Divider(color: Theme.of(context).dividerColor, height: 1),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'REPEAT ON',
-                style: TextStyle(
+    return Column(
+      children: [
+        WakeSection(
+          title: 'Details',
+          child: GlassCard(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(20),
+            shadows: wakeCardShadow(context),
+            child: TextField(
+              controller: _labelController,
+              textCapitalization: TextCapitalization.sentences,
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+              decoration: InputDecoration(
+                labelText: 'Label (optional)',
+                hintText: 'e.g. Wake up, Meds, Work',
+                labelStyle: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  letterSpacing: 2,
-                  fontWeight: FontWeight.bold,
                 ),
+                prefixIcon: Icon(
+                  Icons.label_outline,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                border: const OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          ),
+        ),
+        const SizedBox(height: 24),
+        WakeSection(
+          title: 'Repeat',
+          child: GlassCard(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(20),
+            shadows: wakeCardShadow(context),
+            child: Column(
               children: [
-                _dayChip('M', 1, animationsEnabled),
-                _dayChip('T', 2, animationsEnabled),
-                _dayChip('W', 3, animationsEnabled),
-                _dayChip('T', 4, animationsEnabled),
-                _dayChip('F', 5, animationsEnabled),
-                _dayChip('S', 6, animationsEnabled),
-                _dayChip('S', 0, animationsEnabled),
-              ],
-            ),
-          ],
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Divider(color: Theme.of(context).dividerColor, height: 1),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Require Dismissal Task',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              Switch(
-                value: _requireDismissalTask,
-                onChanged: (val) => setState(() => _requireDismissalTask = val),
-              ),
-            ],
-          ),
-          if (_requireDismissalTask) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _methodChip(
-                    'QR Code',
-                    Icons.qr_code,
-                    !_useItemScan,
-                    () => setState(() => _useItemScan = false),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _methodChip(
-                    'Scan Item',
-                    Icons.center_focus_strong,
-                    _useItemScan,
-                    () => setState(() => _useItemScan = true),
-                  ),
-                ),
-              ],
-            ),
-            if (_useItemScan) ...[
-              const SizedBox(height: 16),
-              _buildItemCapture(),
-            ],
-          ],
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Divider(color: Theme.of(context).dividerColor, height: 1),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Allow Snooze',
+                      'One-Time Alarm',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Let this alarm be snoozed before the scan task',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    Switch(
+                      value: _isOneTime,
+                      onChanged: (val) => setState(() => _isOneTime = val),
                     ),
                   ],
                 ),
-              ),
-              Switch(
-                value: _snoozeEnabled,
-                onChanged: (val) {
-                  HapticFeedback.selectionClick();
-                  setState(() => _snoozeEnabled = val);
-                },
-              ),
-            ],
+                if (!_isOneTime) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    child: Divider(
+                      color: Theme.of(context).dividerColor,
+                      height: 1,
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'REPEAT ON',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _dayChip('M', 1, animationsEnabled),
+                      _dayChip('T', 2, animationsEnabled),
+                      _dayChip('W', 3, animationsEnabled),
+                      _dayChip('T', 4, animationsEnabled),
+                      _dayChip('F', 5, animationsEnabled),
+                      _dayChip('S', 6, animationsEnabled),
+                      _dayChip('S', 0, animationsEnabled),
+                    ],
+                  ),
+                ],
+              ],
+            ),
           ),
-          if (_snoozeEnabled) ...[
-            const SizedBox(height: 12),
-            _buildSnoozeCountStepper(),
-          ],
-        ],
-      ),
+        ),
+        const SizedBox(height: 24),
+        WakeSection(
+          title: 'Wake Challenge',
+          subtitle: 'Require a task before this alarm can be dismissed.',
+          child: GlassCard(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(20),
+            shadows: wakeCardShadow(context),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Require Dismissal Task',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    Switch(
+                      value: _requireDismissalTask,
+                      onChanged: (val) =>
+                          setState(() => _requireDismissalTask = val),
+                    ),
+                  ],
+                ),
+                if (_requireDismissalTask) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _methodChip(
+                          'QR Code',
+                          Icons.qr_code,
+                          !_useItemScan,
+                          () => setState(() => _useItemScan = false),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _methodChip(
+                          'Scan Item',
+                          Icons.center_focus_strong,
+                          _useItemScan,
+                          () => setState(() => _useItemScan = true),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_useItemScan) ...[
+                    const SizedBox(height: 16),
+                    _buildItemCapture(),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        WakeSection(
+          title: 'Snooze',
+          child: GlassCard(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(20),
+            shadows: wakeCardShadow(context),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Allow Snooze',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Let this alarm be snoozed before the scan task',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _snoozeEnabled,
+                      onChanged: (val) {
+                        HapticFeedback.selectionClick();
+                        setState(() => _snoozeEnabled = val);
+                      },
+                    ),
+                  ],
+                ),
+                if (_snoozeEnabled) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    child: Divider(
+                      color: Theme.of(context).dividerColor,
+                      height: 1,
+                    ),
+                  ),
+                  _buildSnoozeCountStepper(),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -595,9 +604,21 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
   }
 
   Widget _buildItemCapture() {
+    final hasItem = _itemLabel != null && _itemLabel!.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (hasItem) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: WakeStatusPill(
+              label: 'Item: $_itemLabel',
+              icon: Icons.check_circle_rounded,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
@@ -621,9 +642,7 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                     color: Theme.of(context).colorScheme.primary,
                   ),
             label: Text(
-              _itemLabel == null || _itemLabel!.isEmpty
-                  ? 'Photograph the item'
-                  : 'Item: $_itemLabel  (tap to change)',
+              hasItem ? 'Change item photo' : 'Photograph the item',
               style: TextStyle(color: Theme.of(context).colorScheme.primary),
             ),
           ),

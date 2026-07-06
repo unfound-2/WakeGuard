@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/challenge/wake_challenge_options.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/glass.dart';
+import '../../core/theme/wake_widgets.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
-import '../blocs/settings_bloc/settings_bloc.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
-import '../../domain/repositories/ble_repository.dart';
-import 'setup_screen.dart';
+import '../blocs/history_cubit/dismissal_history_cubit.dart';
+import '../blocs/settings_bloc/settings_bloc.dart';
+import '../blocs/timer_cubit/countdown_timer_cubit.dart';
 import 'dismissal_history_screen.dart';
-import 'clock_settings_screen.dart';
 
+/// App preferences in the native WakeGuard SettingsView layout: profile
+/// header, then Appearance / Time / Wake Challenge / Notifications / Data /
+/// General / Advanced sections on glass cards. Hardware controls (display,
+/// Bluetooth, sync, factory reset) live in the Clock tab, not here.
 class SettingsScreen extends StatefulWidget {
   final bool isTab;
   const SettingsScreen({super.key, this.isTab = false});
@@ -22,456 +26,515 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static const List<String> _themeOptions = ['System', 'Light', 'Dark'];
+
+  final TextEditingController _customObjectController = TextEditingController();
+
+  @override
+  void dispose() {
+    _customObjectController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final body = GlassBackground(
+      child: SafeArea(
+        bottom: !widget.isTab,
+        child: BlocBuilder<SettingsBloc, SettingsState>(
+          builder: (context, settings) {
+            return ListView(
+              padding: widget.isTab
+                  ? const EdgeInsets.fromLTRB(20, 8, 20, 130)
+                  : const EdgeInsets.fromLTRB(20, 8, 20, 40),
+              children: [
+                if (widget.isTab) ...[
+                  Text(
+                    'Settings',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  Text(
+                    'Preferences for the WakeGuard app',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+                _buildProfileCard(),
+                const SizedBox(height: 24),
+                _buildAppearanceSection(settings),
+                const SizedBox(height: 24),
+                _buildTimeSection(settings),
+                const SizedBox(height: 24),
+                _buildChallengeSection(settings),
+                const SizedBox(height: 24),
+                _buildNotificationsSection(settings),
+                const SizedBox(height: 24),
+                _buildDataSection(),
+                const SizedBox(height: 24),
+                _buildGeneralSection(),
+                const SizedBox(height: 24),
+                _buildAdvancedSection(),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+
+    if (widget.isTab) return body;
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('SETTINGS'),
-        automaticallyImplyLeading: !widget.isTab,
-      ),
-      body: GlassBackground(
-        child: SafeArea(
-          child: BlocBuilder<SettingsBloc, SettingsState>(
-            builder: (context, settingsState) {
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildSectionHeader('CLOCK'),
-                  _buildCard([
-                    _buildListTile(
-                      title: 'Clock Settings',
-                      subtitle: 'Display, sleep mode & Bluetooth',
-                      icon: Icons.watch,
-                      trailing: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ClockSettingsScreen(),
-                        ),
-                      ),
-                    ),
-                  ]),
+      appBar: AppBar(title: const Text('Settings')),
+      body: body,
+    );
+  }
 
-                  _buildSectionHeader('APPEARANCE'),
-                  _buildCard([
-                    _buildListTile(
-                      title: 'Theme',
-                      subtitle: settingsState.themeString,
-                      icon: Icons.dark_mode,
-                      trailing: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      onTap: () {
-                        _showSelectionSheet(
-                          context,
-                          'Select Theme',
-                          const ['System', 'Light', 'Dark'],
-                          settingsState.themeString,
-                          (val) => context.read<SettingsBloc>().add(
-                            UpdateThemeEvent(val),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildListTile(
-                      title: 'Accent Color',
-                      subtitle: settingsState.accentColorString,
-                      icon: Icons.color_lens,
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _accentSwatch(
-                            AppColors.accentFromString(
-                              settingsState.accentColorString,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Icon(
-                            Icons.arrow_forward_ios,
-                            size: 16,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                        ],
-                      ),
-                      onTap: () {
-                        _showSelectionSheet(
-                          context,
-                          'Select Accent Color',
-                          AppColors.accentNames,
-                          settingsState.accentColorString,
-                          (val) => context.read<SettingsBloc>().add(
-                            UpdateAccentColorEvent(val),
-                          ),
-                          swatches: true,
-                        );
-                      },
-                    ),
-                    _buildSwitchTile(
-                      title: 'Animations',
-                      subtitle: 'Enable UI transitions and effects',
-                      value: settingsState.animationsEnabled,
-                      onChanged: (val) => context.read<SettingsBloc>().add(
-                        ToggleAnimationsEvent(val),
-                      ),
-                      icon: Icons.animation,
-                    ),
-                  ]),
+  // ---- Profile ------------------------------------------------------------
 
-                  _buildSectionHeader('TIME'),
-                  _buildCard([
-                    _buildSwitchTile(
-                      title: '24-Hour Time',
-                      subtitle: 'Use 24-hour format instead of AM/PM',
-                      value: settingsState.is24HourTime,
-                      onChanged: (val) => context.read<SettingsBloc>().add(
-                        Toggle24HourTimeEvent(val),
-                      ),
-                      icon: Icons.access_time,
-                    ),
-                  ]),
-
-                  _buildSectionHeader('ALARM PREFERENCES'),
-                  _buildCard([
-                    _buildSwitchTile(
-                      title: 'Default Require QR Scan',
-                      subtitle: 'New alarms require QR scan by default',
-                      value: settingsState.defaultQrRequired,
-                      onChanged: (val) => context.read<SettingsBloc>().add(
-                        ToggleDefaultQrRequiredEvent(val),
-                      ),
-                      icon: Icons.qr_code,
-                    ),
-                  ]),
-
-                  _buildSectionHeader('NOTIFICATIONS & PERMISSIONS'),
-                  _buildCard([
-                    _buildPermissionTile(
-                      title: 'Notification Permission',
-                      icon: Icons.notifications,
-                      permission: Permission.notification,
-                    ),
-                    _buildPermissionTile(
-                      title: 'Bluetooth Scan Permission',
-                      icon: Icons.bluetooth_searching,
-                      permission: Permission.bluetoothScan,
-                    ),
-                    _buildPermissionTile(
-                      title: 'Bluetooth Connect Permission',
-                      icon: Icons.bluetooth_connected,
-                      permission: Permission.bluetoothConnect,
-                    ),
-                    _buildPermissionTile(
-                      title: 'Location Permission',
-                      icon: Icons.location_on,
-                      permission: Permission.locationWhenInUse,
-                    ),
-                    _buildListTile(
-                      title: 'Open System Settings',
-                      icon: Icons.settings_applications,
-                      onTap: () => openAppSettings(),
-                    ),
-                  ]),
-
-                  _buildSectionHeader('GENERAL'),
-                  _buildCard([
-                    _buildListTile(
-                      title: 'Dismissal History',
-                      subtitle: 'When alarms were dismissed',
-                      icon: Icons.history,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const DismissalHistoryScreen(),
-                        ),
-                      ),
-                    ),
-                    _buildListTile(
-                      title: 'About',
-                      subtitle: 'Version 1.0.0 (Build 42)',
-                      icon: Icons.info_outline,
-                      onTap: () => showAboutDialog(
-                        context: context,
-                        applicationName: 'WakeGuard',
-                        applicationVersion: '1.0.0 (Build 42)',
-                      ),
-                    ),
-                    _buildListTile(
-                      title: 'Open Source Licenses',
-                      icon: Icons.description_outlined,
-                      onTap: () => showLicensePage(
-                        context: context,
-                        applicationName: 'WakeGuard',
-                        applicationVersion: '1.0.0 (Build 42)',
-                      ),
-                    ),
-                  ]),
-
-                  _buildSectionHeader('ADVANCED'),
-                  _buildCard([
-                    _buildListTile(
-                      title: 'Factory Reset Clock',
-                      icon: Icons.factory,
-                      titleColor: Theme.of(context).colorScheme.error,
-                      onTap: () => _showConfirmationDialog(
-                        context,
-                        'Factory Reset Clock',
-                        'This will erase all alarms and settings on the physical clock hardware. This cannot be undone.',
-                        () async {
-                          final bleState = context
-                              .read<BleConnectionBloc>()
-                              .state;
-                          if (bleState is BleConnected) {
-                            final repo = context.read<BleRepository>();
-                            final alarmBloc = context.read<AlarmBloc>();
-                            final settingsBloc = context.read<SettingsBloc>();
-                            final localAlarmIds = alarmBloc.state.alarms
-                                .map((alarm) => alarm.id)
-                                .toSet();
-                            final idsToDelete = {
-                              ...localAlarmIds,
-                              1,
-                              2,
-                              3,
-                              4,
-                              5,
-                            };
-                            for (final id in idsToDelete) {
-                              try {
-                                await repo.sendCommand(bleState.device, 0x03, [
-                                  id & 0xFF,
-                                ]);
-                              } catch (_) {}
-                            }
-                            // Reset config to defaults
-                            try {
-                              await repo.sendCommand(bleState.device, 0x06, [
-                                1,
-                                22,
-                                0,
-                                6,
-                                0,
-                              ]);
-                            } catch (_) {}
-                            // Mirror those defaults into the app's own settings
-                            // state so the Clock tab doesn't keep displaying the
-                            // user's old (now-erased) sleep hours / auto-dim.
-                            settingsBloc.add(
-                              const UpdateClockConfigEvent(true, 22, 0, 6, 0),
-                            );
-                            for (final id in localAlarmIds) {
-                              alarmBloc.add(
-                                DeleteAlarmEvent(id, bleState.device),
-                              );
-                            }
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Factory reset commands sent to clock.',
-                                ),
-                              ),
-                            );
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Must be connected to physical clock to factory reset.',
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                      ),
-                    ),
-                    _buildListTile(
-                      title: 'Reset Local Data',
-                      icon: Icons.delete_forever,
-                      titleColor: Theme.of(context).colorScheme.error,
-                      onTap: () => _showConfirmationDialog(
-                        context,
-                        'Reset Local Data',
-                        'This will clear all saved preferences and cached data on your phone.',
-                        () async {
-                          final prefs = await SharedPreferences.getInstance();
-                          await prefs.clear();
-                          if (!context.mounted) return;
-                          Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(
-                              builder: (_) => SetupScreen(prefs: prefs),
-                            ),
-                            (_) => false,
-                          );
-                        },
-                      ),
-                    ),
-                  ]),
-
-                  const SizedBox(height: 100), // spacing for bottom bar
-                ],
-              );
-            },
+  Widget _buildProfileCard() {
+    final scheme = Theme.of(context).colorScheme;
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      shadows: wakeCardShadow(context),
+      child: Row(
+        children: [
+          const WakeLogoMark(size: 62),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'WakeGuard',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Bluetooth wake challenge companion',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8, bottom: 8, top: 24),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).colorScheme.primary,
-          letterSpacing: 1.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCard(List<Widget> children) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: GlassCard(
-        borderRadius: 22,
-        child: Material(
-          color: Colors.transparent,
-          child: Column(children: children),
-        ),
-      ),
-    );
-  }
-
-  Widget _accentSwatch(Color color, {double size = 20}) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-        boxShadow: [
-          BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 8),
         ],
       ),
     );
   }
 
-  void _showSelectionSheet(
-    BuildContext context,
-    String title,
-    List<String> options,
-    String currentValue,
-    Function(String) onSelect, {
-    bool swatches = false,
-  }) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
+  // ---- Appearance ---------------------------------------------------------
+
+  Widget _buildAppearanceSection(SettingsState settings) {
+    final scheme = Theme.of(context).colorScheme;
+    final selectedTheme = _themeOptions.contains(settings.themeString)
+        ? settings.themeString
+        : 'Dark';
+    return WakeSection(
+      title: 'Appearance',
+      child: GlassCard(
+        padding: const EdgeInsets.all(18),
+        shadows: wakeCardShadow(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'System', label: Text('System')),
+                ButtonSegment(value: 'Light', label: Text('Light')),
+                ButtonSegment(value: 'Dark', label: Text('Dark')),
+              ],
+              selected: {selectedTheme},
+              showSelectedIcon: false,
+              style: SegmentedButton.styleFrom(
+                selectedBackgroundColor: scheme.primary,
+                selectedForegroundColor: scheme.onPrimary,
+                side: BorderSide(color: GlassTheme.of(context).stroke),
+              ),
+              onSelectionChanged: (selection) => context
+                  .read<SettingsBloc>()
+                  .add(UpdateThemeEvent(selection.first)),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Accent color',
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 14,
+              runSpacing: 12,
+              children: [
+                for (final name in AppColors.accentNames)
+                  _accentSwatch(
+                    name,
+                    AppColors.canonicalAccentName(
+                          settings.accentColorString,
+                        ) ==
+                        name,
                   ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Divider(height: 17, color: Theme.of(context).dividerColor),
+            WakeSettingsRow(
+              icon: Icons.animation_rounded,
+              title: 'Smooth animations',
+              subtitle: 'Enable UI transitions and effects',
+              trailing: Switch(
+                value: settings.animationsEnabled,
+                onChanged: (val) => context.read<SettingsBloc>().add(
+                  ToggleAnimationsEvent(val),
                 ),
               ),
-              ...options.map(
-                (option) => ListTile(
-                  leading: swatches
-                      ? _accentSwatch(AppColors.accentFromString(option))
-                      : null,
-                  title: Text(
-                    option,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _accentSwatch(String name, bool selected) {
+    final color = AppColors.accentFromString(name);
+    return Tooltip(
+      message: name,
+      child: GestureDetector(
+        onTap: () =>
+            context.read<SettingsBloc>().add(UpdateAccentColorEvent(name)),
+        child: Container(
+          width: 40,
+          height: 40,
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? color : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.45),
+                  blurRadius: 10,
+                ),
+              ],
+            ),
+            child: selected
+                ? const Icon(
+                    Icons.check_rounded,
+                    size: 18,
+                    color: Colors.white,
+                  )
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---- Time ---------------------------------------------------------------
+
+  Widget _buildTimeSection(SettingsState settings) {
+    return WakeSection(
+      title: 'Time',
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        shadows: wakeCardShadow(context),
+        child: Column(
+          children: [
+            WakeSettingsRow(
+              icon: Icons.access_time_rounded,
+              title: '24-Hour Time',
+              subtitle: 'Use 24-hour format instead of AM/PM',
+              trailing: Switch(
+                value: settings.is24HourTime,
+                onChanged: (val) => context.read<SettingsBloc>().add(
+                  Toggle24HourTimeEvent(val),
+                ),
+              ),
+            ),
+            Divider(height: 1, color: Theme.of(context).dividerColor),
+            WakeSettingsRow(
+              icon: Icons.update_rounded,
+              title: 'Automatic Time Sync',
+              subtitle: 'Push phone time to the clock on every connect',
+              trailing: Switch(
+                value: settings.autoTimeSync,
+                onChanged: (val) => context.read<SettingsBloc>().add(
+                  ToggleAutoTimeSyncEvent(val),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Wake Challenge -----------------------------------------------------
+
+  Widget _buildChallengeSection(SettingsState settings) {
+    final scheme = Theme.of(context).colorScheme;
+    final glass = GlassTheme.of(context);
+    final objects = List<String>.from(WakeChallengeOptions.suggestedObjects);
+    if (!objects.contains(settings.wakeObjectName)) {
+      objects.add(settings.wakeObjectName);
+    }
+    return WakeSection(
+      title: 'Wake Challenge',
+      subtitle: 'Choose the morning-routine object you verify away from bed.',
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+        shadows: wakeCardShadow(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 30,
+                  child: Icon(
+                    Icons.center_focus_strong_rounded,
+                    size: 20,
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Text(
+                    'Wake object',
                     style: TextStyle(
-                      color: currentValue == option
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.onSurface,
-                      fontWeight: currentValue == option
-                          ? FontWeight.w700
-                          : FontWeight.w400,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
                     ),
                   ),
-                  trailing: currentValue == option
-                      ? Icon(
-                          Icons.check,
-                          color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () {
-                    onSelect(option);
-                    Navigator.pop(context);
+                ),
+                DropdownButton<String>(
+                  value: settings.wakeObjectName,
+                  underline: const SizedBox.shrink(),
+                  borderRadius: BorderRadius.circular(14),
+                  items: [
+                    for (final object in objects)
+                      DropdownMenuItem(value: object, child: Text(object)),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      context.read<SettingsBloc>().add(
+                        UpdateWakeObjectEvent(value),
+                      );
+                    }
                   },
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _customObjectController,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              onSubmitted: _submitCustomObject,
+              decoration: InputDecoration(
+                hintText: 'Custom object',
+                hintStyle: TextStyle(
+                  fontSize: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: glass.stroke),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: scheme.primary),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Divider(height: 17, color: Theme.of(context).dividerColor),
+            WakeSettingsRow(
+              icon: Icons.verified_user_rounded,
+              title: 'Require challenge for new alarms',
+              subtitle: 'New alarms start with the wake challenge enabled',
+              trailing: Switch(
+                value: settings.defaultQrRequired,
+                onChanged: (val) => context.read<SettingsBloc>().add(
+                  ToggleDefaultQrRequiredEvent(val),
+                ),
+              ),
+            ),
+            _footnote(
+              'Wake challenges use on-device AI object verification; printed '
+              'backup codes stay available.',
+              icon: Icons.auto_awesome,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _submitCustomObject(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return;
+    context.read<SettingsBloc>().add(UpdateWakeObjectEvent(trimmed));
+    _customObjectController.clear();
+    FocusScope.of(context).unfocus();
+  }
+
+  // ---- Notifications ------------------------------------------------------
+
+  Widget _buildNotificationsSection(SettingsState settings) {
+    return WakeSection(
+      title: 'Notifications',
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+        shadows: wakeCardShadow(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            WakeSettingsRow(
+              icon: Icons.notifications_active_rounded,
+              title: 'Backup notifications',
+              subtitle:
+                  'Phone alarms mirror the clock in case it is unreachable',
+              trailing: Switch(
+                value: settings.backupNotificationsEnabled,
+                onChanged: (val) => context.read<SettingsBloc>().add(
+                  ToggleBackupNotificationsEvent(val),
+                ),
+              ),
+            ),
+            _footnote('Changes apply from the next alarm update.'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Data ---------------------------------------------------------------
+
+  Widget _buildDataSection() {
+    return WakeSection(
+      title: 'Data',
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        shadows: wakeCardShadow(context),
+        child: WakeSettingsRow(
+          icon: Icons.history_rounded,
+          title: 'Dismissal History',
+          subtitle: 'When alarms fired and how they were dismissed',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const DismissalHistoryScreen()),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---- General ------------------------------------------------------------
+
+  Widget _buildGeneralSection() {
+    return WakeSection(
+      title: 'General',
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        shadows: wakeCardShadow(context),
+        child: Column(
+          children: [
+            WakeSettingsRow(
+              icon: Icons.info_rounded,
+              title: 'About WakeGuard',
+              subtitle: 'Version 1.0',
+              onTap: _showAboutDialog,
+            ),
+            Divider(height: 1, color: Theme.of(context).dividerColor),
+            WakeSettingsRow(
+              icon: Icons.privacy_tip_rounded,
+              title: 'Privacy',
+              subtitle: 'Camera verification and Bluetooth stay on this device',
+              onTap: _showPrivacyDialog,
+            ),
+            Divider(height: 1, color: Theme.of(context).dividerColor),
+            WakeSettingsRow(
+              icon: Icons.description_rounded,
+              title: 'Licenses',
+              subtitle: 'Open source software used by WakeGuard',
+              onTap: () => showLicensePage(
+                context: context,
+                applicationName: 'WakeGuard',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAboutDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        final scheme = Theme.of(dialogContext).colorScheme;
+        return AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const WakeLogoMark(size: 92),
+              const SizedBox(height: 18),
+              Text(
+                'WakeGuard',
+                style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Version 1.0',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'WakeGuard pairs with a Bluetooth alarm clock and requires a '
+                'personalized object wake challenge before protected alarms '
+                'can be dismissed.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
-        );
-      },
-    );
-  }
-
-  void _showConfirmationDialog(
-    BuildContext context,
-    String title,
-    String content,
-    VoidCallback onConfirm,
-  ) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          title: Text(
-            title,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-          ),
-          content: Text(
-            content,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'CANCEL',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                onConfirm();
-              },
-              child: Text(
-                'CONFIRM',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Done'),
             ),
           ],
         );
@@ -479,127 +542,142 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildListTile({
-    required String title,
-    String? subtitle,
-    required IconData icon,
-    Widget? trailing,
-    VoidCallback? onTap,
-    Color? titleColor,
-  }) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      leading: Icon(
-        icon,
-        color: titleColor ?? Theme.of(context).colorScheme.primary,
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: titleColor ?? Theme.of(context).colorScheme.onSurface,
-          fontWeight: FontWeight.w600,
+  void _showPrivacyDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Privacy'),
+        content: const Text(
+          'Wake-challenge photos are analyzed on this phone and never leave '
+          'it. Bluetooth communication happens directly between your phone '
+          'and the clock — WakeGuard has no servers and no accounts.',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Done'),
+          ),
+        ],
       ),
-      subtitle: subtitle != null
-          ? Text(
-              subtitle,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 12,
-              ),
-            )
-          : null,
-      trailing: trailing,
-      onTap: onTap,
     );
   }
 
-  Widget _buildSwitchTile({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-    required IconData icon,
-  }) {
-    return SwitchListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-          fontSize: 12,
-        ),
-      ),
-      secondary: Icon(icon, color: Theme.of(context).colorScheme.primary),
-      value: value,
-      onChanged: onChanged,
-    );
-  }
+  // ---- Advanced -----------------------------------------------------------
 
-  // Cached per-permission status futures so unrelated rebuilds (e.g. toggling
-  // another setting) don't recreate them and flicker the chip red->green.
-  final Map<Permission, Future<PermissionStatus>> _permissionFutures = {};
-
-  Future<PermissionStatus> _permissionStatus(Permission permission) {
-    return _permissionFutures[permission] ??= permission.status;
-  }
-
-  Widget _buildPermissionTile({
-    required String title,
-    required IconData icon,
-    required Permission permission,
-  }) {
-    return FutureBuilder<PermissionStatus>(
-      future: _permissionStatus(permission),
-      builder: (context, snapshot) {
-        bool isGranted = snapshot.data == PermissionStatus.granted;
-        return _buildListTile(
-          title: title,
-          subtitle: isGranted ? 'Granted' : 'Denied / Unknown',
-          icon: icon,
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: isGranted
-                  ? AppColors.success.withValues(alpha: 0.2)
-                  : Theme.of(context).colorScheme.error.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isGranted
-                    ? AppColors.success
-                    : Theme.of(context).colorScheme.error,
-              ),
+  Widget _buildAdvancedSection() {
+    return WakeSection(
+      title: 'Advanced',
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        shadows: wakeCardShadow(context),
+        child: Column(
+          children: [
+            WakeSettingsRow(
+              icon: Icons.replay_rounded,
+              title: 'Replay Onboarding',
+              subtitle: 'Show the WakeGuard introduction again',
+              onTap: _replayOnboarding,
             ),
+            Divider(height: 1, color: Theme.of(context).dividerColor),
+            WakeSettingsRow(
+              icon: Icons.delete_forever_rounded,
+              title: 'Reset Local Data',
+              subtitle: 'Clear alarms, timers, and history on this phone',
+              destructive: true,
+              onTap: _confirmResetLocalData,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _replayOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('hasSeenOnboarding', false);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Onboarding will play on next launch.')),
+    );
+  }
+
+  Future<void> _confirmResetLocalData() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset local data?'),
+        content: const Text(
+          'This removes alarms, timers, and dismissal history from this '
+          'phone. Deleted alarms are removed from the clock through the '
+          'normal sync; the hardware is otherwise untouched.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(
-              isGranted ? 'OK' : 'FIX',
+              'Reset',
               style: TextStyle(
-                color: isGranted
-                    ? AppColors.success
-                    : Theme.of(context).colorScheme.error,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
+                color: Theme.of(dialogContext).colorScheme.error,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
-          onTap: () async {
-            if (!isGranted) {
-              await permission.request();
-              if (!mounted) return;
-              // Refresh only this permission's cached status, then rebuild.
-              setState(
-                () => _permissionFutures[permission] = permission.status,
-              );
-            }
-          },
-        );
-      },
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // Delete every alarm through the normal delete event so device-sync
+    // semantics (immediate removal when connected, pending delete otherwise)
+    // are preserved.
+    final bleState = context.read<BleConnectionBloc>().state;
+    final device = bleState is BleConnected ? bleState.device : null;
+    final alarmBloc = context.read<AlarmBloc>();
+    for (final alarm in List.of(alarmBloc.state.alarms)) {
+      alarmBloc.add(DeleteAlarmEvent(alarm.id, device));
+    }
+
+    final timerCubit = context.read<CountdownTimerCubit>();
+    for (final timer in List.of(timerCubit.state)) {
+      timerCubit.removeTimer(timer.id);
+    }
+
+    context.read<DismissalHistoryCubit>().clear();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Local alarms, timers, and history cleared.'),
+      ),
+    );
+  }
+
+  // ---- Shared -------------------------------------------------------------
+
+  Widget _footnote(String text, {IconData icon = Icons.info_outline_rounded}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

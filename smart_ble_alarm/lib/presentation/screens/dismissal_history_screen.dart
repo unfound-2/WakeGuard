@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/theme/glass.dart';
+import '../../core/theme/wake_widgets.dart';
 import '../../core/utils/alarm_time_utils.dart';
 import '../blocs/history_cubit/dismissal_history_cubit.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
@@ -57,90 +58,55 @@ class DismissalHistoryScreen extends StatelessWidget {
           child: BlocBuilder<DismissalHistoryCubit, List<DismissalRecord>>(
             builder: (context, records) {
               if (records.isEmpty) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Text(
-                      'No dismissals recorded yet.\nCompleted alarm dismissals '
-                      'will appear here.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 15,
-                        height: 1.4,
-                      ),
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                  children: const [
+                    SizedBox(height: 40),
+                    WakeEmptyState(
+                      title: 'No dismissals yet',
+                      message: 'Completed alarm dismissals will appear here.',
+                      icon: Icons.history_rounded,
                     ),
-                  ),
+                  ],
                 );
               }
 
-              return ListView.builder(
-                padding: const EdgeInsets.all(16),
+              return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
                 itemCount: records.length,
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: 12),
                 itemBuilder: (context, index) {
                   final record = records[index];
                   final isItem = record.method == 'Item';
                   final primary = Theme.of(context).colorScheme.primary;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: GlassCard(
-                      padding: const EdgeInsets.all(16),
-                      borderRadius: 18,
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: primary.withValues(alpha: 0.14),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              isItem
-                                  ? Icons.center_focus_strong_rounded
-                                  : Icons.qr_code_scanner_rounded,
-                              color: primary,
-                              size: 20,
-                            ),
+                  final title = record.label?.trim().isNotEmpty == true
+                      ? record.label!.trim()
+                      : 'Alarm ${record.alarmId}';
+                  return GlassCard(
+                    padding: const EdgeInsets.all(16),
+                    borderRadius: 22,
+                    shadows: wakeCardShadow(context),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: WakeActivityRow(
+                            title: title,
+                            subtitle: _formatTimestamp(record.time, is24Hour),
+                            icon: isItem
+                                ? Icons.center_focus_strong_rounded
+                                : Icons.qr_code_scanner_rounded,
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  record.label?.trim().isNotEmpty == true
-                                      ? record.label!.trim()
-                                      : 'Alarm ${record.alarmId}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _formatTimestamp(record.time, is24Hour),
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            isItem ? 'Item scan' : 'QR scan',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: primary,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        WakeStatusPill(
+                          label: isItem ? 'Item scan' : 'QR scan',
+                          icon: isItem
+                              ? Icons.center_focus_strong_rounded
+                              : Icons.qr_code_scanner_rounded,
+                          color: primary,
+                        ),
+                      ],
                     ),
                   );
                 },

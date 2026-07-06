@@ -1,79 +1,101 @@
 import 'package:flutter/material.dart';
 
-/// Central colour tokens for the app's "Liquid Glass" design language.
+/// Central colour tokens for the WakeGuard "Liquid Glass" design language.
 ///
-/// The palette is intentionally vibrant but restrained: deep, slightly-blue
-/// darks and soft, cool lights let translucent glass surfaces and accent glows
-/// read clearly while keeping text at accessible contrast.
+/// The palette mirrors the native WakeGuard reference app: warm charcoal
+/// darks, slate lights, and a burnt-ember accent, with hairline strokes and
+/// translucent surfaces doing the visual work instead of saturated neon.
 class AppColors {
   AppColors._();
 
   // ---- Dark theme base ----------------------------------------------------
-  static const Color background = Color(
-    0xFF0A0B12,
-  ); // near-black, blue undertone
-  static const Color backgroundGradientTop = Color(0xFF14161F);
-  static const Color backgroundGradientBottom = Color(0xFF05060B);
-  static const Color surface = Color(0xFF161824); // opaque glass fallback
-  static const Color textPrimary = Color(0xFFF3F4FA);
-  static const Color textSecondary = Color(0xFF9AA2B6);
-  static const Color glassStrokeDark = Color(0x24FFFFFF); // white @ ~14%
+  static const Color background = Color(0xFF0D1115); // warm charcoal
+  static const Color backgroundGradientTop = Color(0xFF0D1115);
+  static const Color backgroundGradientMid = Color(0xFF1D242A); // slate wash
+  static const Color backgroundGradientBottom = Color(0xFF0D1115);
+  static const Color surface = Color(0xFF182026);
+  static const Color elevatedSurface = Color(0xFF222C33);
+  static const Color textPrimary = Color(0xFFFFFFFF);
+  static const Color textBody = Color(0xFFD8DEE3);
+  static const Color textSecondary = Color(0xFFA7B0B8);
+  static const Color glassStrokeDark = Color(0x1AFFFFFF); // white @ 10%
 
   // ---- Light theme base ---------------------------------------------------
-  static const Color lightBackground = Color(0xFFEEF0F7);
-  static const Color lightBackgroundGradientTop = Color(0xFFF8F9FD);
-  static const Color lightBackgroundGradientBottom = Color(0xFFE6E9F3);
+  static const Color lightBackground = Color(0xFFF4F6F8);
+  static const Color lightBackgroundGradientTop = Color(0xFFF4F6F8);
+  static const Color lightBackgroundGradientMid = Color(0xFFE7EAEE);
+  static const Color lightBackgroundGradientBottom = Color(0xFFF4F6F8);
   static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color textPrimaryLight = Color(0xFF11131C);
-  static const Color textSecondaryLight = Color(0xFF5A6274);
-  static const Color glassStrokeLight = Color(0x14101320); // ink @ ~8%
+  static const Color lightElevatedSurface = Color(0xFFFFFFFF);
+  static const Color textPrimaryLight = Color(0xFF333F48); // deep slate
+  static const Color textBodyLight = Color(0xFF4B5963);
+  static const Color textSecondaryLight = Color(0xFF6F7B84);
+  static const Color glassStrokeLight = Color(0x14000000); // ink @ 8%
 
   // ---- Accent presets -----------------------------------------------------
-  // Kept string-compatible with previously stored preferences.
-  static const Color primaryOrange = Color(0xFFFF6B35); // default "Neon Orange"
-  static const Color neonBlue = Color(0xFF6C63FF);
+  /// Default accent: the native WakeGuard burnt ember.
+  static const Color primaryOrange = Color(0xFFBF5700);
+  static const Color neonBlue = Color(0xFF5E5CE6);
 
   // ---- Feedback -----------------------------------------------------------
   static const Color error = Color(0xFFFF453A);
-  static const Color success = Color(0xFF32D74B);
+  static const Color success = Color(0xFF34C759);
   static const Color warning = Color(0xFFFFB020);
 
   /// Resolves a stored accent preference string to its seed colour.
+  /// Legacy names (pre-rebrand) keep resolving so saved prefs never break.
   static Color accentFromString(String name) {
     switch (name) {
-      case 'Cyber Cyan':
-        return const Color(0xFF06B6D4);
-      case 'Matrix Green':
-        return const Color(0xFF10B981);
-      case 'Neon Blue':
+      case 'Sky':
+      case 'Cyber Cyan': // legacy
+        return const Color(0xFF0A84FF);
+      case 'Mint':
+      case 'Matrix Green': // legacy
+        return const Color(0xFF30D158);
+      case 'Indigo':
+      case 'Neon Blue': // legacy
         return neonBlue;
-      case 'Neon Orange':
+      case 'Ember':
+      case 'Neon Orange': // legacy
       default:
         return primaryOrange;
     }
   }
 
-  /// A two-stop gradient for the accent, used on primary buttons and glows to
-  /// give the interface a sense of depth and "liquid" light.
-  static List<Color> accentGradient(String name) {
+  /// Maps any stored accent name (including legacy ones) onto the canonical
+  /// display name so selection checkmarks stay correct after the rebrand.
+  static String canonicalAccentName(String name) {
     switch (name) {
+      case 'Sky':
       case 'Cyber Cyan':
-        return const [Color(0xFF22D3EE), Color(0xFF0891B2)];
+        return 'Sky';
+      case 'Mint':
       case 'Matrix Green':
-        return const [Color(0xFF34D399), Color(0xFF059669)];
+        return 'Mint';
+      case 'Indigo':
       case 'Neon Blue':
-        return const [Color(0xFF8B87FF), Color(0xFF6C63FF)];
-      case 'Neon Orange':
+        return 'Indigo';
       default:
-        return const [Color(0xFFFF8A3D), Color(0xFFFF5C6E)];
+        return 'Ember';
+    }
+  }
+
+  /// A restrained two-stop gradient for the accent, used on primary buttons
+  /// and glows for a sense of depth without neon saturation.
+  static List<Color> accentGradient(String name) {
+    switch (canonicalAccentName(name)) {
+      case 'Sky':
+        return const [Color(0xFF3B9BFF), Color(0xFF0A84FF)];
+      case 'Mint':
+        return const [Color(0xFF4FDD75), Color(0xFF30D158)];
+      case 'Indigo':
+        return const [Color(0xFF7A78F0), Color(0xFF5E5CE6)];
+      case 'Ember':
+      default:
+        return const [Color(0xFFD96C1A), Color(0xFFBF5700)];
     }
   }
 
   /// The list of selectable accent names, in display order.
-  static const List<String> accentNames = [
-    'Neon Orange',
-    'Cyber Cyan',
-    'Matrix Green',
-    'Neon Blue',
-  ];
+  static const List<String> accentNames = ['Ember', 'Sky', 'Mint', 'Indigo'];
 }

@@ -54,6 +54,20 @@ class ToggleAnimationsEvent extends SettingsEvent {
   List<Object?> get props => [enabled];
 }
 
+class ToggleAutoTimeSyncEvent extends SettingsEvent {
+  final bool enabled;
+  const ToggleAutoTimeSyncEvent(this.enabled);
+  @override
+  List<Object?> get props => [enabled];
+}
+
+class ToggleBackupNotificationsEvent extends SettingsEvent {
+  final bool enabled;
+  const ToggleBackupNotificationsEvent(this.enabled);
+  @override
+  List<Object?> get props => [enabled];
+}
+
 class UpdateClockConfigEvent extends SettingsEvent {
   final bool autoDim;
   final int sleepStartHour;
@@ -85,6 +99,8 @@ class SettingsState extends Equatable {
   final String themeString;
   final String accentColorString;
   final bool animationsEnabled;
+  final bool autoTimeSync;
+  final bool backupNotificationsEnabled;
 
   // Clock specific settings
   final bool autoDim;
@@ -98,8 +114,10 @@ class SettingsState extends Equatable {
     this.defaultQrRequired = true,
     this.wakeObjectName = WakeChallengeOptions.defaultObject,
     this.themeString = 'Dark',
-    this.accentColorString = 'Neon Orange',
+    this.accentColorString = 'Ember',
     this.animationsEnabled = true,
+    this.autoTimeSync = true,
+    this.backupNotificationsEnabled = true,
     this.autoDim = true,
     this.sleepStartHour = 22,
     this.sleepStartMinute = 0,
@@ -114,6 +132,8 @@ class SettingsState extends Equatable {
     String? themeString,
     String? accentColorString,
     bool? animationsEnabled,
+    bool? autoTimeSync,
+    bool? backupNotificationsEnabled,
     bool? autoDim,
     int? sleepStartHour,
     int? sleepStartMinute,
@@ -127,6 +147,9 @@ class SettingsState extends Equatable {
       themeString: themeString ?? this.themeString,
       accentColorString: accentColorString ?? this.accentColorString,
       animationsEnabled: animationsEnabled ?? this.animationsEnabled,
+      autoTimeSync: autoTimeSync ?? this.autoTimeSync,
+      backupNotificationsEnabled:
+          backupNotificationsEnabled ?? this.backupNotificationsEnabled,
       autoDim: autoDim ?? this.autoDim,
       sleepStartHour: sleepStartHour ?? this.sleepStartHour,
       sleepStartMinute: sleepStartMinute ?? this.sleepStartMinute,
@@ -143,6 +166,8 @@ class SettingsState extends Equatable {
     themeString,
     accentColorString,
     animationsEnabled,
+    autoTimeSync,
+    backupNotificationsEnabled,
     autoDim,
     sleepStartHour,
     sleepStartMinute,
@@ -163,6 +188,8 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<UpdateThemeEvent>(_onUpdateTheme);
     on<UpdateAccentColorEvent>(_onUpdateAccentColor);
     on<ToggleAnimationsEvent>(_onToggleAnimations);
+    on<ToggleAutoTimeSyncEvent>(_onToggleAutoTimeSync);
+    on<ToggleBackupNotificationsEvent>(_onToggleBackupNotifications);
     on<UpdateClockConfigEvent>(_onUpdateClockConfig);
   }
 
@@ -175,9 +202,11 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
             prefs.getString('wakeObjectName') ??
             WakeChallengeOptions.defaultObject,
         themeString: prefs.getString('themeString') ?? 'Dark',
-        accentColorString:
-            prefs.getString('accentColorString') ?? 'Neon Orange',
+        accentColorString: prefs.getString('accentColorString') ?? 'Ember',
         animationsEnabled: prefs.getBool('animationsEnabled') ?? true,
+        autoTimeSync: prefs.getBool('autoTimeSync') ?? true,
+        backupNotificationsEnabled:
+            prefs.getBool('backupNotificationsEnabled') ?? true,
         autoDim: prefs.getBool('autoDim') ?? true,
         sleepStartHour: prefs.getInt('sleepStartHour') ?? 22,
         sleepStartMinute: prefs.getInt('sleepStartMinute') ?? 0,
@@ -234,6 +263,22 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
   ) async {
     await prefs.setBool('animationsEnabled', event.enabled);
     emit(state.copyWith(animationsEnabled: event.enabled));
+  }
+
+  void _onToggleAutoTimeSync(
+    ToggleAutoTimeSyncEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setBool('autoTimeSync', event.enabled);
+    emit(state.copyWith(autoTimeSync: event.enabled));
+  }
+
+  void _onToggleBackupNotifications(
+    ToggleBackupNotificationsEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setBool('backupNotificationsEnabled', event.enabled);
+    emit(state.copyWith(backupNotificationsEnabled: event.enabled));
   }
 
   void _onUpdateClockConfig(

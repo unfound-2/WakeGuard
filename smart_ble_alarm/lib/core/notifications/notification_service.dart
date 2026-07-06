@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 import '../../domain/entities/alarm.dart';
@@ -69,6 +70,13 @@ class NotificationService {
   Future<void> syncAlarms(List<Alarm> alarms) async {
     if (!_ready) return;
     try {
+      // The user can turn the backup layer off in Settings; honour that here
+      // (the single choke point every scheduling path goes through).
+      final prefs = await SharedPreferences.getInstance();
+      if (!(prefs.getBool('backupNotificationsEnabled') ?? true)) {
+        await _plugin.cancelAll();
+        return;
+      }
       await _plugin.cancelAll();
       for (final alarm in alarms) {
         if (!alarm.isActive) continue;

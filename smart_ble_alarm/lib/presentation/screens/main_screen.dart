@@ -1,18 +1,19 @@
 import 'dart:async';
-import 'dart:ui' as dart_ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/ble/ble_payloads.dart';
+import '../../core/ble/clock_sync.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/ble_bloc/ble_event.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../domain/repositories/ble_repository.dart';
+import '../widgets/liquid_glass_tab_bar.dart';
 import 'tabs/home_tab.dart';
 import 'tabs/alarms_tab.dart';
-import 'tabs/timers_tab.dart';
+import 'tabs/clock_tab.dart';
 import 'settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -29,7 +30,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final List<Widget> _tabs = [
     const HomeTab(),
     const AlarmsTab(),
-    const TimersTab(),
+    const ClockTab(),
     const SettingsScreen(isTab: true),
   ];
 
@@ -59,50 +60,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _frameSubscription?.cancel();
     super.dispose();
-  }
-
-  Future<void> _syncConnectedClock(
-    BuildContext context,
-    BleConnected state,
-  ) async {
-    final bleRepo = context.read<BleRepository>();
-    final alarmBloc = context.read<AlarmBloc>();
-    final device = state.device;
-    final settings = context.read<SettingsBloc>().state;
-
-    try {
-      await bleRepo.sendCommand(device, 0x04, const []);
-      await bleRepo.sendCommand(
-        device,
-        0x01,
-        BlePayloads.currentEpochSeconds(),
-      );
-      final alarmSync = Completer<void>();
-      alarmBloc.add(SyncAlarmsToDeviceEvent(device, completer: alarmSync));
-      await alarmSync.future;
-      await bleRepo.sendCommand(
-        device,
-        0x06,
-        BlePayloads.clockSettings(
-          autoDim: settings.autoDim,
-          sleepStartHour: settings.sleepStartHour,
-          sleepStartMinute: settings.sleepStartMinute,
-          sleepEndHour: settings.sleepEndHour,
-          sleepEndMinute: settings.sleepEndMinute,
-        ),
-      );
-      await bleRepo.sendCommand(device, 0x05, const []);
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Clock sync failed. Local changes are still saved.',
-          ),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
   }
 
   void _listenForDeviceFrames(BuildContext context, BleConnected state) {
@@ -249,7 +206,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           listener: (context, state) {
             if (state is BleConnected) {
               _listenForDeviceFrames(context, state);
-              _syncConnectedClock(context, state);
+              syncConnectedClock(context, state.device);
             } else if (state is BleDisconnected) {
               _frameSubscription?.cancel();
               _frameSubscription = null;
@@ -267,6 +224,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 backgroundColor: Theme.of(context).colorScheme.error,
               ),
             );
+          },
+        ),
+        // Re-run backup-notification scheduling when the toggle flips; the
+        // service itself reads the pref and cancels or schedules accordingly.
+        BlocListener<SettingsBloc, SettingsState>(
+          listenWhen: (previous, current) =>
+              previous.backupNotificationsEnabled !=
+              current.backupNotificationsEnabled,
+          listener: (context, state) {
+            context.read<AlarmBloc>().add(LoadAlarmsEvent());
           },
         ),
         BlocListener<SettingsBloc, SettingsState>(
@@ -319,80 +286,37 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             ),
           ],
         ),
-        bottomNavigationBar: ClipRRect(
-          child: BackdropFilter(
-            filter: dart_ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surface.withValues(alpha: 0.5),
-              ),
-              child: NavigationBarTheme(
-                data: NavigationBarThemeData(
-                  backgroundColor: Colors.transparent,
-                  indicatorColor: Theme.of(
-                    context,
-                  ).colorScheme.primary.withValues(alpha: 0.2),
-                  labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                    if (states.contains(WidgetState.selected)) {
-                      return TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      );
-                    }
-                    return TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 12,
-                    );
-                  }),
-                  iconTheme: WidgetStateProperty.resolveWith((states) {
-                    if (states.contains(WidgetState.selected)) {
-                      return IconThemeData(
-                        color: Theme.of(context).colorScheme.primary,
-                      );
-                    }
-                    return IconThemeData(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    );
-                  }),
-                ),
-                child: NavigationBar(
-                  elevation: 0,
-                  backgroundColor: Colors.transparent,
-                  selectedIndex: _currentIndex,
-                  onDestinationSelected: (index) {
-                    setState(() {
-                      _currentIndex = index;
-                    });
-                  },
-                  destinations: const [
-                    NavigationDestination(
-                      icon: Icon(Icons.dashboard_outlined),
-                      selectedIcon: Icon(Icons.dashboard),
-                      label: 'Home',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.access_alarm_outlined),
-                      selectedIcon: Icon(Icons.access_alarm),
-                      label: 'Alarms',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.timer_outlined),
-                      selectedIcon: Icon(Icons.timer),
-                      label: 'Timers',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.settings_outlined),
-                      selectedIcon: Icon(Icons.settings),
-                      label: 'Settings',
-                    ),
-                  ],
-                ),
-              ),
+        // Floating Liquid Glass tab bar; content scrolls underneath thanks to
+        // extendBody, so each tab pads its scrollable bottom edge.
+        bottomNavigationBar: LiquidGlassTabBar(
+          currentIndex: _currentIndex,
+          onSelected: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+          items: const [
+            LiquidGlassTabItem(
+              icon: Icons.home_outlined,
+              selectedIcon: Icons.home_rounded,
+              label: 'Home',
             ),
-          ),
+            LiquidGlassTabItem(
+              icon: Icons.access_alarm_outlined,
+              selectedIcon: Icons.access_alarm_rounded,
+              label: 'Alarms',
+            ),
+            LiquidGlassTabItem(
+              icon: Icons.schedule_outlined,
+              selectedIcon: Icons.schedule_rounded,
+              label: 'Clock',
+            ),
+            LiquidGlassTabItem(
+              icon: Icons.settings_outlined,
+              selectedIcon: Icons.settings_rounded,
+              label: 'Settings',
+            ),
+          ],
         ),
       ),
     );
