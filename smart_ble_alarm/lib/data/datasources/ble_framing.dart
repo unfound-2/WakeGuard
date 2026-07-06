@@ -15,21 +15,17 @@ class BleFraming {
       cs ^= byte;
     }
 
-    List<int> frame = [sof, cmd, len];
+    final List<int> frame = [sof];
 
-    // Add escaped data
-    for (int byte in data) {
+    // Escape every body byte uniformly — cmd, len, data and checksum alike — so
+    // the decoder (which unescapes uniformly from the byte after SOF) can never
+    // mistake a body byte that happens to equal SOF/EOF/ESC for a delimiter.
+    for (final int byte in [cmd, len, ...data, cs]) {
       if (byte == sof || byte == eof || byte == esc) {
         frame.add(esc);
       }
       frame.add(byte);
     }
-
-    // Add escaped checksum
-    if (cs == sof || cs == eof || cs == esc) {
-      frame.add(esc);
-    }
-    frame.add(cs);
 
     frame.add(eof);
     return frame;

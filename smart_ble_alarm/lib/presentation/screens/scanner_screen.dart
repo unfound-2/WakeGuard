@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/theme/app_colors.dart';
@@ -6,6 +7,7 @@ import '../../data/datasources/secure_key_datasource.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
+import '../blocs/history_cubit/dismissal_history_cubit.dart';
 import '../../domain/repositories/ble_repository.dart';
 
 class ScannerScreen extends StatefulWidget {
@@ -77,6 +79,15 @@ class _ScannerScreenState extends State<ScannerScreen> {
           }
 
           if (!mounted) return;
+          final matches = context.read<AlarmBloc>().state.alarms.where(
+            (a) => a.id == widget.alarmId,
+          );
+          context.read<DismissalHistoryCubit>().record(
+            alarmId: widget.alarmId,
+            method: 'QR',
+            label: matches.isNotEmpty ? matches.first.label : null,
+          );
+          HapticFeedback.heavyImpact();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Alarm Dismissed!'),
@@ -104,6 +115,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -115,28 +127,40 @@ class _ScannerScreenState extends State<ScannerScreen> {
       ),
       extendBodyBehindAppBar: true,
       body: Stack(
+        alignment: Alignment.center,
         children: [
           MobileScanner(controller: _controller, onDetect: _onDetect),
-          if (_isProcessing)
-            Container(
-              color: Colors.black54,
-              child: const Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.primaryOrange,
-                ),
-              ),
+          // Scanner overlay frame with a soft accent glow.
+          Container(
+            width: 260,
+            height: 260,
+            decoration: BoxDecoration(
+              border: Border.all(color: accent, width: 3),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(color: accent.withValues(alpha: 0.5), blurRadius: 18),
+              ],
             ),
-          // Scanner overlay frame
-          Center(
-            child: Container(
-              width: 250,
-              height: 250,
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.primaryOrange, width: 2),
-                borderRadius: BorderRadius.circular(20),
+          ),
+          Positioned(
+            bottom: 80,
+            left: 24,
+            right: 24,
+            child: Text(
+              'Point the camera at your printed QR code',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
+          if (_isProcessing)
+            Container(
+              color: Colors.black54,
+              child: Center(child: CircularProgressIndicator(color: accent)),
+            ),
         ],
       ),
     );

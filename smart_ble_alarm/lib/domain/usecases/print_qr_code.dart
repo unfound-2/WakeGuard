@@ -10,6 +10,9 @@ class PrintQrCodeUseCase {
 
   Future<void> execute(int alarmId) async {
     final String qrData = await secureKeyDatasource.getQRCodeData(alarmId);
+    if (qrData.isEmpty) {
+      throw StateError('No QR key is available for alarm $alarmId.');
+    }
 
     final doc = pw.Document();
 

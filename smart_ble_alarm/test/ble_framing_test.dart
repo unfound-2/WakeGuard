@@ -36,6 +36,18 @@ void main() {
       expect(buffer, isEmpty);
     });
 
+    test('escapes a cmd byte that collides with a control byte', () {
+      // 0x5C is ESC. Regression: the cmd byte used to be written raw, so the
+      // decoder swallowed it as an escape introducer and silently dropped the
+      // whole frame.
+      final buffer = BleFraming.encodeFrame(0x5C, [0x01]);
+
+      expect(BleFraming.decodeFrames(buffer), [
+        [0x5C, 0x01, 0x01],
+      ]);
+      expect(buffer, isEmpty);
+    });
+
     test('drops frames with invalid checksum', () {
       final buffer = BleFraming.encodeFrame(0x03, [0x01]);
       buffer[buffer.length - 2] ^= 0xFF;

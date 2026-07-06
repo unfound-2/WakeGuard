@@ -38,3 +38,20 @@ class ConnectionStateChangedEvent extends BleEvent {
 class ToggleSimulationEvent extends BleEvent {}
 
 class ScanTimedOutEvent extends BleEvent {}
+
+/// Disconnect from the current device and stop all auto-reconnect activity.
+/// Used by "Forget Device" so the app fully releases the clock instead of
+/// silently reconnecting to it.
+class ForgetDeviceEvent extends BleEvent {}
+
+/// Reconnect to the last-known device (if any) when the app returns to the
+/// foreground. No-op when already connected/connecting or no device is
+/// remembered. The clock runs alarms autonomously, so the phone only needs a
+/// link while the app is open — this re-establishes it on resume.
+class ReconnectEvent extends BleEvent {}
+
+/// Release the radio when the app goes to the background: disconnect and stop
+/// scanning, but *keep* the remembered device so [ReconnectEvent] can restore
+/// the link on resume. This is the battery-saving counterpart to
+/// [ForgetDeviceEvent], which instead forgets the device entirely.
+class ReleaseConnectionEvent extends BleEvent {}

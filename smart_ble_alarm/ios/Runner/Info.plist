@@ -49,10 +49,6 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>bluetooth-central</string>
-	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -75,7 +71,7 @@
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>WakeGuard connects to your smart alarm clock to sync alarms, timers, time, and display settings.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>WakeGuard uses the camera to scan printed QR codes that dismiss protected alarms.</string>
+	<string>WakeGuard uses the camera to scan printed QR codes and recognise items that dismiss protected alarms.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Bluetooth scanning may require location permission to discover nearby alarm clocks.</string>
 </dict>

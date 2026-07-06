@@ -13,6 +13,19 @@ class BleRepositoryImpl implements BleRepository {
       StreamController.broadcast();
   final List<int> _receiveBuffer = [];
 
+  // Serializes all outgoing writes. Because a frame is transmitted as several
+  // 20-byte chunks over a single characteristic, two concurrent callers (e.g.
+  // an auto-sync and a manual "Sync Now") must never interleave their chunks —
+  // that would corrupt the on-wire frame structure. Every write chains onto the
+  // previous one so they run strictly one at a time.
+  Future<void> _writeChain = Future.value();
+
+  // Serializes connect attempts. connectToDevice mutates shared state
+  // (_txRxCharacteristic, _characteristicSub, _receiveBuffer); two overlapping
+  // calls would clobber each other and orphan a subscription, so each connect
+  // chains onto the previous one.
+  Future<void> _connectChain = Future.value();
+
   @override
   Stream<BluetoothAdapterState> get adapterState =>
       FlutterBluePlus.adapterState;
@@ -34,7 +47,13 @@ class BleRepositoryImpl implements BleRepository {
   }
 
   @override
-  Future<void> connectToDevice(BluetoothDevice device) async {
+  Future<void> connectToDevice(BluetoothDevice device) {
+    final result = _connectChain.then((_) => _performConnect(device));
+    _connectChain = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<void> _performConnect(BluetoothDevice device) async {
     await _characteristicSub?.cancel();
     _characteristicSub = null;
     _txRxCharacteristic = null;
@@ -99,11 +118,16 @@ class BleRepositoryImpl implements BleRepository {
   }
 
   @override
-  Future<void> sendCommand(
-    BluetoothDevice device,
-    int cmd,
-    List<int> payload,
-  ) async {
+  Future<void> sendCommand(BluetoothDevice device, int cmd, List<int> payload) {
+    // Queue this write behind any in-flight write. The returned future carries
+    // this call's own success/error, while `_writeChain` swallows errors so one
+    // failed write never stalls the queue for subsequent commands.
+    final result = _writeChain.then((_) => _performWrite(cmd, payload));
+    _writeChain = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<void> _performWrite(int cmd, List<int> payload) async {
     if (_txRxCharacteristic == null) {
       throw Exception("Characteristic not found. Are you connected?");
     }
@@ -122,5 +146,14 @@ class BleRepositoryImpl implements BleRepository {
   @override
   Stream<List<int>> receiveFrames(BluetoothDevice device) {
     return _framesController.stream;
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _characteristicSub?.cancel();
+    _characteristicSub = null;
+    _txRxCharacteristic = null;
+    _receiveBuffer.clear();
+    await _framesController.close();
   }
 }

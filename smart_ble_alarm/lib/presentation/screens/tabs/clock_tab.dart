@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/glass.dart';
+import '../../../core/utils/alarm_time_utils.dart';
 import '../../blocs/ble_bloc/ble_bloc.dart';
 import '../../blocs/ble_bloc/ble_state.dart';
 import '../../blocs/ble_bloc/ble_event.dart';
@@ -13,40 +15,31 @@ class ClockTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: Theme.of(context).brightness == Brightness.dark
-              ? [
-                  (Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF0F111A)
-                      : const Color(0xFFF3F4F6)),
-                  Colors.black,
-                ]
-              : [
-                  (Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF0F111A)
-                      : const Color(0xFFF3F4F6)),
-                  Colors.white,
-                ],
-        ),
-      ),
+    return GlassBackground(
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
           children: [
             Padding(
-              padding: const EdgeInsets.only(bottom: 24, top: 16),
-              child: Text(
-                'CLOCK SETTINGS',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 2,
-                  fontSize: 18,
-                ),
+              padding: const EdgeInsets.only(bottom: 20, top: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Clock',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  Text(
+                    'Display & connection',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
               ),
             ),
             _buildSectionHeader(context, 'DISPLAY'),
@@ -82,6 +75,7 @@ class ClockTab extends StatelessWidget {
                       _formatTime(
                         settingsState.sleepStartHour,
                         settingsState.sleepStartMinute,
+                        settingsState.is24HourTime,
                       ),
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.primary,
@@ -101,6 +95,7 @@ class ClockTab extends StatelessWidget {
                       _formatTime(
                         settingsState.sleepEndHour,
                         settingsState.sleepEndMinute,
+                        settingsState.is24HourTime,
                       ),
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.primary,
@@ -148,8 +143,11 @@ class ClockTab extends StatelessWidget {
                       context: context,
                       title: 'Reconnect Device',
                       icon: Icons.bluetooth_searching,
+                      // Reconnect to the remembered clock specifically, rather
+                      // than a generic rescan (which would clear the saved
+                      // device and break auto-reconnect on the next app open).
                       onTap: () => context.read<BleConnectionBloc>().add(
-                        StartScanEvent(),
+                        ReconnectEvent(),
                       ),
                     ),
                   if (bleState is BleConnected)
@@ -159,6 +157,11 @@ class ClockTab extends StatelessWidget {
                       icon: Icons.bluetooth_disabled,
                       titleColor: Theme.of(context).colorScheme.error,
                       onTap: () async {
+                        // Actually release the clock: disconnect and stop
+                        // auto-reconnect before forgetting the saved device.
+                        context.read<BleConnectionBloc>().add(
+                          ForgetDeviceEvent(),
+                        );
                         final prefs = await SharedPreferences.getInstance();
                         await prefs.remove('rememberedDeviceId');
                         if (!context.mounted) return;
@@ -179,10 +182,8 @@ class ClockTab extends StatelessWidget {
     );
   }
 
-  String _formatTime(int hour, int minute) {
-    final time = TimeOfDay(hour: hour, minute: minute);
-    return "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
-  }
+  String _formatTime(int hour, int minute, bool is24Hour) =>
+      AlarmTimeUtils.formatTime(hour, minute, is24Hour: is24Hour);
 
   Future<void> _pickTime(
     BuildContext context,
@@ -194,6 +195,14 @@ class ClockTab extends StatelessWidget {
       initialTime: TimeOfDay(
         hour: isStart ? state.sleepStartHour : state.sleepEndHour,
         minute: isStart ? state.sleepStartMinute : state.sleepEndMinute,
+      ),
+      // Honour the app's own 24-hour setting rather than the OS locale so the
+      // picker matches how times are shown everywhere else in the app.
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(alwaysUse24HourFormat: state.is24HourTime),
+        child: child!,
       ),
     );
     if (picked != null) {
@@ -226,14 +235,12 @@ class ClockTab extends StatelessWidget {
   }
 
   Widget _buildCard(BuildContext context, List<Widget> children) {
-    return Material(
-      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: Theme.of(context).dividerColor, width: 1.5),
+    return GlassCard(
+      borderRadius: 22,
+      child: Material(
+        color: Colors.transparent,
+        child: Column(children: children),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(children: children),
     );
   }
 
@@ -257,15 +264,12 @@ class ClockTab extends StatelessWidget {
       subtitle: Text(
         subtitle,
         style: TextStyle(
-          color: (Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF8B9BB4)
-              : const Color(0xFF6B7280)),
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
           fontSize: 12,
         ),
       ),
       secondary: Icon(icon, color: Theme.of(context).colorScheme.primary),
       value: value,
-      activeThumbColor: Theme.of(context).colorScheme.primary,
       onChanged: onChanged,
     );
   }
@@ -296,9 +300,7 @@ class ClockTab extends StatelessWidget {
           ? Text(
               subtitle,
               style: TextStyle(
-                color: (Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF8B9BB4)
-                    : const Color(0xFF6B7280)),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 12,
               ),
             )

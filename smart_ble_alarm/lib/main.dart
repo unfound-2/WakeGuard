@@ -10,6 +10,8 @@ import 'presentation/blocs/ble_bloc/ble_bloc.dart';
 import 'presentation/blocs/ble_bloc/ble_event.dart';
 import 'presentation/blocs/alarm_bloc/alarm_bloc.dart';
 import 'presentation/blocs/settings_bloc/settings_bloc.dart';
+import 'presentation/blocs/timer_cubit/countdown_timer_cubit.dart';
+import 'presentation/blocs/history_cubit/dismissal_history_cubit.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/screens/setup_screen.dart';
 
@@ -34,7 +36,7 @@ void main() async {
   );
 }
 
-class SmartAlarmApp extends StatelessWidget {
+class SmartAlarmApp extends StatefulWidget {
   final SharedPreferences prefs;
   final String? rememberedDeviceId;
   final BleRepository bleRepository;
@@ -47,61 +49,143 @@ class SmartAlarmApp extends StatelessWidget {
   });
 
   @override
+  State<SmartAlarmApp> createState() => _SmartAlarmAppState();
+}
+
+class _SmartAlarmAppState extends State<SmartAlarmApp> {
+  // Active BLE backend. The temporary "Enter developer mode" button swaps this
+  // for the simulator so the connected UI can be explored without a physical
+  // clock. Session-only — not persisted, so a normal relaunch returns to the
+  // real radio.
+  late BleRepository _bleRepository = widget.bleRepository;
+  late String? _rememberedDeviceId = widget.rememberedDeviceId;
+  // Bumped to tear down and recreate the provider/bloc subtree so the new
+  // BleConnectionBloc binds to the freshly-selected repository.
+  int _backendGeneration = 0;
+
+  void _enterDeveloperMode() {
+    // Release the outgoing backend's subscriptions/stream controllers before
+    // abandoning it — RepositoryProvider.value never disposes it for us.
+    final previous = _bleRepository;
+    setState(() {
+      _bleRepository = SimulatedBleRepositoryImpl();
+      _rememberedDeviceId = 'simulated_device';
+      _backendGeneration++;
+    });
+    previous.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MultiRepositoryProvider(
-      providers: [
-        RepositoryProvider<BleRepository>.value(value: bleRepository),
-      ],
-      child: MultiBlocProvider(
+    return KeyedSubtree(
+      key: ValueKey(_backendGeneration),
+      child: MultiRepositoryProvider(
         providers: [
-          BlocProvider(
-            create: (context) =>
-                SettingsBloc(prefs: prefs)..add(LoadSettingsEvent()),
-          ),
-          BlocProvider(
-            create: (context) {
-              final bloc = BleConnectionBloc(
+          RepositoryProvider<BleRepository>.value(value: _bleRepository),
+        ],
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider(
+              create: (context) =>
+                  SettingsBloc(prefs: widget.prefs)..add(LoadSettingsEvent()),
+            ),
+            BlocProvider(
+              create: (context) {
+                final bloc = BleConnectionBloc(
+                  bleRepository: context.read<BleRepository>(),
+                );
+                if (_rememberedDeviceId != null) {
+                  bloc.add(AutoConnectEvent(_rememberedDeviceId!));
+                }
+                return bloc;
+              },
+            ),
+            BlocProvider<AlarmBloc>(
+              create: (context) => AlarmBloc(
                 bleRepository: context.read<BleRepository>(),
+                prefs: widget.prefs,
+              )..add(LoadAlarmsEvent()),
+            ),
+            BlocProvider<CountdownTimerCubit>(
+              create: (_) => CountdownTimerCubit(prefs: widget.prefs),
+            ),
+            BlocProvider<DismissalHistoryCubit>(
+              create: (_) => DismissalHistoryCubit(prefs: widget.prefs),
+            ),
+          ],
+          child: BlocBuilder<SettingsBloc, SettingsState>(
+            // Only the theme/accent drive MaterialApp; rebuilding the whole app
+            // tree when unrelated settings (24h, auto-dim, sleep times) change
+            // is wasteful, so gate the rebuild to the fields actually used here.
+            buildWhen: (prev, curr) =>
+                prev.themeString != curr.themeString ||
+                prev.accentColorString != curr.accentColorString,
+            builder: (context, settingsState) {
+              final accentColor = AppColors.accentFromString(
+                settingsState.accentColorString,
               );
-              if (rememberedDeviceId != null) {
-                bloc.add(AutoConnectEvent(rememberedDeviceId!));
+
+              final ThemeMode themeMode;
+              switch (settingsState.themeString) {
+                case 'Light':
+                  themeMode = ThemeMode.light;
+                  break;
+                case 'System':
+                  themeMode = ThemeMode.system;
+                  break;
+                case 'Dark':
+                default:
+                  themeMode = ThemeMode.dark;
               }
-              return bloc;
+
+              return MaterialApp(
+                title: 'WakeGuard',
+                scrollBehavior: const _BounceScrollBehavior(),
+                theme: AppTheme.getTheme(
+                  accentColor: accentColor,
+                  isDarkMode: false,
+                ),
+                darkTheme: AppTheme.getTheme(
+                  accentColor: accentColor,
+                  isDarkMode: true,
+                ),
+                themeMode: themeMode,
+                home: _rememberedDeviceId == null
+                    ? SetupScreen(
+                        prefs: widget.prefs,
+                        onEnterDeveloperMode: _enterDeveloperMode,
+                      )
+                    : const MainScreen(),
+                debugShowCheckedModeBanner: false,
+              );
             },
           ),
-          BlocProvider<AlarmBloc>(
-            create: (_) =>
-                AlarmBloc(bleRepository: bleRepository, prefs: prefs)
-                  ..add(LoadAlarmsEvent()),
-          ),
-        ],
-        child: BlocBuilder<SettingsBloc, SettingsState>(
-          builder: (context, settingsState) {
-            Color accentColor = AppColors.primaryOrange;
-            if (settingsState.accentColorString == 'Cyber Cyan') {
-              accentColor = const Color(0xFF00F0FF); // Cyber Cyan
-            } else if (settingsState.accentColorString == 'Matrix Green') {
-              accentColor = const Color(0xFF00FF41); // Matrix Green
-            } else if (settingsState.accentColorString == 'Neon Blue') {
-              accentColor = AppColors.neonBlue;
-            }
-
-            bool isDark = settingsState.themeString != 'Light';
-
-            return MaterialApp(
-              title: 'WakeGuard',
-              theme: AppTheme.getTheme(
-                accentColor: accentColor,
-                isDarkMode: isDark,
-              ),
-              home: prefs.getString('rememberedDeviceId') == null
-                  ? SetupScreen(prefs: prefs)
-                  : const MainScreen(),
-              debugShowCheckedModeBanner: false,
-            );
-          },
         ),
       ),
     );
+  }
+}
+
+/// App-wide scroll feel: iOS-style rubber-band bounce on every platform, with
+/// no overscroll indicator. This removes Android's default "stretch" (which
+/// visibly distorts text and cards at the edges) and the glow indicator — the
+/// content simply springs back when dragged past the end.
+class _BounceScrollBehavior extends MaterialScrollBehavior {
+  const _BounceScrollBehavior();
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) =>
+      const BouncingScrollPhysics(
+        decelerationRate: ScrollDecelerationRate.fast,
+      );
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    // Bounce alone communicates the edge — suppress the stretch/glow overlay.
+    return child;
   }
 }

@@ -21,9 +21,21 @@ class LoadAlarmsEvent extends AlarmEvent {}
 class AddOrUpdateAlarmEvent extends AlarmEvent {
   final Alarm alarm;
   final BluetoothDevice? connectedDevice;
-  const AddOrUpdateAlarmEvent(this.alarm, this.connectedDevice);
+
+  /// When true, discard any stored secure key for this alarm id and mint a
+  /// fresh one. Set this only when creating a *genuinely new* alarm (the id may
+  /// be reused from a deleted alarm, and a fresh key stops an old printed QR
+  /// from dismissing the new alarm). Leave false for edits, active-toggles and
+  /// delete-undo, so a previously printed QR keeps working.
+  final bool rotateSecureKey;
+
+  const AddOrUpdateAlarmEvent(
+    this.alarm,
+    this.connectedDevice, {
+    this.rotateSecureKey = false,
+  });
   @override
-  List<Object?> get props => [alarm, connectedDevice];
+  List<Object?> get props => [alarm, connectedDevice, rotateSecureKey];
 }
 
 class DeleteAlarmEvent extends AlarmEvent {
@@ -109,6 +121,9 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
   static const String _alarmsKey = 'saved_alarms';
   static const String _pendingDeletesKey = 'pending_alarm_deletes';
 
+  /// The hardware clock only has room for this many alarm slots.
+  static const int maxHardwareAlarms = 5;
+
   AlarmBloc({
     required this.bleRepository,
     required this.prefs,
@@ -175,7 +190,28 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     if (index >= 0) {
       updatedAlarms[index] = event.alarm;
     } else {
+      // Adding a brand-new alarm: the hardware only has [maxHardwareAlarms]
+      // slots, so reject the add centrally (the UI guards too, but this is the
+      // single source of truth and closes race/duplicate-tap gaps).
+      if (updatedAlarms.length >= maxHardwareAlarms) {
+        emit(
+          state.copyWith(
+            syncError:
+                'The clock supports up to $maxHardwareAlarms alarms. '
+                'Delete one before adding another.',
+          ),
+        );
+        return;
+      }
       updatedAlarms.add(event.alarm);
+    }
+
+    // Mint a fresh dismissal key for genuinely-new alarms so a stale QR from a
+    // deleted alarm that reused this id can't dismiss it.
+    if (event.rotateSecureKey) {
+      try {
+        await secureKeyDatasource.deleteKey(event.alarm.id);
+      } catch (_) {}
     }
 
     final pendingDeletes = Set<int>.from(state.pendingDeleteIds)
@@ -219,6 +255,10 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
       ),
     );
     await _saveAlarms(updatedAlarms);
+    // NOTE: the secure key is intentionally *kept* here so a delete can be
+    // undone (or re-printed) with the same QR still valid. A genuinely new
+    // alarm that later reuses this id rotates the key instead — see
+    // AddOrUpdateAlarmEvent.rotateSecureKey.
 
     if (event.connectedDevice == null) {
       pendingDeletes.add(event.alarmId);
@@ -251,39 +291,50 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     SyncAlarmsToDeviceEvent event,
     Emitter<AlarmState> emit,
   ) async {
-    var pendingDeletes = Set<int>.from(state.pendingDeleteIds);
-    emit(state.copyWith(clearSyncError: true));
+    try {
+      var pendingDeletes = Set<int>.from(state.pendingDeleteIds);
+      emit(state.copyWith(clearSyncError: true));
 
-    for (final alarmId in state.pendingDeleteIds) {
-      try {
-        await bleRepository.sendCommand(event.connectedDevice, 0x03, [
-          alarmId & 0xFF,
-        ]);
-        pendingDeletes.remove(alarmId);
-      } catch (_) {
-        const message =
-            'Some deleted alarms could not be removed from the clock.';
-        emit(state.copyWith(syncError: message));
-        _completeSync(event.completer, error: Exception(message));
-        return;
+      for (final alarmId in state.pendingDeleteIds) {
+        try {
+          await bleRepository.sendCommand(event.connectedDevice, 0x03, [
+            alarmId & 0xFF,
+          ]);
+          pendingDeletes.remove(alarmId);
+        } catch (_) {
+          const message =
+              'Some deleted alarms could not be removed from the clock.';
+          emit(state.copyWith(syncError: message));
+          _completeSync(event.completer, error: Exception(message));
+          return;
+        }
       }
-    }
 
-    await _savePendingDeletes(pendingDeletes);
-    emit(state.copyWith(pendingDeleteIds: pendingDeletes));
+      await _savePendingDeletes(pendingDeletes);
+      emit(state.copyWith(pendingDeleteIds: pendingDeletes));
 
-    for (final alarm in state.alarms) {
-      try {
-        await _sendAlarmToDevice(event.connectedDevice, alarm);
-      } catch (_) {
-        const message = 'Some alarms could not be synced to the clock.';
-        emit(state.copyWith(syncError: message));
-        _completeSync(event.completer, error: Exception(message));
-        return;
+      // The clock only has [maxHardwareAlarms] slots; sync the lowest ids so we
+      // never overflow hardware storage even if more alarms exist locally.
+      final alarmsToSync = (List<Alarm>.from(
+        state.alarms,
+      )..sort((a, b) => a.id.compareTo(b.id))).take(maxHardwareAlarms);
+      for (final alarm in alarmsToSync) {
+        try {
+          await _sendAlarmToDevice(event.connectedDevice, alarm);
+        } catch (_) {
+          const message = 'Some alarms could not be synced to the clock.';
+          emit(state.copyWith(syncError: message));
+          _completeSync(event.completer, error: Exception(message));
+          return;
+        }
       }
-    }
 
-    _completeSync(event.completer);
+      _completeSync(event.completer);
+    } catch (e) {
+      // A failure here (e.g. emit after the bloc is closed mid-sync) must still
+      // complete the completer, otherwise callers awaiting it hang forever.
+      _completeSync(event.completer, error: e);
+    }
   }
 
   Future<void> _sendAlarmToDevice(BluetoothDevice device, Alarm alarm) async {

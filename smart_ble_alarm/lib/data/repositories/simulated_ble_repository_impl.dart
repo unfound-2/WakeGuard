@@ -132,4 +132,12 @@ class SimulatedBleRepositoryImpl implements BleRepository {
   Stream<List<int>> receiveFrames(BluetoothDevice device) {
     return _receiveFramesController.stream;
   }
+
+  @override
+  Future<void> dispose() async {
+    _isConnected = false;
+    await _scanResultsController.close();
+    await _connectionStateController.close();
+    await _receiveFramesController.close();
+  }
 }

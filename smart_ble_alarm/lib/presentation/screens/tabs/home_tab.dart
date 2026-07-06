@@ -1,84 +1,79 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/ble/ble_payloads.dart';
 import '../../../core/utils/alarm_time_utils.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/glass.dart';
 import '../../../domain/repositories/ble_repository.dart';
 import '../../blocs/ble_bloc/ble_bloc.dart';
 import '../../blocs/ble_bloc/ble_state.dart';
+import '../../blocs/ble_bloc/ble_event.dart';
 import '../../blocs/alarm_bloc/alarm_bloc.dart';
-import 'dart:ui' as dart_ui;
 import '../../blocs/settings_bloc/settings_bloc.dart';
+import '../../blocs/timer_cubit/countdown_timer_cubit.dart';
 import '../alarm_edit_screen.dart';
 import '../scanner_screen.dart';
+import '../item_scan_screen.dart';
+import '../../../domain/entities/alarm.dart';
 
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: Theme.of(context).brightness == Brightness.dark
-              ? [
-                  (Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF0F111A)
-                      : const Color(0xFFF3F4F6)),
-                  Colors.black,
-                ]
-              : [
-                  (Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF0F111A)
-                      : const Color(0xFFF3F4F6)),
-                  Colors.white,
-                ],
-        ),
-      ),
+    return GlassBackground(
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'DASHBOARD',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 2,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Dashboard',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              _buildConnectionStatus(),
-              const SizedBox(height: 16),
-              _buildNextAlarm(context),
-              const SizedBox(height: 24),
-              Text(
-                'QUICK ACTIONS',
-                style: TextStyle(
-                  color: (Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF8B9BB4)
-                      : const Color(0xFF6B7280)),
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 2,
+                Text(
+                  'Your clock, at a glance',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 14,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: GridView.count(
+                const SizedBox(height: 20),
+                _buildConnectionStatus(),
+                const SizedBox(height: 16),
+                _PeriodicRebuild(
+                  interval: const Duration(seconds: 30),
+                  builder: (context) => _buildNextAlarm(context),
+                ),
+                const SizedBox(height: 28),
+                _sectionLabel(context, 'QUICK ACTIONS'),
+                const SizedBox(height: 14),
+                GridView.count(
                   crossAxisCount: 2,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  // Make cards taller as text scales up so large accessibility
+                  // font sizes don't overflow the card content.
+                  childAspectRatio:
+                      (1.1 / MediaQuery.textScalerOf(context).scale(1.0)).clamp(
+                        0.62,
+                        1.2,
+                      ),
                   children: [
                     _buildActionCard(
                       context,
                       'Create Alarm',
-                      Icons.add_alarm,
+                      Icons.add_alarm_rounded,
                       () {
                         Navigator.push(
                           context,
@@ -88,26 +83,42 @@ class HomeTab extends StatelessWidget {
                         );
                       },
                     ),
-                    _buildActionCard(context, 'Start Timer', Icons.timer, () {
-                      _showTimerDialog(context);
-                    }),
-                    _buildActionCard(context, 'Sync Now', Icons.sync, () {
-                      _syncNow(context);
-                    }),
+                    _buildActionCard(
+                      context,
+                      'Start Timer',
+                      Icons.timer_rounded,
+                      () => _showTimerDialog(context),
+                    ),
+                    _buildActionCard(
+                      context,
+                      'Sync Now',
+                      Icons.sync_rounded,
+                      () => _syncNow(context),
+                    ),
                     _buildActionCard(
                       context,
                       'Scan QR',
-                      Icons.qr_code_scanner,
-                      () {
-                        _openScanner(context);
-                      },
+                      Icons.qr_code_scanner_rounded,
+                      () => _openScanner(context),
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(BuildContext context, String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 2,
+        fontSize: 12,
       ),
     );
   }
@@ -118,67 +129,85 @@ class HomeTab extends StatelessWidget {
         String deviceName = 'No Device Connected';
         String status = 'Tap to Pair';
         Color color = Theme.of(context).colorScheme.error;
+        IconData icon = Icons.bluetooth_disabled_rounded;
 
+        final bool busy = bleState is BleConnecting || bleState is BleScanning;
         if (bleState is BleConnected) {
-          deviceName = bleState.device.platformName;
+          deviceName = bleState.device.platformName.isEmpty
+              ? 'Smart Clock'
+              : bleState.device.platformName;
           status = 'Connected';
-          color = const Color(0xFF4ADE80); // Success green
-        } else if (bleState is BleConnecting || bleState is BleScanning) {
-          status = 'Connecting...';
+          color = AppColors.success;
+          icon = Icons.bluetooth_connected_rounded;
+        } else if (busy) {
+          status = 'Connecting…';
           color = Theme.of(context).colorScheme.primary;
+          icon = Icons.bluetooth_searching_rounded;
+        } else {
+          // Disconnected: the app only holds the link while open, so offer a
+          // one-tap reconnect to the remembered clock.
+          status = 'Tap to connect';
         }
 
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(28),
-          child: BackdropFilter(
-            filter: dart_ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surface.withValues(alpha: 0.3),
-                border: Border.all(
-                  color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+        return GlassCard(
+          // Reconnect on demand when disconnected; the clock keeps running
+          // alarms on its own, so we don't hold the connection continuously.
+          onTap: (bleState is BleConnected || busy)
+              ? null
+              : () => context.read<BleConnectionBloc>().add(ReconnectEvent()),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color.withValues(alpha: 0.4)),
+                ),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      deviceName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 17,
+                      ),
+                    ),
+                    Text(
+                      status,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.6),
+                      blurRadius: 8,
                     ),
-                    child: Icon(Icons.bluetooth, color: color),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          deviceName,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                        Text(
-                          status,
-                          style: TextStyle(
-                            color: color,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
         );
       },
@@ -224,144 +253,128 @@ class HomeTab extends StatelessWidget {
               activeNextAlarm.minute,
               is24Hour: settingsState.is24HourTime,
             );
+            final primary = Theme.of(context).colorScheme.primary;
+            final error = Theme.of(context).colorScheme.error;
+            final usesItem = activeNextAlarm.usesItemScan;
 
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: BackdropFilter(
-                filter: dart_ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 500),
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: isRinging
-                        ? Theme.of(
-                            context,
-                          ).colorScheme.error.withValues(alpha: 0.2)
-                        : Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.1),
-                    border: Border.all(
-                      color: isRinging
-                          ? Theme.of(context).colorScheme.error
-                          : Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.3),
-                      width: isRinging ? 2 : 1,
-                    ),
-                  ),
-                  child: isRinging
-                      ? Column(
+            return GlassCard(
+              padding: const EdgeInsets.all(22),
+              tintColor: isRinging ? error : primary,
+              borderColor: isRinging ? error : primary.withValues(alpha: 0.4),
+              borderWidth: isRinging ? 2 : 1,
+              shadows: [
+                BoxShadow(
+                  color: (isRinging ? error : primary).withValues(alpha: 0.22),
+                  blurRadius: 24,
+                  spreadRadius: -4,
+                ),
+              ],
+              child: isRinging
+                  ? Column(
+                      children: [
+                        Text(
+                          'ALARM RINGING',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: error,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 2,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          timeStr,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontSize: 44,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: error,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                            ),
+                            icon: Icon(
+                              usesItem
+                                  ? Icons.center_focus_strong_rounded
+                                  : Icons.qr_code_scanner_rounded,
+                              size: 26,
+                            ),
+                            label: Text(
+                              usesItem
+                                  ? 'SCAN ITEM TO DISMISS'
+                                  : 'SCAN QR TO DISMISS',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            onPressed: () =>
+                                _pushDismissal(context, activeNextAlarm),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'ALARM RINGING',
-                              textAlign: TextAlign.center,
+                              'NEXT ALARM',
                               style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 2,
-                                fontSize: 16,
+                                color: primary,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.5,
+                                fontSize: 12,
                               ),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               timeStr,
-                              textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Theme.of(context).colorScheme.onSurface,
-                                fontSize: 42,
-                                fontWeight: FontWeight.bold,
+                                fontSize: 34,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                            const SizedBox(height: 16),
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(
+                            const SizedBox(height: 4),
+                            Text(
+                              AlarmTimeUtils.formatNextOccurrence(
+                                nextOccurrence,
+                                now,
+                              ),
+                              style: TextStyle(
+                                color: Theme.of(
                                   context,
-                                ).colorScheme.error,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
+                                ).colorScheme.onSurfaceVariant,
+                                fontSize: 12,
                               ),
-                              icon: const Icon(Icons.qr_code_scanner, size: 28),
-                              label: const Text(
-                                'SCAN QR TO DISMISS',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ScannerScreen(
-                                      alarmId: activeNextAlarm.id,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'NEXT ALARM',
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  timeStr,
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  AlarmTimeUtils.formatNextOccurrence(
-                                    nextOccurrence,
-                                    now,
-                                  ),
-                                  style: TextStyle(
-                                    color:
-                                        (Theme.of(context).brightness ==
-                                            Brightness.dark
-                                        ? const Color(0xFF8B9BB4)
-                                        : const Color(0xFF6B7280)),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Icon(
-                              Icons.alarm_on,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.5),
-                              size: 48,
                             ),
                           ],
                         ),
-                ),
-              ),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: primary.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.alarm_on_rounded,
+                            color: primary,
+                            size: 34,
+                          ),
+                        ),
+                      ],
+                    ),
             );
           },
         );
@@ -375,41 +388,36 @@ class HomeTab extends StatelessWidget {
     IconData icon,
     VoidCallback onTap,
   ) {
-    return GestureDetector(
+    final primary = Theme.of(context).colorScheme.primary;
+    return GlassCard(
       onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: dart_ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Theme.of(
-                context,
-              ).colorScheme.surface.withValues(alpha: 0.3),
-              border: Border.all(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+              color: primary.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: primary, size: 26),
+          ),
+          const SizedBox(height: 10),
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
               ),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 32,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -429,6 +437,7 @@ class HomeTab extends StatelessWidget {
                 style: TextStyle(color: Theme.of(context).colorScheme.primary),
               ),
               content: SizedBox(
+                width: 280,
                 height: 200,
                 child: CupertinoTheme(
                   data: CupertinoThemeData(
@@ -457,9 +466,7 @@ class HomeTab extends StatelessWidget {
                   child: Text(
                     'CANCEL',
                     style: TextStyle(
-                      color: (Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF8B9BB4)
-                          : const Color(0xFF6B7280)),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -489,6 +496,10 @@ class HomeTab extends StatelessWidget {
                           BlePayloads.uint32(durationSeconds),
                         );
                         if (!context.mounted) return;
+                        context.read<CountdownTimerCubit>().startTimer(
+                          selectedDuration,
+                        );
+                        HapticFeedback.mediumImpact();
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Timer started on clock!'),
@@ -594,39 +605,45 @@ class HomeTab extends StatelessWidget {
     }
   }
 
+  /// Routes to the correct dismissal flow for [alarm]: the item-recognition
+  /// screen for item alarms, the QR scanner otherwise.
+  void _pushDismissal(BuildContext context, Alarm alarm) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => alarm.usesItemScan
+            ? ItemScanScreen(alarm: alarm)
+            : ScannerScreen(alarmId: alarm.id),
+      ),
+    );
+  }
+
   void _openScanner(BuildContext context) {
     final alarmState = context.read<AlarmBloc>().state;
     final ringingAlarmId = alarmState.ringingAlarmId;
     if (ringingAlarmId != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ScannerScreen(alarmId: ringingAlarmId),
-        ),
-      );
-      return;
+      final ringing = alarmState.alarms.where((a) => a.id == ringingAlarmId);
+      if (ringing.isNotEmpty) {
+        _pushDismissal(context, ringing.first);
+        return;
+      }
     }
 
-    final qrAlarms = alarmState.alarms
+    final taskAlarms = alarmState.alarms
         .where((alarm) => alarm.qrRequired)
         .toList();
-    if (qrAlarms.isEmpty) {
+    if (taskAlarms.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('No QR-protected alarms are available.'),
+          content: const Text('No protected alarms are available.'),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
       return;
     }
 
-    if (qrAlarms.length == 1) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ScannerScreen(alarmId: qrAlarms.first.id),
-        ),
-      );
+    if (taskAlarms.length == 1) {
+      _pushDismissal(context, taskAlarms.first);
       return;
     }
 
@@ -648,10 +665,12 @@ class HomeTab extends StatelessWidget {
                   ),
                 ),
               ),
-              for (final alarm in qrAlarms)
+              for (final alarm in taskAlarms)
                 ListTile(
                   leading: Icon(
-                    Icons.alarm,
+                    alarm.usesItemScan
+                        ? Icons.center_focus_strong
+                        : Icons.qr_code,
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   title: Text(
@@ -667,19 +686,12 @@ class HomeTab extends StatelessWidget {
                   subtitle: Text(
                     AlarmTimeUtils.formatDays(alarm.dayMask),
                     style: TextStyle(
-                      color: (Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF8B9BB4)
-                          : const Color(0xFF6B7280)),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ScannerScreen(alarmId: alarm.id),
-                      ),
-                    );
+                    _pushDismissal(context, alarm);
                   },
                 ),
             ],
@@ -688,4 +700,37 @@ class HomeTab extends StatelessWidget {
       },
     );
   }
+}
+
+/// Rebuilds [builder] on a fixed [interval] so relative time labels (e.g. the
+/// "next alarm in 7h 20m" countdown) stay current without a full screen rebuild.
+class _PeriodicRebuild extends StatefulWidget {
+  final Duration interval;
+  final WidgetBuilder builder;
+
+  const _PeriodicRebuild({required this.interval, required this.builder});
+
+  @override
+  State<_PeriodicRebuild> createState() => _PeriodicRebuildState();
+}
+
+class _PeriodicRebuildState extends State<_PeriodicRebuild> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(widget.interval, (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }

@@ -13,4 +13,9 @@ abstract class BleRepository {
 
   Future<void> sendCommand(BluetoothDevice device, int cmd, List<int> payload);
   Stream<List<int>> receiveFrames(BluetoothDevice device);
+
+  /// Releases all resources held by this repository (open subscriptions and
+  /// stream controllers). Call before discarding an instance — e.g. when the
+  /// app swaps to a different backend — so nothing is leaked.
+  Future<void> dispose();
 }

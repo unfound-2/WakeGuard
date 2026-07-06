@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/ble/ble_payloads.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
+import '../blocs/ble_bloc/ble_event.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../domain/repositories/ble_repository.dart';
@@ -20,7 +21,7 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
   StreamSubscription<List<int>>? _frameSubscription;
 
@@ -32,7 +33,29 @@ class _MainScreenState extends State<MainScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    // Drive the connection off the app lifecycle: hold the link only while the
+    // app is in the foreground, and release the radio in the background. The
+    // clock rings alarms autonomously, so there's no reason to stay connected
+    // (or keep BLE alive in the background) when the app is closed.
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    final bleBloc = context.read<BleConnectionBloc>();
+    if (state == AppLifecycleState.resumed) {
+      bleBloc.add(ReconnectEvent());
+    } else if (state == AppLifecycleState.paused) {
+      bleBloc.add(ReleaseConnectionEvent());
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _frameSubscription?.cancel();
     super.dispose();
   }
@@ -181,28 +204,47 @@ class _MainScreenState extends State<MainScreen> {
                 if (state is BleDisconnected) {
                   return Container(
                     width: double.infinity,
-                    color: Theme.of(context).colorScheme.error,
                     padding: EdgeInsets.only(
-                      top: MediaQuery.of(context).padding.top + 8,
-                      bottom: 8,
+                      top: MediaQuery.of(context).padding.top + 10,
+                      bottom: 10,
                       left: 16,
                       right: 16,
                     ),
-                    child: const Text(
-                      'Device disconnected. Changes will be saved locally and automatically synchronized when the clock reconnects.',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      textAlign: TextAlign.center,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.error.withValues(alpha: 0.14),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.cloud_off_rounded,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Disconnected — changes save locally and sync when the clock reconnects.',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 }
                 return const SizedBox.shrink();
               },
             ),
-            Expanded(child: _tabs[_currentIndex]),
+            // IndexedStack keeps every tab mounted so scroll position and
+            // in-tab state (e.g. live timer tickers) survive tab switches.
+            Expanded(
+              child: IndexedStack(index: _currentIndex, children: _tabs),
+            ),
           ],
         ),
         bottomNavigationBar: ClipRRect(
@@ -229,9 +271,7 @@ class _MainScreenState extends State<MainScreen> {
                       );
                     }
                     return TextStyle(
-                      color: (Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF8B9BB4)
-                          : const Color(0xFF6B7280)),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 12,
                     );
                   }),
@@ -242,9 +282,7 @@ class _MainScreenState extends State<MainScreen> {
                       );
                     }
                     return IconThemeData(
-                      color: (Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF8B9BB4)
-                          : const Color(0xFF6B7280)),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     );
                   }),
                 ),

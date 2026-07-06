@@ -3,12 +3,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/glass.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../../domain/repositories/ble_repository.dart';
 import 'setup_screen.dart';
+import 'dismissal_history_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final bool isTab;
@@ -27,26 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('SETTINGS'),
         automaticallyImplyLeading: !widget.isTab,
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: Theme.of(context).brightness == Brightness.dark
-                ? [
-                    (Theme.of(context).brightness == Brightness.dark
-                        ? const Color(0xFF0F111A)
-                        : const Color(0xFFF3F4F6)),
-                    Colors.black,
-                  ]
-                : [
-                    (Theme.of(context).brightness == Brightness.dark
-                        ? const Color(0xFF0F111A)
-                        : const Color(0xFFF3F4F6)),
-                    Colors.white,
-                  ],
-          ),
-        ),
+      body: GlassBackground(
         child: SafeArea(
           child: BlocBuilder<SettingsBloc, SettingsState>(
             builder: (context, settingsState) {
@@ -62,15 +45,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: Icon(
                         Icons.arrow_forward_ios,
                         size: 16,
-                        color: (Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFF8B9BB4)
-                            : const Color(0xFF6B7280)),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       onTap: () {
                         _showSelectionSheet(
                           context,
                           'Select Theme',
-                          ['Light', 'Dark'],
+                          const ['System', 'Light', 'Dark'],
                           settingsState.themeString,
                           (val) => context.read<SettingsBloc>().add(
                             UpdateThemeEvent(val),
@@ -82,27 +63,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       title: 'Accent Color',
                       subtitle: settingsState.accentColorString,
                       icon: Icons.color_lens,
-                      trailing: Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: (Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFF8B9BB4)
-                            : const Color(0xFF6B7280)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _accentSwatch(
+                            AppColors.accentFromString(
+                              settingsState.accentColorString,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 16,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ],
                       ),
                       onTap: () {
                         _showSelectionSheet(
                           context,
                           'Select Accent Color',
-                          [
-                            'Neon Orange',
-                            'Cyber Cyan',
-                            'Matrix Green',
-                            'Neon Blue',
-                          ],
+                          AppColors.accentNames,
                           settingsState.accentColorString,
                           (val) => context.read<SettingsBloc>().add(
                             UpdateAccentColorEvent(val),
                           ),
+                          swatches: true,
                         );
                       },
                     ),
@@ -175,18 +163,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildSectionHeader('GENERAL'),
                   _buildCard([
                     _buildListTile(
+                      title: 'Dismissal History',
+                      subtitle: 'When alarms were dismissed',
+                      icon: Icons.history,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DismissalHistoryScreen(),
+                        ),
+                      ),
+                    ),
+                    _buildListTile(
                       title: 'About',
+                      subtitle: 'Version 1.0.0 (Build 42)',
                       icon: Icons.info_outline,
                       onTap: () => showAboutDialog(
                         context: context,
                         applicationName: 'WakeGuard',
                         applicationVersion: '1.0.0 (Build 42)',
                       ),
-                    ),
-                    _buildListTile(
-                      title: 'App Version',
-                      subtitle: '1.0.0 (Build 42)',
-                      icon: Icons.verified,
                     ),
                     _buildListTile(
                       title: 'Open Source Licenses',
@@ -216,6 +211,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           if (bleState is BleConnected) {
                             final repo = context.read<BleRepository>();
                             final alarmBloc = context.read<AlarmBloc>();
+                            final settingsBloc = context.read<SettingsBloc>();
                             final localAlarmIds = alarmBloc.state.alarms
                                 .map((alarm) => alarm.id)
                                 .toSet();
@@ -244,6 +240,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 0,
                               ]);
                             } catch (_) {}
+                            // Mirror those defaults into the app's own settings
+                            // state so the Clock tab doesn't keep displaying the
+                            // user's old (now-erased) sleep hours / auto-dim.
+                            settingsBloc.add(
+                              const UpdateClockConfigEvent(true, 22, 0, 6, 0),
+                            );
                             for (final id in localAlarmIds) {
                               alarmBloc.add(
                                 DeleteAlarmEvent(id, bleState.device),
@@ -318,14 +320,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildCard(List<Widget> children) {
-    return Material(
-      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: Theme.of(context).dividerColor, width: 1.5),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: GlassCard(
+        borderRadius: 22,
+        child: Material(
+          color: Colors.transparent,
+          child: Column(children: children),
+        ),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(children: children),
+    );
+  }
+
+  Widget _accentSwatch(Color color, {double size = 20}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        boxShadow: [
+          BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 8),
+        ],
+      ),
     );
   }
 
@@ -334,8 +351,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String title,
     List<String> options,
     String currentValue,
-    Function(String) onSelect,
-  ) {
+    Function(String) onSelect, {
+    bool swatches = false,
+  }) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -360,12 +378,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               ...options.map(
                 (option) => ListTile(
+                  leading: swatches
+                      ? _accentSwatch(AppColors.accentFromString(option))
+                      : null,
                   title: Text(
                     option,
                     style: TextStyle(
                       color: currentValue == option
                           ? Theme.of(context).colorScheme.primary
                           : Theme.of(context).colorScheme.onSurface,
+                      fontWeight: currentValue == option
+                          ? FontWeight.w700
+                          : FontWeight.w400,
                     ),
                   ),
                   trailing: currentValue == option
@@ -405,9 +429,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           content: Text(
             content,
             style: TextStyle(
-              color: (Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xFF8B9BB4)
-                  : const Color(0xFF6B7280)),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           actions: [
@@ -416,9 +438,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Text(
                 'CANCEL',
                 style: TextStyle(
-                  color: (Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF8B9BB4)
-                      : const Color(0xFF6B7280)),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -463,9 +483,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ? Text(
               subtitle,
               style: TextStyle(
-                color: (Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF8B9BB4)
-                    : const Color(0xFF6B7280)),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 12,
               ),
             )
@@ -494,17 +512,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       subtitle: Text(
         subtitle,
         style: TextStyle(
-          color: (Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF8B9BB4)
-              : const Color(0xFF6B7280)),
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
           fontSize: 12,
         ),
       ),
       secondary: Icon(icon, color: Theme.of(context).colorScheme.primary),
       value: value,
-      activeThumbColor: Theme.of(context).colorScheme.primary,
       onChanged: onChanged,
     );
+  }
+
+  // Cached per-permission status futures so unrelated rebuilds (e.g. toggling
+  // another setting) don't recreate them and flicker the chip red->green.
+  final Map<Permission, Future<PermissionStatus>> _permissionFutures = {};
+
+  Future<PermissionStatus> _permissionStatus(Permission permission) {
+    return _permissionFutures[permission] ??= permission.status;
   }
 
   Widget _buildPermissionTile({
@@ -513,7 +536,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required Permission permission,
   }) {
     return FutureBuilder<PermissionStatus>(
-      future: permission.status,
+      future: _permissionStatus(permission),
       builder: (context, snapshot) {
         bool isGranted = snapshot.data == PermissionStatus.granted;
         return _buildListTile(
@@ -547,9 +570,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onTap: () async {
             if (!isGranted) {
               await permission.request();
+              if (!mounted) return;
+              // Refresh only this permission's cached status, then rebuild.
               setState(
-                () {},
-              ); // Trigger rebuild to update permission status visually
+                () => _permissionFutures[permission] = permission.status,
+              );
             }
           },
         );

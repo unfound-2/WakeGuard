@@ -18,12 +18,23 @@ class BlePayloads {
     return uint32(timestamp);
   }
 
+  static int _byte(String field, int value) {
+    if (value < 0 || value > 0xFF) {
+      throw ArgumentError(
+        '$field must be 0..255 for the alarm payload, got $value',
+      );
+    }
+    return value;
+  }
+
   static List<int> alarm(Alarm alarm) {
+    // Validate rather than silently masking, so a corrupt field surfaces as a
+    // sync error instead of writing a wrong value into the fixed 5-byte frame.
     return [
-      alarm.id & 0xFF,
-      alarm.hour & 0xFF,
-      alarm.minute & 0xFF,
-      alarm.dayMask & 0xFF,
+      _byte('id', alarm.id),
+      _byte('hour', alarm.hour),
+      _byte('minute', alarm.minute),
+      _byte('dayMask', alarm.dayMask),
       alarm.qrRequired ? 1 : 0,
     ];
   }

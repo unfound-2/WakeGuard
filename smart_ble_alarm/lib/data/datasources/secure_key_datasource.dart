@@ -21,6 +21,14 @@ class SecureKeyDatasource {
     return keyBytes;
   }
 
+  /// Removes the stored key for an alarm id. Call this when an alarm is deleted
+  /// so a future alarm that reuses the id (the hardware only has 5 slots) gets a
+  /// freshly generated key instead of silently inheriting the old one — which
+  /// would let a previously printed QR/token dismiss the unrelated new alarm.
+  Future<void> deleteKey(int alarmId) async {
+    await _storage.delete(key: '$_keyPrefix$alarmId');
+  }
+
   /// Generates the static 8-byte token for a given alarm
   Future<List<int>> getDailyToken(int alarmId) async {
     final key = await _getOrGenerateKey(alarmId);

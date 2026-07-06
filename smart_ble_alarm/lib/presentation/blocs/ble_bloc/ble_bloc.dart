@@ -10,9 +10,17 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
   StreamSubscription? _scanSubscription;
   StreamSubscription? _connectionSubscription;
   Timer? _scanTimeoutTimer;
-  Timer? _reconnectTimer;
   BluetoothDevice? _connectedDevice;
+  // The last device we successfully connected to (or were asked to auto-connect
+  // to). Kept across background/foreground so [ReconnectEvent] can restore the
+  // link on resume. Cleared only by [ForgetDeviceEvent]. There is deliberately
+  // no periodic reconnect timer: the clock runs alarms on its own hardware, so
+  // the phone stays disconnected in the background to save battery and only
+  // reconnects when the app is opened or an action needs the link.
   String? _autoReconnectDeviceId;
+  // Guards against overlapping connect attempts: a second scan batch can fire
+  // another DeviceFoundEvent while the first connect is still in flight.
+  bool _isConnecting = false;
 
   BleConnectionBloc({required this.bleRepository}) : super(BleDisconnected()) {
     on<StartScanEvent>(_onStartScan);
@@ -22,11 +30,14 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
     on<ToggleSimulationEvent>(_onToggleSimulation);
     on<AutoConnectEvent>(_onAutoConnect);
     on<ScanTimedOutEvent>(_onScanTimedOut);
+    on<ForgetDeviceEvent>(_onForgetDevice);
+    on<ReconnectEvent>(_onReconnect);
+    on<ReleaseConnectionEvent>(_onReleaseConnection);
   }
 
   void _onStartScan(StartScanEvent event, Emitter<BleState> emit) async {
     _autoReconnectDeviceId = null;
-    _reconnectTimer?.cancel();
+    _isConnecting = false;
     emit(BleScanning());
 
     _scanSubscription?.cancel();
@@ -58,7 +69,7 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
 
   void _onAutoConnect(AutoConnectEvent event, Emitter<BleState> emit) async {
     _autoReconnectDeviceId = event.deviceId;
-    _reconnectTimer?.cancel();
+    _isConnecting = false;
 
     if (event.deviceId == 'simulated_device') {
       final device = BluetoothDevice.fromId('simulated_device');
@@ -101,6 +112,13 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
   }
 
   void _onDeviceFound(DeviceFoundEvent event, Emitter<BleState> emit) async {
+    // Ignore a re-entrant match while a connect is already in flight, and stop
+    // listening to further scan batches synchronously (before the first await)
+    // so no second DeviceFoundEvent can be queued during stopScan().
+    if (_isConnecting) return;
+    _isConnecting = true;
+    _scanSubscription?.cancel();
+    _scanSubscription = null;
     _scanTimeoutTimer?.cancel();
     await bleRepository.stopScan();
     emit(BleConnecting());
@@ -116,6 +134,7 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
     try {
       await bleRepository.connectToDevice(event.device);
     } catch (e) {
+      _isConnecting = false;
       emit(BleDisconnected());
     }
   }
@@ -126,26 +145,30 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
   ) {
     if (event.state == BluetoothConnectionState.connected &&
         _connectedDevice != null) {
-      _reconnectTimer?.cancel();
+      _isConnecting = false;
+      // Remember whatever we actually connected to — including devices paired
+      // via a fresh scan — so a background/foreground cycle can reconnect.
+      _autoReconnectDeviceId = _connectedDevice!.remoteId.str;
       emit(BleConnected(_connectedDevice!));
     } else if (event.state == BluetoothConnectionState.disconnected) {
-      final reconnectId =
-          _autoReconnectDeviceId ?? _connectedDevice?.remoteId.str;
+      _isConnecting = false;
       _connectedDevice = null;
+      // No automatic reconnect: the clock keeps running alarms on its own, so
+      // the phone simply reports "disconnected". The link is restored on the
+      // next ReconnectEvent (app resume) or a manual reconnect/scan.
       emit(BleDisconnected());
-      if (reconnectId != null) {
-        _scheduleReconnect(reconnectId);
-      }
     }
   }
 
   void _onToggleSimulation(
     ToggleSimulationEvent event,
     Emitter<BleState> emit,
-  ) {
+  ) async {
     if (state is BleConnected &&
         _connectedDevice?.remoteId.str == 'simulated_device') {
-      bleRepository.disconnectFromDevice(_connectedDevice!);
+      try {
+        await bleRepository.disconnectFromDevice(_connectedDevice!);
+      } catch (_) {}
     } else {
       add(const AutoConnectEvent('simulated_device'));
     }
@@ -153,12 +176,80 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
 
   void _onScanTimedOut(ScanTimedOutEvent event, Emitter<BleState> emit) async {
     if (state is BleScanning || state is BleConnecting) {
+      _isConnecting = false;
+      await _scanSubscription?.cancel();
+      _scanSubscription = null;
       await bleRepository.stopScan();
+      // Give up quietly rather than looping a scan every few seconds (which
+      // would drain the battery when the clock is simply out of range). The
+      // remembered device is kept, so opening the app again retries.
       emit(BleDisconnected());
-      if (_autoReconnectDeviceId != null) {
-        _scheduleReconnect(_autoReconnectDeviceId!);
-      }
     }
+  }
+
+  /// App returned to the foreground: restore the link to the remembered device.
+  /// Skipped when there's nothing to reconnect to, or a connect/scan is already
+  /// underway, or we're already connected.
+  void _onReconnect(ReconnectEvent event, Emitter<BleState> emit) async {
+    final deviceId = _autoReconnectDeviceId;
+    if (deviceId == null) return;
+    if (state is BleConnected || state is BleConnecting || state is BleScanning) {
+      return;
+    }
+    add(AutoConnectEvent(deviceId));
+  }
+
+  /// App went to the background: drop the connection to save battery but keep
+  /// [_autoReconnectDeviceId] so [ReconnectEvent] can restore it on resume.
+  void _onReleaseConnection(
+    ReleaseConnectionEvent event,
+    Emitter<BleState> emit,
+  ) async {
+    _isConnecting = false;
+    _scanTimeoutTimer?.cancel();
+    await _scanSubscription?.cancel();
+    _scanSubscription = null;
+    await _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+
+    final device = _connectedDevice;
+    _connectedDevice = null;
+    try {
+      await bleRepository.stopScan();
+    } catch (_) {}
+    if (device != null) {
+      try {
+        await bleRepository.disconnectFromDevice(device);
+      } catch (_) {}
+    }
+    emit(BleDisconnected());
+  }
+
+  void _onForgetDevice(ForgetDeviceEvent event, Emitter<BleState> emit) async {
+    // Stop every reconnect/scan pathway first so the imminent disconnect can't
+    // schedule a reconnect or resurrect the connection.
+    _autoReconnectDeviceId = null;
+    _isConnecting = false;
+    _scanTimeoutTimer?.cancel();
+    await _scanSubscription?.cancel();
+    _scanSubscription = null;
+    // Cancel the connection listener before disconnecting so the resulting
+    // "disconnected" event is not routed back into _onConnectionStateChanged.
+    await _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+
+    final device = _connectedDevice;
+    _connectedDevice = null;
+    try {
+      await bleRepository.stopScan();
+    } catch (_) {}
+    if (device != null) {
+      try {
+        await bleRepository.disconnectFromDevice(device);
+      } catch (_) {}
+    }
+
+    emit(BleDisconnected());
   }
 
   bool _isTargetClock(ScanResult result) {
@@ -184,17 +275,9 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
     });
   }
 
-  void _scheduleReconnect(String deviceId) {
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 2), () {
-      if (!isClosed) add(AutoConnectEvent(deviceId));
-    });
-  }
-
   @override
   Future<void> close() {
     _scanTimeoutTimer?.cancel();
-    _reconnectTimer?.cancel();
     _scanSubscription?.cancel();
     _connectionSubscription?.cancel();
     return super.close();
