@@ -83,6 +83,7 @@ void main() {
         label: 'Wake up',
         snoozeEnabled: true,
         snoozeMaxCount: 3,
+        snoozeDurationMinutes: 10,
       );
 
       final restored = Alarm.fromJson(alarm.toJson());
@@ -91,6 +92,7 @@ void main() {
       expect(restored.label, 'Wake up');
       expect(restored.snoozeEnabled, isTrue);
       expect(restored.snoozeMaxCount, 3);
+      expect(restored.snoozeDurationMinutes, 10);
     });
 
     test('omits snooze count from JSON when snooze is disabled', () {
@@ -106,6 +108,8 @@ void main() {
 
       expect(json.containsKey('snoozeEnabled'), isFalse);
       expect(json.containsKey('snoozeMaxCount'), isFalse);
+      // Default 5-min length is omitted too, so unchanged alarms stay compact.
+      expect(json.containsKey('snoozeDurationMinutes'), isFalse);
       expect(json.containsKey('label'), isFalse);
     });
   });
@@ -124,17 +128,48 @@ void main() {
       expect(base.copyWith(minute: 45).syncHash, isNot(base.syncHash));
       expect(base.copyWith(dayMask: 0x82).syncHash, isNot(base.syncHash));
       expect(base.copyWith(qrRequired: false).syncHash, isNot(base.syncHash));
+      // Snooze now travels to the clock in byte[5] of the 0x02 frame, so a
+      // snooze change must re-mark the alarm out-of-sync (it re-sends the frame).
+      expect(
+        base.copyWith(snoozeEnabled: true, snoozeMaxCount: 3).syncHash,
+        isNot(base.syncHash),
+      );
+      // ...and so does the snooze length (byte[6]) while snooze is enabled.
+      final enabled = base.copyWith(snoozeEnabled: true, snoozeMaxCount: 3);
+      expect(
+        enabled.copyWith(snoozeDurationMinutes: 10).syncHash,
+        isNot(enabled.syncHash),
+      );
     });
 
-    test('ignores app-side-only metadata (label, item, snooze)', () {
+    test('collapses snooze to its wire value (enabled=false ⇒ count 0)', () {
+      // Two alarms that differ only in a snoozeMaxCount that can't travel
+      // (snooze disabled ⇒ wire count 0) must hash identically, so a hidden
+      // count change doesn't spuriously force a re-sync.
+      const off1 = Alarm(
+        id: 1,
+        hour: 7,
+        minute: 30,
+        dayMask: 0x81,
+        qrRequired: true,
+        snoozeMaxCount: 2,
+      );
+      const off2 = Alarm(
+        id: 1,
+        hour: 7,
+        minute: 30,
+        dayMask: 0x81,
+        qrRequired: true,
+        snoozeMaxCount: 9,
+      );
+      expect(off1.syncHash, off2.syncHash);
+    });
+
+    test('ignores purely app-side metadata (label, item target)', () {
       // These never reach the clock, so editing them must not mark the alarm
       // out-of-sync.
       expect(base.copyWith(label: 'Meds').syncHash, base.syncHash);
       expect(base.copyWith(itemLabel: 'Toothbrush').syncHash, base.syncHash);
-      expect(
-        base.copyWith(snoozeEnabled: true, snoozeMaxCount: 3).syncHash,
-        base.syncHash,
-      );
     });
 
     test('is independent of the alarm id (the map key)', () {

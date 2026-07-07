@@ -84,8 +84,8 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 #define ENABLE_LDR           0     // ambient-light auto-dim on A0 (off by default)
 #define LDR_DARK_THRESHOLD   180   // analogRead below this => "dark" => dim
 
-#define SNOOZE_MINUTES       5     // per spec 3.4: 5 min snooze
-#define SNOOZE_MAX_COUNT     3     // ...up to 3 times, then must scan to dismiss
+#define SNOOZE_MINUTES       5     // default snooze length; overridden per-alarm by 0x02 byte[6]
+#define SNOOZE_MAX_COUNT     3     // fallback max snoozes when a 0x02 arrives without byte[5] (old app)
 #define TIMER_DONE_TIMEOUT_S 60    // auto-silence a finished timer after this long
 #define BACKLIGHT_WAKE_MS    10000UL // button wakes the backlight for 10s
 
@@ -152,6 +152,11 @@ struct AlarmConfig {
   uint8_t qrRequired;   // 1 => dismissal requires a matching token (0x09)
   uint8_t hasToken;     // 1 => token[] holds a valid 8-byte dismissal token
   uint8_t token[8];     // HMAC-derived token pushed by the app via 0x07
+  uint8_t snoozeCount;  // max button snoozes allowed (0 => snooze disabled); byte[5] of 0x02
+  uint8_t snoozeMinutes;// snooze length in minutes (0 => use SNOOZE_MINUTES default); byte[6] of 0x02
+  uint8_t reserved[3];  // headroom for future per-alarm wire fields (volume ramp, tone,
+                        // gradual-wake) — adding one is a length-guarded wire byte with no
+                        // EEPROM migration (record size unchanged). See EE_VERSION.
   uint8_t used;         // 1 => this slot holds a real alarm
 };
 
@@ -183,6 +188,8 @@ uint8_t  ringAlarmId   = 0;
 uint8_t  ringHour      = 0;
 uint8_t  ringMinute    = 0;
 bool     ringSecured   = false;   // qrRequired: only a token (or app) can end it
+uint8_t  ringSnoozeMax = 0;       // this alarm's snooze allowance (0 = none), captured at startRing
+uint8_t  ringSnoozeMin = 0;       // this alarm's snooze length in min (0 = default), captured at startRing
 uint8_t  snoozeUsed    = 0;
 uint32_t snoozeUntil   = 0;       // epoch to resume buzzing after a snooze
 bool     appAckedRing  = false;   // received 0x88, stop re-broadcasting 0x08
@@ -329,7 +336,11 @@ void handleFrame(uint8_t *body, uint8_t n);
 // ============================================================================
 static const int    EE_MAGIC_ADDR   = 0x00;
 static const uint8_t EE_MAGIC        = 0x5A;
-static const uint8_t EE_VERSION      = 1;
+// Bumped 1 -> 2 when AlarmConfig grew (added snoozeCount + reserved[]): the record
+// size changed, so old EEPROM bytes no longer deserialize. eepromLoadAll() treats a
+// version mismatch like a first boot (wipe + re-stamp); the phone re-sends every
+// alarm on the next connect, so nothing is permanently lost.
+static const uint8_t EE_VERSION      = 2;
 static const int    EE_VERSION_ADDR = 0x01;
 static const int    EE_AUTODIM_ADDR = 0x02;
 static const int    EE_SLEEP_ADDR   = 0x03; // 4 bytes: startH,startM,endH,endM
@@ -362,7 +373,7 @@ void eepromSaveAlarms() {
 // Persist the alarm table, but coalesce the burst of per-frame changes that
 // arrive during a sync (0x02 upserts / 0x07 tokens / 0x03 deletes) into a
 // single flush at CMD_SYNC_END. A full eepromSaveAlarms() rewrites up to
-// 5*15 bytes and blocks for tens–hundreds of ms while the EEPROM cells settle;
+// 5*20 bytes and blocks for tens–hundreds of ms while the EEPROM cells settle;
 // doing that once per frame can back up the 64-byte SoftwareSerial RX buffer
 // mid-burst and drop bytes, corrupting the sync. Deferring keeps the UART
 // drained during the burst. Outside a sync we still write immediately.
@@ -383,8 +394,12 @@ void serviceSyncFlush() {
 }
 
 void eepromLoadAll() {
-  if (EEPROM.read(EE_MAGIC_ADDR) != EE_MAGIC) {
-    // First boot / uninitialised EEPROM: start empty and stamp it.
+  if (EEPROM.read(EE_MAGIC_ADDR) != EE_MAGIC ||
+      EEPROM.read(EE_VERSION_ADDR) != EE_VERSION) {
+    // First boot, uninitialised EEPROM, or a firmware whose AlarmConfig layout
+    // changed (EE_VERSION bump): the stored bytes no longer deserialize, so start
+    // empty and re-stamp (eepromSaveSettings writes the new version). The phone
+    // re-sends every alarm on the next connect, so nothing is permanently lost.
     for (int i = 0; i < MAX_ALARMS; i++) {
       memset(&alarms[i], 0, sizeof(AlarmConfig));
     }
@@ -430,21 +445,25 @@ int findFreeSlot() {
 // stored for this id (the token arrives separately via 0x07 and both orders
 // happen during a sync).
 void upsertAlarm(uint8_t id, uint8_t hour, uint8_t minute,
-                 uint8_t dayMask, uint8_t qrRequired) {
+                 uint8_t dayMask, uint8_t qrRequired, uint8_t snoozeCount,
+                 uint8_t snoozeMinutes) {
   int slot = findAlarmSlot(id);
   if (slot < 0) slot = findFreeSlot();
   if (slot < 0) return; // table full; app also caps at MAX_ALARMS so this is rare
 
   AlarmConfig &a = alarms[slot];
   bool sameId = (a.used && a.id == id);
-  a.id         = id;
-  a.hour       = hour;
-  a.minute     = minute;
-  a.dayMask    = dayMask;
-  a.qrRequired = qrRequired ? 1 : 0;
-  if (!sameId) {          // brand-new slot: no token yet
+  a.id          = id;
+  a.hour        = hour;
+  a.minute      = minute;
+  a.dayMask     = dayMask;
+  a.qrRequired   = qrRequired ? 1 : 0;
+  a.snoozeCount  = snoozeCount;
+  a.snoozeMinutes = snoozeMinutes;
+  if (!sameId) {          // brand-new slot: no token yet, clear reserved headroom
     a.hasToken = 0;
     memset(a.token, 0, 8);
+    memset(a.reserved, 0, sizeof(a.reserved));
   }
   a.used = 1;
   lastFiredMinute[slot] = 0xFFFFFFFF; // don't retro-fire on load/edit
@@ -645,9 +664,17 @@ void handleFrame(uint8_t *body, uint8_t n) {
       sendAck(ACK_TIME_SYNC);
       break;
     }
-    case CMD_ALARM_ADD: {                 // [id,hour,minute,dayMask,qrRequired]
+    case CMD_ALARM_ADD: {                 // [id,hour,minute,dayMask,qrRequired,snoozeCount?]
       if (len >= 5) {
-        upsertAlarm(data[0], data[1], data[2], data[3], data[4]);
+        // byte[5] (snooze allowance) is optional: an older app sends a 5-byte
+        // frame, so fall back to the compile-time default to keep its behaviour
+        // unchanged. Any bytes beyond [5] are reserved headroom and ignored here.
+        uint8_t snoozeCount = (len >= 6) ? data[5] : SNOOZE_MAX_COUNT;
+        // byte[6] (snooze length, minutes) is likewise optional: 0 (or absent)
+        // means "use the SNOOZE_MINUTES default", resolved at snooze time.
+        uint8_t snoozeMinutes = (len >= 7) ? data[6] : 0;
+        upsertAlarm(data[0], data[1], data[2], data[3], data[4], snoozeCount,
+                    snoozeMinutes);
         sendAck1(ACK_ALARM_ADD, data[0]); // echo the id (app expects it)
       } else {
         sendError(ERR_INVALID_CMD);
@@ -723,6 +750,8 @@ void startRing(int slot) {
   ringHour     = a.hour;
   ringMinute   = a.minute;
   ringSecured  = a.qrRequired ? true : false;
+  ringSnoozeMax = a.snoozeCount;   // honour the app's per-alarm snooze allowance (0 = none)
+  ringSnoozeMin = a.snoozeMinutes; // ...and its snooze length (0 => SNOOZE_MINUTES default)
   snoozeUsed   = 0;
   appAckedRing = false;
   lastRingBroadcastMs = 0; // force an immediate 0x08 broadcast
@@ -773,13 +802,15 @@ void buttonOnRing() {
     endRing(true); // button dismissal for non-secured alarms
     return;
   }
-  if (snoozeUsed < SNOOZE_MAX_COUNT) {
+  if (snoozeUsed < ringSnoozeMax) {
     snoozeUsed++;
     ringActive = false;
     buzzerSetMode(BUZZ_OFF);
-    snoozeUntil = currentEpoch + (uint32_t)SNOOZE_MINUTES * 60UL;
+    uint8_t snoozeMin = ringSnoozeMin ? ringSnoozeMin : SNOOZE_MINUTES;
+    snoozeUntil = currentEpoch + (uint32_t)snoozeMin * 60UL;
   }
-  // else: snooze budget exhausted — keep sounding until the app scan arrives.
+  // else: snooze disabled (ringSnoozeMax 0) or budget exhausted — keep sounding
+  // until the app scan (0x09) arrives.
 }
 
 // Scan the alarm table once per loop and fire anything due this minute.

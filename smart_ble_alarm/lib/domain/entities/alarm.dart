@@ -31,6 +31,11 @@ class Alarm extends Equatable {
   /// snooze is disabled. 0 means "not set".
   final int snoozeMaxCount;
 
+  /// How long each snooze lasts, in minutes, when [snoozeEnabled]. Sent to the
+  /// clock (byte[6] of the 0x02 frame) so the hardware snooze interval matches
+  /// the app. Defaults to 5, matching the firmware's historical constant.
+  final int snoozeDurationMinutes;
+
   const Alarm({
     required this.id,
     required this.hour,
@@ -42,6 +47,7 @@ class Alarm extends Equatable {
     this.label,
     this.snoozeEnabled = false,
     this.snoozeMaxCount = 0,
+    this.snoozeDurationMinutes = 5,
   });
 
   bool get isActive => (dayMask & 0x80) != 0;
@@ -53,17 +59,35 @@ class Alarm extends Equatable {
   String get displayName =>
       (label != null && label!.trim().isNotEmpty) ? label!.trim() : 'Alarm';
 
+  /// The per-alarm snooze allowance that travels to the clock in byte[5] of the
+  /// 0x02 frame: how many times the ring may be snoozed (0 = snooze disabled).
+  /// Collapses the two app-side fields into the single value the firmware needs
+  /// and is the one source of truth shared by [BlePayloads.alarm] and [syncHash],
+  /// so the wire byte and the "needs re-sync?" check can never disagree.
+  int get wireSnoozeCount => snoozeEnabled ? snoozeMaxCount.clamp(0, 255) : 0;
+
+  /// The snooze length (minutes) that travels to the clock in byte[6] of the
+  /// 0x02 frame. Like [wireSnoozeCount] it collapses to 0 when snooze is off, so
+  /// editing it while disabled doesn't spuriously mark the alarm out-of-sync; the
+  /// firmware reads 0 as "use the clock's default length".
+  int get wireSnoozeDuration =>
+      snoozeEnabled ? snoozeDurationMinutes.clamp(1, 255) : 0;
+
   /// Deterministic fingerprint of the fields that actually reach the clock over
-  /// BLE — the fixed 0x02 payload: hour, minute, dayMask and the secured-dismiss
-  /// flag. App-side-only metadata (label, item target, snooze) is deliberately
-  /// excluded so cosmetic edits don't mark an alarm as out-of-sync. Computed by
-  /// hand (not [Object.hash], whose seed isn't stable across runs) so it can be
-  /// persisted and compared later to detect changes the clock hasn't received.
+  /// BLE — the 0x02 payload: hour, minute, dayMask, the secured-dismiss flag and
+  /// the snooze allowance + length. Purely app-side metadata (label, item target)
+  /// is deliberately excluded so cosmetic edits don't mark an alarm out-of-sync.
+  /// Computed by hand (not [Object.hash], whose seed isn't stable across runs) so
+  /// it can be persisted and compared later to detect changes the clock hasn't
+  /// received. Packs into 48 bits — safe on the 64-bit int this only ever runs on
+  /// (a mobile BLE app, never web).
   int get syncHash =>
-      ((hour & 0xFF) << 24) |
-      ((minute & 0xFF) << 16) |
-      ((dayMask & 0xFF) << 8) |
-      (qrRequired ? 1 : 0);
+      ((hour & 0xFF) << 40) |
+      ((minute & 0xFF) << 32) |
+      ((dayMask & 0xFF) << 24) |
+      ((qrRequired ? 1 : 0) << 16) |
+      ((wireSnoozeCount & 0xFF) << 8) |
+      (wireSnoozeDuration & 0xFF);
 
   bool isDayActive(int dayIndex) {
     // dayIndex: 0 = Sun, 1 = Mon, ..., 6 = Sat
@@ -81,6 +105,7 @@ class Alarm extends Equatable {
     String? label,
     bool? snoozeEnabled,
     int? snoozeMaxCount,
+    int? snoozeDurationMinutes,
     // copyWith can't otherwise set the nullable item fields back to null.
     bool clearItem = false,
     bool clearLabel = false,
@@ -98,6 +123,8 @@ class Alarm extends Equatable {
       label: clearLabel ? null : (label ?? this.label),
       snoozeEnabled: snoozeEnabled ?? this.snoozeEnabled,
       snoozeMaxCount: snoozeMaxCount ?? this.snoozeMaxCount,
+      snoozeDurationMinutes:
+          snoozeDurationMinutes ?? this.snoozeDurationMinutes,
     );
   }
 
@@ -113,6 +140,7 @@ class Alarm extends Equatable {
     label,
     snoozeEnabled,
     snoozeMaxCount,
+    snoozeDurationMinutes,
   ];
 
   Map<String, dynamic> toJson() {
@@ -127,6 +155,8 @@ class Alarm extends Equatable {
       if (label != null) 'label': label,
       if (snoozeEnabled) 'snoozeEnabled': snoozeEnabled,
       if (snoozeMaxCount != 0) 'snoozeMaxCount': snoozeMaxCount,
+      if (snoozeDurationMinutes != 5)
+        'snoozeDurationMinutes': snoozeDurationMinutes,
     };
   }
 
@@ -142,6 +172,7 @@ class Alarm extends Equatable {
       label: json['label'] as String?,
       snoozeEnabled: json['snoozeEnabled'] as bool? ?? false,
       snoozeMaxCount: json['snoozeMaxCount'] as int? ?? 0,
+      snoozeDurationMinutes: json['snoozeDurationMinutes'] as int? ?? 5,
     );
   }
 }

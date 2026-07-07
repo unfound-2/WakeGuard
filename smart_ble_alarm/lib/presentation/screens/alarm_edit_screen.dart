@@ -31,6 +31,7 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
   final TextEditingController _labelController = TextEditingController();
   bool _snoozeEnabled = false;
   int _snoozeMaxCount = 3;
+  int _snoozeDurationMinutes = 5;
   final TextEditingController _itemDescriptionController =
       TextEditingController();
   final ImagePicker _picker = ImagePicker();
@@ -55,6 +56,7 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
       if (widget.alarm!.snoozeMaxCount > 0) {
         _snoozeMaxCount = widget.alarm!.snoozeMaxCount;
       }
+      _snoozeDurationMinutes = widget.alarm!.snoozeDurationMinutes;
       _itemDescriptionController.text = widget.alarm!.itemDescription ?? '';
       int dayMask = widget.alarm!.dayMask & 0x7F;
       if (dayMask == 0) {
@@ -187,6 +189,7 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                           label: labelText.isNotEmpty ? labelText : null,
                           snoozeEnabled: _snoozeEnabled,
                           snoozeMaxCount: _snoozeEnabled ? _snoozeMaxCount : 0,
+                          snoozeDurationMinutes: _snoozeDurationMinutes,
                         );
 
                         HapticFeedback.mediumImpact();
@@ -426,9 +429,9 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Saved with this alarm. Snoozing is handled by the '
-                            'clock hardware — this preference isn\'t sent over '
-                            'Bluetooth yet.',
+                            'Sent to the clock. When on, the snooze button works '
+                            'up to the limit below before you must scan to '
+                            'dismiss. When off, snoozing is disabled.',
                             style: TextStyle(
                               fontSize: 13,
                               color: Theme.of(
@@ -457,6 +460,14 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                     ),
                   ),
                   _buildSnoozeCountStepper(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    child: Divider(
+                      color: Theme.of(context).dividerColor,
+                      height: 1,
+                    ),
+                  ),
+                  _buildSnoozeDurationStepper(),
                 ],
               ],
             ),
@@ -515,6 +526,62 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
               icon: const Icon(Icons.add_circle_outline),
               color: primary,
               tooltip: 'More snoozes',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSnoozeDurationStepper() {
+    final primary = Theme.of(context).colorScheme.primary;
+    const int minMinutes = 1;
+    const int maxMinutes = 30;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'Snooze length',
+          style: TextStyle(
+            fontSize: 16,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        Row(
+          children: [
+            IconButton(
+              onPressed: _snoozeDurationMinutes > minMinutes
+                  ? () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _snoozeDurationMinutes--);
+                    }
+                  : null,
+              icon: const Icon(Icons.remove_circle_outline),
+              color: primary,
+              tooltip: 'Shorter snooze',
+            ),
+            SizedBox(
+              width: 64,
+              child: Text(
+                '$_snoozeDurationMinutes min',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: _snoozeDurationMinutes < maxMinutes
+                  ? () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _snoozeDurationMinutes++);
+                    }
+                  : null,
+              icon: const Icon(Icons.add_circle_outline),
+              color: primary,
+              tooltip: 'Longer snooze',
             ),
           ],
         ),
