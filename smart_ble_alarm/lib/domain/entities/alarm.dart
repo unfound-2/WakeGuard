@@ -36,6 +36,17 @@ class Alarm extends Equatable {
   /// the app. Defaults to 5, matching the firmware's historical constant.
   final int snoozeDurationMinutes;
 
+  /// Ring loudness as a percentage (1–100). Sent to the clock (byte[7] of the
+  /// 0x02 frame), which maps it to the speaker's PWM duty cycle. Applies to
+  /// every ring regardless of snooze. Defaults to 80.
+  final int volumePercent;
+
+  /// Gradual-wake fade-in length in seconds (0 = no fade — ring starts at full
+  /// [volumePercent]). Sent to the clock (byte[8] of the 0x02 frame); the
+  /// hardware ramps the volume from a soft floor up to [volumePercent] over this
+  /// window each time the alarm (or a snooze resume) begins sounding.
+  final int gradualWakeSeconds;
+
   const Alarm({
     required this.id,
     required this.hour,
@@ -48,6 +59,8 @@ class Alarm extends Equatable {
     this.snoozeEnabled = false,
     this.snoozeMaxCount = 0,
     this.snoozeDurationMinutes = 5,
+    this.volumePercent = 80,
+    this.gradualWakeSeconds = 0,
   });
 
   bool get isActive => (dayMask & 0x80) != 0;
@@ -73,21 +86,45 @@ class Alarm extends Equatable {
   int get wireSnoozeDuration =>
       snoozeEnabled ? snoozeDurationMinutes.clamp(1, 255) : 0;
 
-  /// Deterministic fingerprint of the fields that actually reach the clock over
-  /// BLE — the 0x02 payload: hour, minute, dayMask, the secured-dismiss flag and
-  /// the snooze allowance + length. Purely app-side metadata (label, item target)
-  /// is deliberately excluded so cosmetic edits don't mark an alarm out-of-sync.
-  /// Computed by hand (not [Object.hash], whose seed isn't stable across runs) so
-  /// it can be persisted and compared later to detect changes the clock hasn't
-  /// received. Packs into 48 bits — safe on the 64-bit int this only ever runs on
-  /// (a mobile BLE app, never web).
-  int get syncHash =>
-      ((hour & 0xFF) << 40) |
-      ((minute & 0xFF) << 32) |
-      ((dayMask & 0xFF) << 24) |
-      ((qrRequired ? 1 : 0) << 16) |
-      ((wireSnoozeCount & 0xFF) << 8) |
-      (wireSnoozeDuration & 0xFF);
+  /// The ring loudness (1–100) that travels to the clock in byte[7] of the 0x02
+  /// frame. Always sent (independent of snooze); clamped so a corrupt value can't
+  /// silence or overflow the wire byte. The firmware reads 0 as "use the clock
+  /// default", but the app always sends an explicit level.
+  int get wireVolume => volumePercent.clamp(1, 100);
+
+  /// The gradual-wake fade length (seconds) that travels to the clock in byte[8]
+  /// of the 0x02 frame. 0 = no fade (ring at full volume immediately).
+  int get wireGradualWake => gradualWakeSeconds.clamp(0, 255);
+
+  /// Deterministic fingerprint of the exact bytes that reach the clock in the
+  /// 0x02 payload — hour, minute, dayMask, the secured-dismiss flag, the snooze
+  /// allowance + length, and the ring volume + gradual-wake fade. Purely app-side
+  /// metadata (label, item target) is deliberately excluded so cosmetic edits
+  /// don't mark an alarm out-of-sync. Folded with FNV-1a (not [Object.hash],
+  /// whose seed isn't stable across runs) so it can be persisted and compared
+  /// later to detect changes the clock hasn't received; the 32-bit result is
+  /// always positive, so there's no sign-bit hazard as fields are added.
+  ///
+  /// NOTE: changing this fold (as adding volume/fade did) re-marks every alarm
+  /// out-of-sync exactly once — they harmlessly re-send on the next connect.
+  int get syncHash {
+    const int fnvPrime = 0x01000193;
+    int h = 0x811c9dc5;
+    for (final b in <int>[
+      hour & 0xFF,
+      minute & 0xFF,
+      dayMask & 0xFF,
+      qrRequired ? 1 : 0,
+      wireSnoozeCount & 0xFF,
+      wireSnoozeDuration & 0xFF,
+      wireVolume & 0xFF,
+      wireGradualWake & 0xFF,
+    ]) {
+      h = (h ^ b) & 0xFFFFFFFF;
+      h = (h * fnvPrime) & 0xFFFFFFFF;
+    }
+    return h;
+  }
 
   bool isDayActive(int dayIndex) {
     // dayIndex: 0 = Sun, 1 = Mon, ..., 6 = Sat
@@ -106,6 +143,8 @@ class Alarm extends Equatable {
     bool? snoozeEnabled,
     int? snoozeMaxCount,
     int? snoozeDurationMinutes,
+    int? volumePercent,
+    int? gradualWakeSeconds,
     // copyWith can't otherwise set the nullable item fields back to null.
     bool clearItem = false,
     bool clearLabel = false,
@@ -125,6 +164,8 @@ class Alarm extends Equatable {
       snoozeMaxCount: snoozeMaxCount ?? this.snoozeMaxCount,
       snoozeDurationMinutes:
           snoozeDurationMinutes ?? this.snoozeDurationMinutes,
+      volumePercent: volumePercent ?? this.volumePercent,
+      gradualWakeSeconds: gradualWakeSeconds ?? this.gradualWakeSeconds,
     );
   }
 
@@ -141,6 +182,8 @@ class Alarm extends Equatable {
     snoozeEnabled,
     snoozeMaxCount,
     snoozeDurationMinutes,
+    volumePercent,
+    gradualWakeSeconds,
   ];
 
   Map<String, dynamic> toJson() {
@@ -157,6 +200,9 @@ class Alarm extends Equatable {
       if (snoozeMaxCount != 0) 'snoozeMaxCount': snoozeMaxCount,
       if (snoozeDurationMinutes != 5)
         'snoozeDurationMinutes': snoozeDurationMinutes,
+      // Defaults omitted so unchanged alarms keep a compact JSON footprint.
+      if (volumePercent != 80) 'volumePercent': volumePercent,
+      if (gradualWakeSeconds != 0) 'gradualWakeSeconds': gradualWakeSeconds,
     };
   }
 
@@ -173,6 +219,8 @@ class Alarm extends Equatable {
       snoozeEnabled: json['snoozeEnabled'] as bool? ?? false,
       snoozeMaxCount: json['snoozeMaxCount'] as int? ?? 0,
       snoozeDurationMinutes: json['snoozeDurationMinutes'] as int? ?? 5,
+      volumePercent: json['volumePercent'] as int? ?? 80,
+      gradualWakeSeconds: json['gradualWakeSeconds'] as int? ?? 0,
     );
   }
 }

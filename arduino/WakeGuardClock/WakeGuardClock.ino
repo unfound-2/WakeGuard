@@ -9,7 +9,7 @@
  *    - Arduino Uno R3 (ATmega328P, 16 MHz, no RTC)
  *    - HM-10 BLE module   (transparent serial-over-BLE, service FFE0 / char FFE1)
  *    - 16x2 I2C LCD1602   (PCF8574 backpack, address 0x27, backlight on/off only)
- *    - Passive speaker    (driven with tone() — NOT an active buzzer)
+ *    - Passive speaker    (driven by Timer1 PWM on D9 — NOT an active buzzer)
  *    - (optional) momentary push button for snooze / backlight wake
  *    - (optional) photoresistor (LDR) for ambient auto-dim
  *
@@ -86,6 +86,9 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 
 #define SNOOZE_MINUTES       5     // default snooze length; overridden per-alarm by 0x02 byte[6]
 #define SNOOZE_MAX_COUNT     3     // fallback max snoozes when a 0x02 arrives without byte[5] (old app)
+#define VOLUME_DEFAULT       200   // 0..255 ring loudness when an alarm's volume% is unset (~78%)
+#define VOLUME_FADE_FLOOR    40    // gradual-wake starts this soft, then ramps to the target volume
+#define VOLUME_TIMER         210   // fixed loudness for the finished-timer chime (no gradual wake)
 #define TIMER_DONE_TIMEOUT_S 60    // auto-silence a finished timer after this long
 #define BACKLIGHT_WAKE_MS    10000UL // button wakes the backlight for 10s
 
@@ -154,9 +157,11 @@ struct AlarmConfig {
   uint8_t token[8];     // HMAC-derived token pushed by the app via 0x07
   uint8_t snoozeCount;  // max button snoozes allowed (0 => snooze disabled); byte[5] of 0x02
   uint8_t snoozeMinutes;// snooze length in minutes (0 => use SNOOZE_MINUTES default); byte[6] of 0x02
-  uint8_t reserved[3];  // headroom for future per-alarm wire fields (volume ramp, tone,
-                        // gradual-wake) — adding one is a length-guarded wire byte with no
-                        // EEPROM migration (record size unchanged). See EE_VERSION.
+  uint8_t volume;       // ring loudness 1..100 (0 => VOLUME_DEFAULT); byte[7] of 0x02
+  uint8_t fadeSeconds;  // gradual-wake fade-in length in s (0 => no fade); byte[8] of 0x02
+  uint8_t reserved[1];  // headroom for one more per-alarm wire field (e.g. tone select) —
+                        // adding one is a length-guarded wire byte with no EEPROM migration
+                        // (record size unchanged). See EE_VERSION.
   uint8_t used;         // 1 => this slot holds a real alarm
 };
 
@@ -190,6 +195,9 @@ uint8_t  ringMinute    = 0;
 bool     ringSecured   = false;   // qrRequired: only a token (or app) can end it
 uint8_t  ringSnoozeMax = 0;       // this alarm's snooze allowance (0 = none), captured at startRing
 uint8_t  ringSnoozeMin = 0;       // this alarm's snooze length in min (0 = default), captured at startRing
+uint8_t  ringVolume    = 200;     // target loudness 0..255 (from the alarm's volume%), captured at startRing
+uint8_t  ringFadeSeconds = 0;     // gradual-wake fade length in s (0 = none), captured at startRing
+uint32_t ringFadeOriginMs = 0;    // millis() when the current ring / snooze-resume began sounding
 uint8_t  snoozeUsed    = 0;
 uint32_t snoozeUntil   = 0;       // epoch to resume buzzing after a snooze
 bool     appAckedRing  = false;   // received 0x88, stop re-broadcasting 0x08
@@ -446,7 +454,7 @@ int findFreeSlot() {
 // happen during a sync).
 void upsertAlarm(uint8_t id, uint8_t hour, uint8_t minute,
                  uint8_t dayMask, uint8_t qrRequired, uint8_t snoozeCount,
-                 uint8_t snoozeMinutes) {
+                 uint8_t snoozeMinutes, uint8_t volume, uint8_t fadeSeconds) {
   int slot = findAlarmSlot(id);
   if (slot < 0) slot = findFreeSlot();
   if (slot < 0) return; // table full; app also caps at MAX_ALARMS so this is rare
@@ -460,6 +468,8 @@ void upsertAlarm(uint8_t id, uint8_t hour, uint8_t minute,
   a.qrRequired   = qrRequired ? 1 : 0;
   a.snoozeCount  = snoozeCount;
   a.snoozeMinutes = snoozeMinutes;
+  a.volume       = volume;      // 0 => startRing falls back to VOLUME_DEFAULT
+  a.fadeSeconds  = fadeSeconds; // 0 => no gradual-wake fade
   if (!sameId) {          // brand-new slot: no token yet, clear reserved headroom
     a.hasToken = 0;
     memset(a.token, 0, 8);
@@ -664,17 +674,20 @@ void handleFrame(uint8_t *body, uint8_t n) {
       sendAck(ACK_TIME_SYNC);
       break;
     }
-    case CMD_ALARM_ADD: {                 // [id,hour,minute,dayMask,qrRequired,snoozeCount?]
+    case CMD_ALARM_ADD: {                 // [id,hour,minute,dayMask,qrRequired,snoozeCount?,snoozeMin?,vol?,fade?]
       if (len >= 5) {
-        // byte[5] (snooze allowance) is optional: an older app sends a 5-byte
-        // frame, so fall back to the compile-time default to keep its behaviour
-        // unchanged. Any bytes beyond [5] are reserved headroom and ignored here.
-        uint8_t snoozeCount = (len >= 6) ? data[5] : SNOOZE_MAX_COUNT;
-        // byte[6] (snooze length, minutes) is likewise optional: 0 (or absent)
-        // means "use the SNOOZE_MINUTES default", resolved at snooze time.
+        // Every byte past [4] is optional so older/shorter frames still work:
+        // an older app sends fewer bytes and each field falls back to a safe
+        // default. Bytes beyond [8] are reserved headroom and ignored here.
+        uint8_t snoozeCount   = (len >= 6) ? data[5] : SNOOZE_MAX_COUNT;
+        // byte[6] snooze length (min): 0/absent => SNOOZE_MINUTES, at snooze time.
         uint8_t snoozeMinutes = (len >= 7) ? data[6] : 0;
+        // byte[7] volume 1..100: 0/absent => VOLUME_DEFAULT, resolved at startRing.
+        uint8_t volume        = (len >= 8) ? data[7] : 0;
+        // byte[8] gradual-wake fade (s): 0/absent => no fade (ring at full volume).
+        uint8_t fadeSeconds   = (len >= 9) ? data[8] : 0;
         upsertAlarm(data[0], data[1], data[2], data[3], data[4], snoozeCount,
-                    snoozeMinutes);
+                    snoozeMinutes, volume, fadeSeconds);
         sendAck1(ACK_ALARM_ADD, data[0]); // echo the id (app expects it)
       } else {
         sendError(ERR_INVALID_CMD);
@@ -752,6 +765,10 @@ void startRing(int slot) {
   ringSecured  = a.qrRequired ? true : false;
   ringSnoozeMax = a.snoozeCount;   // honour the app's per-alarm snooze allowance (0 = none)
   ringSnoozeMin = a.snoozeMinutes; // ...and its snooze length (0 => SNOOZE_MINUTES default)
+  // Map the alarm's volume% (1..100; 0 => default) to the 0..255 loudness the
+  // synth's PWM duty uses, and remember the gradual-wake fade length.
+  ringVolume    = a.volume ? (uint8_t)((uint16_t)a.volume * 255 / 100) : VOLUME_DEFAULT;
+  ringFadeSeconds = a.fadeSeconds;
   snoozeUsed   = 0;
   appAckedRing = false;
   lastRingBroadcastMs = 0; // force an immediate 0x08 broadcast
@@ -891,32 +908,115 @@ void serviceTimer() {
 }
 
 // ============================================================================
-//  BUZZER (passive speaker via tone()) — non-blocking pattern player
+//  SOUND ENGINE — Timer1 hardware PWM on D9 (OC1A), replacing tone()
 // ----------------------------------------------------------------------------
-//  Patterns include silent gaps: besides sounding like an alarm, the gaps give
-//  SoftwareSerial clean windows to receive the dismissal frame while ringing.
+//  tone() emits a fixed-amplitude square wave and can't vary loudness. Driving
+//  Timer1 in phase-correct PWM lets us set BOTH pitch (ICR1 = TOP) and loudness
+//  (OCR1A = duty) directly in hardware — so the wave keeps sounding even while
+//  SoftwareSerial masks interrupts to receive the dismiss frame, AND we can
+//  shape the duty across each note for a struck-bell (glockenspiel) decay
+//  instead of a flat beep. Loudness drives two effects: the per-note envelope
+//  (the chime timbre) and the master gradual-wake fade toward the alarm volume.
 // ============================================================================
 BuzzMode buzzMode = BUZZ_OFF;
 
+// Per-note amplitude envelope — a struck-bell shape: a very fast attack then an
+// exponential decay. Built once in soundInit() so there's no hand-typed table.
+#define ENV_LEN       40      // decay samples...
+#define ENV_STEP_MS   10      // ...one every 10 ms => ~400 ms of shaped decay
+#define ATTACK_MS     4       // brief ramp-in so note onsets don't click
+uint8_t envTable[ENV_LEN];
+
+void soundOff() {
+  TCCR1A = 0;               // release OC1A (pin returns to the port latch = LOW)
+  TCCR1B = 0;               // stop Timer1's clock
+  digitalWrite(PIN_BUZZER, LOW);
+}
+
+// Set the loudness of the note in progress. OCR1A is double-buffered (latched at
+// TOP), so this is glitch-free to call every service tick to shape the envelope.
+void soundSetVol(uint8_t vol) {
+  uint16_t top = ICR1;
+  if (top == 0) return;
+  // Duty peaks near 50% (a square wave) at vol=255; lower duty = quieter.
+  OCR1A = (uint16_t)(((uint32_t)top * vol) / 512UL);  // vol 0 => duty 0 => silent
+}
+
+// Begin a new note at frequency `hz`, loudness `vol` (0..255).
+void soundStart(uint16_t hz, uint8_t vol) {
+  if (hz < 123) { soundOff(); return; }    // below this, TOP overflows 16 bits
+  ICR1 = (uint16_t)(F_CPU / (2UL * hz));    // phase-correct: f = F_CPU / (2*TOP)
+  soundSetVol(vol);
+  TCNT1 = 0;                                // clean phase start avoids a wrap click
+  TCCR1A = _BV(COM1A1) | _BV(WGM11);        // non-inverting, phase-correct PWM,
+  TCCR1B = _BV(WGM13) | _BV(CS10);          // TOP = ICR1, prescaler 1
+}
+
+void soundInit() {
+  pinMode(PIN_BUZZER, OUTPUT);
+  digitalWrite(PIN_BUZZER, LOW);
+  TCCR1A = 0; TCCR1B = 0;                    // Timer1 idle until the first note
+  for (uint8_t i = 0; i < ENV_LEN; i++) {
+    // Exp decay, tau ~= 18 samples (~180 ms to 37%): rings like a soft chime.
+    envTable[i] = (uint8_t)(255.0 * exp(-(float)i / 18.0) + 0.5);
+  }
+}
+
+// The per-note envelope amplitude (0..255) at `elapsed` ms into the note.
+uint8_t noteEnv(uint32_t elapsed) {
+  if (elapsed < ATTACK_MS) return (uint8_t)(255UL * elapsed / ATTACK_MS);
+  uint32_t di = (elapsed - ATTACK_MS) / ENV_STEP_MS;
+  if (di >= ENV_LEN) return envTable[ENV_LEN - 1];
+  return envTable[di];
+}
+
+// Master loudness right now: a fixed level for timers; for an alarm, the
+// gradual-wake ramp from VOLUME_FADE_FLOOR up to ringVolume over ringFadeSeconds
+// (or straight to ringVolume when no fade). Unsigned millis() math is rollover-safe.
+uint8_t masterVolNow() {
+  if (buzzMode == BUZZ_TIMER) return VOLUME_TIMER;
+  if (ringFadeSeconds == 0) return ringVolume;
+  uint32_t elapsed = millis() - ringFadeOriginMs;
+  uint32_t fadeMs  = (uint32_t)ringFadeSeconds * 1000UL;
+  if (elapsed >= fadeMs) return ringVolume;
+  uint16_t span = (ringVolume > VOLUME_FADE_FLOOR) ? (ringVolume - VOLUME_FADE_FLOOR) : 0;
+  return (uint8_t)(VOLUME_FADE_FLOOR + (uint32_t)span * elapsed / fadeMs);
+}
+
+// ---- Non-blocking chime player --------------------------------------------
+//  Rests (freq 0) between phrases both make it sound like a chime and give
+//  SoftwareSerial clean windows to receive the dismiss frame while ringing.
 struct ToneStep { uint16_t freq; uint16_t ms; }; // freq 0 = silence
 
+// A warm ascending major arpeggio (G5-C6-E6) that steps down to resolve on C6
+// and rings out through the bell decay — a gentle wake chime, not a jarring beep.
 const ToneStep ALARM_PATTERN[] = {
-  {880, 250}, {0, 120}, {988, 250}, {0, 120}, {1175, 300}, {0, 500}
+  { 784, 260}, {0, 30},   // G5
+  {1047, 260}, {0, 30},   // C6
+  {1319, 300}, {0, 40},   // E6  (bright peak)
+  {1175, 260}, {0, 30},   // D6
+  {1047, 480},            // C6  (resolve — held, decays away)
+  {   0, 620},            // breathe before the phrase repeats
 };
+// A short two-note "ding-dong" for finished timers, distinct from the alarm.
 const ToneStep TIMER_PATTERN[] = {
-  {1568, 140}, {0, 110}, {1568, 140}, {0, 700}
+  {1319, 200}, {0, 60},   // E6
+  {1047, 340},            // C6
+  {   0, 520},
 };
 const uint8_t ALARM_STEPS = sizeof(ALARM_PATTERN) / sizeof(ToneStep);
 const uint8_t TIMER_STEPS = sizeof(TIMER_PATTERN) / sizeof(ToneStep);
 
 uint8_t  buzzStep = 0;
 uint32_t buzzStepStart = 0;
+uint16_t buzzNoteFreq = 0;     // frequency of the step in progress (0 = a rest)
 
 void applyBuzzStep() {
   const ToneStep *pat = (buzzMode == BUZZ_ALARM) ? ALARM_PATTERN : TIMER_PATTERN;
-  uint16_t f = pat[buzzStep].freq;
-  if (f == 0) noTone(PIN_BUZZER);
-  else tone(PIN_BUZZER, f);
+  buzzNoteFreq = pat[buzzStep].freq;
+  if (buzzNoteFreq == 0) { soundOff(); return; }
+  // Start at the envelope onset scaled by the current master (gradual-wake) volume.
+  soundStart(buzzNoteFreq, (uint8_t)((uint16_t)noteEnv(0) * masterVolNow() / 255));
 }
 
 void buzzerSetMode(BuzzMode m) {
@@ -924,7 +1024,8 @@ void buzzerSetMode(BuzzMode m) {
   buzzMode = m;
   buzzStep = 0;
   buzzStepStart = millis();
-  noTone(PIN_BUZZER);
+  if (m != BUZZ_OFF) ringFadeOriginMs = buzzStepStart; // (re)start the gradual-wake fade
+  soundOff();
   if (m != BUZZ_OFF) applyBuzzStep();
 }
 
@@ -933,10 +1034,16 @@ void serviceBuzzer() {
   const ToneStep *pat = (buzzMode == BUZZ_ALARM) ? ALARM_PATTERN : TIMER_PATTERN;
   uint8_t steps = (buzzMode == BUZZ_ALARM) ? ALARM_STEPS : TIMER_STEPS;
   uint32_t now = millis();
-  if (now - buzzStepStart >= pat[buzzStep].ms) {
+  uint32_t elapsed = now - buzzStepStart;
+  if (elapsed >= pat[buzzStep].ms) {          // advance to the next note / rest
     buzzStep = (buzzStep + 1) % steps;
     buzzStepStart = now;
     applyBuzzStep();
+    return;
+  }
+  if (buzzNoteFreq != 0) {                     // shape the note in progress
+    uint16_t v = (uint16_t)noteEnv(elapsed) * masterVolNow() / 255;
+    soundSetVol((uint8_t)v);
   }
 }
 
@@ -1172,15 +1279,53 @@ void renderLcd() {
 // ============================================================================
 //  SETUP / LOOP
 // ============================================================================
+
+// Best-effort one-time HM-10 rename so the clock advertises as "WG Clock".
+// Set to 0 if a particular module misbehaves during boot.
+#define HM10_SET_NAME 1
+
+#if HM10_SET_NAME
+void configureBleName() {
+  // Runs once at boot, BEFORE any central connects (AT only works while
+  // unconnected), so the AT text goes to the module in command mode and never
+  // over-air. We send both the genuine-HMSoft form (no '=', no terminator; the
+  // command ends on an idle gap) and the CC41-A clone form ('=' + CRLF); the
+  // wrong one for a given module simply returns an error. Responses are drained
+  // so a late "OK+Set" can't corrupt the first protocol frame. Either way the
+  // module keeps advertising service FFE0, so the app still finds it even if the
+  // rename is ignored. "WG Clock" is 8 chars, within the HM-10 name limit.
+  delay(200);                                 // let the module finish booting
+  bleSerial.print(F("AT+NAMEWG Clock"));      // genuine HMSoft firmware
+  delay(300);
+  while (bleSerial.available()) bleSerial.read();
+  bleSerial.print(F("AT+NAME=WG Clock\r\n")); // CC41-A / clones
+  delay(300);
+  while (bleSerial.available()) bleSerial.read();
+}
+#endif
+
+// Power-on self-test: a short rising blip proving the speaker + Timer1 PWM path
+// works at boot, independent of BLE/time sync. If you hear this but alarms are
+// silent, the fault is upstream (the clock never got a time sync, so checkAlarms
+// never fires); if you DON'T hear it, it's wiring or the PWM registers.
+void bootSelfTestChime() {
+  soundStart(1047, VOLUME_TIMER); delay(150); // C6
+  soundStart(1319, VOLUME_TIMER); delay(150); // E6
+  soundStart(1568, VOLUME_TIMER); delay(200); // G6
+  soundOff();
+}
+
 void setup() {
-  pinMode(PIN_BUZZER, OUTPUT);
-  noTone(PIN_BUZZER);
+  soundInit();          // configure D9 (OC1A) for PWM audio + build the decay curve
 #if ENABLE_SNOOZE_BUTTON
   pinMode(PIN_BUTTON, INPUT_PULLUP);
 #endif
 
   bleSerial.begin(9600); // HM-10 default UART baud
   bleSerial.listen();
+#if HM10_SET_NAME
+  configureBleName();    // advertise as "WG Clock" (best-effort, one-time)
+#endif
 
   Wire.begin();
   lcd.init();
@@ -1197,6 +1342,8 @@ void setup() {
   lcd.setCursor(0, 0); lcd.print(F("   WakeGuard"));
   lcd.setCursor(0, 1); lcd.print(F("  clock ready"));
   prev0[0] = prev1[0] = '\1'; prev0[1] = prev1[1] = '\0'; // force first render
+
+  bootSelfTestChime();  // audible proof the speaker + PWM path works at power-on
 }
 
 void loop() {

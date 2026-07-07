@@ -32,6 +32,8 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
   bool _snoozeEnabled = false;
   int _snoozeMaxCount = 3;
   int _snoozeDurationMinutes = 5;
+  int _volumePercent = 80;
+  int _gradualWakeSeconds = 0;
   final TextEditingController _itemDescriptionController =
       TextEditingController();
   final ImagePicker _picker = ImagePicker();
@@ -57,6 +59,8 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
         _snoozeMaxCount = widget.alarm!.snoozeMaxCount;
       }
       _snoozeDurationMinutes = widget.alarm!.snoozeDurationMinutes;
+      _volumePercent = widget.alarm!.volumePercent;
+      _gradualWakeSeconds = widget.alarm!.gradualWakeSeconds;
       _itemDescriptionController.text = widget.alarm!.itemDescription ?? '';
       int dayMask = widget.alarm!.dayMask & 0x7F;
       if (dayMask == 0) {
@@ -72,11 +76,10 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
       _selectedDaysMask = 0;
       final settings = context.read<SettingsBloc>().state;
       _requireDismissalTask = settings.defaultQrRequired;
-      // Seed the per-alarm object from the global "default wake object" so a
-      // new object-verification alarm starts with the user's chosen object
-      // (still changeable below). Only persisted if item verification is on,
-      // so this is a harmless default for QR/no-challenge alarms.
-      _itemLabel = settings.wakeObjectName;
+      // New alarms start with no wake object; if the user picks item
+      // verification they photograph one per alarm below. There is no global
+      // default wake object.
+      _itemLabel = null;
     }
   }
 
@@ -190,6 +193,8 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                           snoozeEnabled: _snoozeEnabled,
                           snoozeMaxCount: _snoozeEnabled ? _snoozeMaxCount : 0,
                           snoozeDurationMinutes: _snoozeDurationMinutes,
+                          volumePercent: _volumePercent,
+                          gradualWakeSeconds: _gradualWakeSeconds,
                         );
 
                         HapticFeedback.mediumImpact();
@@ -388,9 +393,10 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                     const SizedBox(height: 16),
                     _buildItemCapture(),
                   ],
-                  // Existing QR alarms can reprint their backup code here; new
-                  // alarms get a code once saved. Item-scan alarms have no code.
-                  if (!_useItemScan && widget.alarm != null) ...[
+                  // Existing protected alarms (QR or item-scan) can reprint their
+                  // backup code here; new alarms get a code once saved. For item
+                  // alarms this printed code is the 3-minute backup bypass.
+                  if (widget.alarm != null) ...[
                     const SizedBox(height: 16),
                     WakeSecondaryButton(
                       label: 'Print backup code',
@@ -472,6 +478,156 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
               ],
             ),
           ),
+        ),
+        const SizedBox(height: 24),
+        WakeSection(
+          title: 'Sound',
+          child: GlassCard(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(20),
+            shadows: wakeCardShadow(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Sent to the clock. Sets how loud the wake chime rings, and an '
+                  'optional gentle fade-in that eases the volume up to wake you.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildVolumeControl(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  child: Divider(
+                    color: Theme.of(context).dividerColor,
+                    height: 1,
+                  ),
+                ),
+                _buildGradualWakeStepper(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVolumeControl() {
+    final primary = Theme.of(context).colorScheme.primary;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final onSurfaceVariant = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Volume',
+              style: TextStyle(fontSize: 16, color: onSurface),
+            ),
+            Text(
+              '$_volumePercent%',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: primary,
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Icon(Icons.volume_mute, size: 20, color: onSurfaceVariant),
+            Expanded(
+              child: Slider(
+                value: _volumePercent.toDouble(),
+                min: 10,
+                max: 100,
+                // 5% steps: a fine-enough grip without pretending the speaker
+                // resolves single-percent loudness changes.
+                divisions: 18,
+                label: '$_volumePercent%',
+                onChanged: (v) => setState(() => _volumePercent = v.round()),
+                onChangeEnd: (_) => HapticFeedback.selectionClick(),
+              ),
+            ),
+            Icon(Icons.volume_up, size: 20, color: onSurfaceVariant),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // Fade presets (seconds). Index-stepped rather than raw ±1s so reaching a
+  // 5-minute fade doesn't take 300 taps.
+  static const List<int> _fadePresets = [0, 15, 30, 45, 60, 90, 120, 180, 300];
+
+  String _formatFade(int seconds) {
+    if (seconds == 0) return 'Off';
+    if (seconds < 60) return '${seconds}s';
+    if (seconds % 60 == 0) return '${seconds ~/ 60} min';
+    return '${seconds ~/ 60}m ${seconds % 60}s';
+  }
+
+  Widget _buildGradualWakeStepper() {
+    final primary = Theme.of(context).colorScheme.primary;
+    final idx = _fadePresets.indexOf(_gradualWakeSeconds);
+    final curIdx = idx < 0 ? 0 : idx;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'Gradual wake',
+          style: TextStyle(
+            fontSize: 16,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        Row(
+          children: [
+            IconButton(
+              onPressed: curIdx > 0
+                  ? () {
+                      HapticFeedback.selectionClick();
+                      setState(
+                        () => _gradualWakeSeconds = _fadePresets[curIdx - 1],
+                      );
+                    }
+                  : null,
+              icon: const Icon(Icons.remove_circle_outline),
+              color: primary,
+              tooltip: 'Shorter fade',
+            ),
+            SizedBox(
+              width: 72,
+              child: Text(
+                _formatFade(_gradualWakeSeconds),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: curIdx < _fadePresets.length - 1
+                  ? () {
+                      HapticFeedback.selectionClick();
+                      setState(
+                        () => _gradualWakeSeconds = _fadePresets[curIdx + 1],
+                      );
+                    }
+                  : null,
+              icon: const Icon(Icons.add_circle_outline),
+              color: primary,
+              tooltip: 'Longer fade',
+            ),
+          ],
         ),
       ],
     );

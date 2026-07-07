@@ -17,9 +17,10 @@ void main() {
         qrRequired: true,
       );
 
-      // 7-byte frame; bytes[5..6] are snooze allowance + length, both 0 here
-      // (snooze disabled).
-      expect(BlePayloads.alarm(alarm), [7, 6, 45, 0xBE, 1, 0, 0]);
+      // 9-byte frame; bytes[5..6] are snooze allowance + length (both 0 here,
+      // snooze disabled), bytes[7..8] are volume + gradual-wake fade (the 80%
+      // default and no fade).
+      expect(BlePayloads.alarm(alarm), [7, 6, 45, 0xBE, 1, 0, 0, 80, 0]);
     });
 
     test('encodes the per-alarm snooze allowance in byte 5', () {
@@ -33,8 +34,9 @@ void main() {
         snoozeMaxCount: 4,
       );
 
-      // byte[6] defaults to 5 minutes when the alarm doesn't override it.
-      expect(BlePayloads.alarm(alarm), [3, 8, 0, 0x80, 0, 4, 5]);
+      // byte[6] defaults to 5 minutes when the alarm doesn't override it;
+      // bytes[7..8] carry the default 80% volume and no fade.
+      expect(BlePayloads.alarm(alarm), [3, 8, 0, 0x80, 0, 4, 5, 80, 0]);
     });
 
     test('encodes the per-alarm snooze length in byte 6', () {
@@ -49,7 +51,46 @@ void main() {
         snoozeDurationMinutes: 10,
       );
 
-      expect(BlePayloads.alarm(alarm), [3, 8, 0, 0x80, 0, 2, 10]);
+      expect(BlePayloads.alarm(alarm), [3, 8, 0, 0x80, 0, 2, 10, 80, 0]);
+    });
+
+    test('encodes ring volume in byte 7 and gradual-wake fade in byte 8', () {
+      const alarm = Alarm(
+        id: 5,
+        hour: 7,
+        minute: 0,
+        dayMask: 0x80,
+        qrRequired: false,
+        volumePercent: 60,
+        gradualWakeSeconds: 30,
+      );
+
+      // Volume + fade travel independently of snooze (bytes[5..6] stay 0 here).
+      expect(BlePayloads.alarm(alarm), [5, 7, 0, 0x80, 0, 0, 0, 60, 30]);
+    });
+
+    test('clamps volume into the 1..100 wire range', () {
+      const silent = Alarm(
+        id: 5,
+        hour: 7,
+        minute: 0,
+        dayMask: 0x80,
+        qrRequired: false,
+        volumePercent: 0,
+      );
+      const tooLoud = Alarm(
+        id: 5,
+        hour: 7,
+        minute: 0,
+        dayMask: 0x80,
+        qrRequired: false,
+        volumePercent: 150,
+      );
+
+      // 0 would read as "clock default" on the firmware, and >100 is meaningless;
+      // the wire byte is clamped so a corrupt value can't silence or overflow it.
+      expect(BlePayloads.alarm(silent)[7], 1);
+      expect(BlePayloads.alarm(tooLoud)[7], 100);
     });
 
     test('sends snooze count 0 when snooze is disabled', () {
@@ -65,8 +106,9 @@ void main() {
         snoozeMaxCount: 4,
       );
 
-      // Both snooze bytes collapse to 0 when the toggle is off.
-      expect(BlePayloads.alarm(alarm), [3, 8, 0, 0x80, 0, 0, 0]);
+      // Both snooze bytes collapse to 0 when the toggle is off; volume + fade
+      // keep their defaults (80%, no fade).
+      expect(BlePayloads.alarm(alarm), [3, 8, 0, 0x80, 0, 0, 0, 80, 0]);
     });
 
     test('encodes clock settings payload with minute precision', () {

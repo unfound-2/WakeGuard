@@ -38,12 +38,14 @@ class BlePayloads {
     // Validate rather than silently masking, so a corrupt field surfaces as a
     // sync error instead of writing a wrong value into the 0x02 frame.
     //
-    // 7-byte frame: [id, hour, minute, dayMask, qrRequired, snoozeCount,
-    // snoozeDuration]. bytes[5..6] (snooze allowance + length, in minutes) were
-    // added in coordinated app+firmware changes so per-alarm snooze reaches the
-    // clock. They stay backward-compatible in both directions: the firmware reads
-    // each only under the matching `len >=` guard, and older firmware ignores any
-    // trailing bytes it doesn't expect.
+    // 9-byte frame: [id, hour, minute, dayMask, qrRequired, snoozeCount,
+    // snoozeDuration, volume, gradualWake]. Each trailing byte past [4] was added
+    // in a coordinated app+firmware change so a per-alarm setting reaches the
+    // clock — bytes[5..6] carry snooze (allowance + length, minutes) and
+    // bytes[7..8] carry ring volume (1–100%) + gradual-wake fade (seconds). They
+    // stay backward-compatible in both directions: the firmware reads each only
+    // under the matching `len >=` guard, and older firmware ignores any trailing
+    // bytes it doesn't expect.
     return [
       _byte('id', alarm.id),
       _byte('hour', alarm.hour),
@@ -52,6 +54,8 @@ class BlePayloads {
       alarm.qrRequired ? 1 : 0,
       _byte('snoozeCount', alarm.wireSnoozeCount),
       _byte('snoozeDuration', alarm.wireSnoozeDuration),
+      _byte('volume', alarm.wireVolume),
+      _byte('gradualWake', alarm.wireGradualWake),
     ];
   }
 

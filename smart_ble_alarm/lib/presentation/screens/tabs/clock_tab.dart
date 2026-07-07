@@ -13,6 +13,7 @@ import '../../blocs/ble_bloc/ble_event.dart';
 import '../../blocs/ble_bloc/ble_state.dart';
 import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../../blocs/timer_cubit/countdown_timer_cubit.dart';
+import '../../widgets/ringing_dismissal.dart';
 import '../item_scan_screen.dart';
 import '../scanner_screen.dart';
 import '../setup_screen.dart';
@@ -442,16 +443,21 @@ class _ClockTabState extends State<ClockTab> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                WakePrimaryButton(
-                  label: 'Sync Time, Alarms & Settings',
-                  icon: Icons.sync_rounded,
-                  onPressed: connected
-                      ? () => syncConnectedClock(
-                          context,
-                          bleState.device,
-                          showSuccess: true,
-                        )
-                      : null,
+                ValueListenableBuilder<bool>(
+                  valueListenable: clockSyncInProgress,
+                  builder: (context, syncing, _) => WakePrimaryButton(
+                    label: syncing
+                        ? 'Synchronizing…'
+                        : 'Sync Time, Alarms & Settings',
+                    icon: Icons.sync_rounded,
+                    onPressed: (connected && !syncing)
+                        ? () => syncConnectedClock(
+                            context,
+                            bleState.device,
+                            showSuccess: true,
+                          )
+                        : null,
+                  ),
                 ),
                 if (!connected) ...[
                   const SizedBox(height: 10),
@@ -535,7 +541,10 @@ class _ClockTabState extends State<ClockTab> {
     if (ringingAlarmId != null) {
       final ringing = alarmState.alarms.where((a) => a.id == ringingAlarmId);
       if (ringing.isNotEmpty) {
-        _pushDismissal(context, ringing.first);
+        // Route the live ring through the shared dismissal so a no-task alarm
+        // gets a direct Dismiss (not a QR scanner it can't satisfy) and an item
+        // alarm gets the gated backup flow.
+        RingingDismissal.trigger(context, ringing.first);
         return;
       }
     }

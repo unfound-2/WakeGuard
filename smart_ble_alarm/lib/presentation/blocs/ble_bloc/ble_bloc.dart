@@ -21,6 +21,13 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
   // Guards against overlapping connect attempts: a second scan batch can fire
   // another DeviceFoundEvent while the first connect is still in flight.
   bool _isConnecting = false;
+  // Bounded auto-connect retries. BLE advertising is intermittent, so a single
+  // scan on app-open often misses even when the clock is in range; we retry a
+  // few times before giving up. This is NOT a permanent reconnect loop — after
+  // [_maxAutoConnectAttempts] scans we stop and wait for the next app-open or
+  // manual reconnect (the clock rings alarms on its own regardless).
+  int _autoConnectAttempts = 0;
+  static const int _maxAutoConnectAttempts = 3;
 
   BleConnectionBloc({required this.bleRepository}) : super(BleDisconnected()) {
     on<StartScanEvent>(_onStartScan);
@@ -38,6 +45,7 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
   void _onStartScan(StartScanEvent event, Emitter<BleState> emit) async {
     _autoReconnectDeviceId = null;
     _isConnecting = false;
+    _autoConnectAttempts = 0;
     emit(BleScanning());
 
     _scanSubscription?.cancel();
@@ -103,7 +111,9 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
     });
 
     try {
-      _startScanTimeout();
+      // Shorter per-attempt window than a manual pairing scan, since auto-connect
+      // may run several attempts back-to-back.
+      _startScanTimeout(const Duration(seconds: 12));
       await bleRepository.startScan();
     } catch (e) {
       _scanTimeoutTimer?.cancel();
@@ -146,6 +156,7 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
     if (event.state == BluetoothConnectionState.connected &&
         _connectedDevice != null) {
       _isConnecting = false;
+      _autoConnectAttempts = 0;
       // Remember whatever we actually connected to — including devices paired
       // via a fresh scan — so a background/foreground cycle can reconnect.
       _autoReconnectDeviceId = _connectedDevice!.remoteId.str;
@@ -180,9 +191,20 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
       await _scanSubscription?.cancel();
       _scanSubscription = null;
       await bleRepository.stopScan();
-      // Give up quietly rather than looping a scan every few seconds (which
-      // would drain the battery when the clock is simply out of range). The
-      // remembered device is kept, so opening the app again retries.
+
+      // Auto-connect to a remembered clock gets a few bounded retries before
+      // giving up: BLE advertising is intermittent, so one scan on app-open
+      // often misses even when the clock is in range. Still not a permanent
+      // loop — after [_maxAutoConnectAttempts] we give up quietly (the
+      // remembered device is kept, so opening the app again retries).
+      if (_autoReconnectDeviceId != null &&
+          _autoReconnectDeviceId != 'simulated_device' &&
+          _autoConnectAttempts < _maxAutoConnectAttempts) {
+        _autoConnectAttempts++;
+        add(AutoConnectEvent(_autoReconnectDeviceId!));
+        return;
+      }
+      _autoConnectAttempts = 0;
       emit(BleDisconnected());
     }
   }
@@ -196,6 +218,7 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
     if (state is BleConnected || state is BleConnecting || state is BleScanning) {
       return;
     }
+    _autoConnectAttempts = 0;
     add(AutoConnectEvent(deviceId));
   }
 
@@ -262,15 +285,21 @@ class BleConnectionBloc extends Bloc<BleEvent, BleState> {
     return platformName.contains('hm-10') ||
         platformName.contains('hmsoft') ||
         platformName.contains('smart clock') ||
+        platformName.contains('wg clock') ||
+        platformName.contains('wakeguard') ||
         advertisedName.contains('hm-10') ||
         advertisedName.contains('hmsoft') ||
         advertisedName.contains('smart clock') ||
+        advertisedName.contains('wg clock') ||
+        advertisedName.contains('wakeguard') ||
         serviceUuids.contains('FFE0');
   }
 
-  void _startScanTimeout() {
+  void _startScanTimeout([
+    Duration duration = const Duration(seconds: 16),
+  ]) {
     _scanTimeoutTimer?.cancel();
-    _scanTimeoutTimer = Timer(const Duration(seconds: 16), () {
+    _scanTimeoutTimer = Timer(duration, () {
       add(ScanTimedOutEvent());
     });
   }

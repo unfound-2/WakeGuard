@@ -84,6 +84,8 @@ void main() {
         snoozeEnabled: true,
         snoozeMaxCount: 3,
         snoozeDurationMinutes: 10,
+        volumePercent: 65,
+        gradualWakeSeconds: 45,
       );
 
       final restored = Alarm.fromJson(alarm.toJson());
@@ -93,6 +95,8 @@ void main() {
       expect(restored.snoozeEnabled, isTrue);
       expect(restored.snoozeMaxCount, 3);
       expect(restored.snoozeDurationMinutes, 10);
+      expect(restored.volumePercent, 65);
+      expect(restored.gradualWakeSeconds, 45);
     });
 
     test('omits snooze count from JSON when snooze is disabled', () {
@@ -110,6 +114,9 @@ void main() {
       expect(json.containsKey('snoozeMaxCount'), isFalse);
       // Default 5-min length is omitted too, so unchanged alarms stay compact.
       expect(json.containsKey('snoozeDurationMinutes'), isFalse);
+      // Default volume (80%) and no-fade are omitted for the same reason.
+      expect(json.containsKey('volumePercent'), isFalse);
+      expect(json.containsKey('gradualWakeSeconds'), isFalse);
       expect(json.containsKey('label'), isFalse);
     });
   });
@@ -139,6 +146,13 @@ void main() {
       expect(
         enabled.copyWith(snoozeDurationMinutes: 10).syncHash,
         isNot(enabled.syncHash),
+      );
+      // Ring volume (byte[7]) and gradual-wake fade (byte[8]) travel to the
+      // clock too, so changing either must re-mark the alarm out-of-sync.
+      expect(base.copyWith(volumePercent: 50).syncHash, isNot(base.syncHash));
+      expect(
+        base.copyWith(gradualWakeSeconds: 30).syncHash,
+        isNot(base.syncHash),
       );
     });
 

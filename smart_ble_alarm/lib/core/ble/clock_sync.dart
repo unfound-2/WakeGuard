@@ -14,6 +14,11 @@ import 'ble_payloads.dart';
 /// [syncConnectedClock].
 final ValueNotifier<DateTime?> lastClockSync = ValueNotifier<DateTime?>(null);
 
+/// True while a [syncConnectedClock] run is in flight. Surfaced on the Sync
+/// buttons so they disable + relabel to "Synchronizing…", and used to coalesce
+/// overlapping syncs (rapid taps, or an auto-sync racing a manual one) into one.
+final ValueNotifier<bool> clockSyncInProgress = ValueNotifier<bool>(false);
+
 bool _lastSyncLoaded = false;
 
 /// Restores [lastClockSync] from SharedPreferences once per launch.
@@ -38,6 +43,12 @@ Future<bool> syncConnectedClock(
   BluetoothDevice device, {
   bool showSuccess = false,
 }) async {
+  // Coalesce overlapping syncs: a sync already running wins, and any extra call
+  // (a rapid re-tap, or an auto-sync racing a manual one) returns immediately
+  // instead of queueing another full sequence behind it.
+  if (clockSyncInProgress.value) return false;
+  clockSyncInProgress.value = true;
+
   final repo = context.read<BleRepository>();
   final alarmBloc = context.read<AlarmBloc>();
   final settings = context.read<SettingsBloc>().state;
@@ -96,5 +107,7 @@ Future<bool> syncConnectedClock(
       );
     }
     return false;
+  } finally {
+    clockSyncInProgress.value = false;
   }
 }

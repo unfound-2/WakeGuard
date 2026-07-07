@@ -19,6 +19,7 @@ import '../../blocs/ble_bloc/ble_state.dart';
 import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../../blocs/timer_cubit/countdown_timer_cubit.dart';
 import '../../widgets/create_timer_sheet.dart';
+import '../../widgets/ringing_dismissal.dart';
 import '../alarm_edit_screen.dart';
 
 /// The Alarms tab, ported from the native WakeGuard AlarmsView. A sliding
@@ -193,6 +194,7 @@ class _AlarmsTabState extends State<AlarmsTab> {
                     state.alarms[i],
                     state.syncStatusFor(state.alarms[i]),
                     settingsState.is24HourTime,
+                    state.ringingAlarmId == state.alarms[i].id,
                   ),
                 ],
               ],
@@ -212,6 +214,7 @@ class _AlarmsTabState extends State<AlarmsTab> {
     Alarm alarm,
     AlarmSyncStatus syncStatus,
     bool is24Hour,
+    bool isRinging,
   ) {
     final scheme = Theme.of(context).colorScheme;
     final nextOccurrence = AlarmTimeUtils.nextOccurrence(alarm);
@@ -278,20 +281,48 @@ class _AlarmsTabState extends State<AlarmsTab> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Switch(
-                    value: alarm.isActive,
-                    onChanged: (val) {
-                      final updatedMask = val
-                          ? (alarm.dayMask | 0x80)
-                          : (alarm.dayMask & 0x7F);
-                      context.read<AlarmBloc>().add(
-                        AddOrUpdateAlarmEvent(
-                          alarm.copyWith(dayMask: updatedMask),
-                          _connectedDevice(context),
+                  // While this alarm is ringing, the enable toggle is replaced by
+                  // the task-aware dismissal button (Dismiss / Take Photo / Scan
+                  // QR) — the same shared action as the banner and Home card.
+                  if (isRinging)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: scheme.error,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
                         ),
-                      );
-                    },
-                  ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: Icon(RingingDismissal.actionIcon(alarm), size: 16),
+                      label: Text(
+                        RingingDismissal.actionLabel(alarm),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                      onPressed: () => RingingDismissal.trigger(context, alarm),
+                    )
+                  else
+                    Switch(
+                      value: alarm.isActive,
+                      onChanged: (val) {
+                        final updatedMask = val
+                            ? (alarm.dayMask | 0x80)
+                            : (alarm.dayMask & 0x7F);
+                        context.read<AlarmBloc>().add(
+                          AddOrUpdateAlarmEvent(
+                            alarm.copyWith(dayMask: updatedMask),
+                            _connectedDevice(context),
+                          ),
+                        );
+                      },
+                    ),
                 ],
               ),
               const SizedBox(height: 14),
@@ -324,9 +355,10 @@ class _AlarmsTabState extends State<AlarmsTab> {
                     ),
                 ],
               ),
-              // QR-challenge alarms carry a printable backup code (item-scan
-              // alarms don't). Each alarm's code is unique to its id.
-              if (alarm.qrRequired && !alarm.usesItemScan) ...[
+              // Every protected alarm (QR or item-scan) carries a printable
+              // backup code — for item alarms it's the 3-minute backup bypass.
+              // Each alarm's code is unique to its id.
+              if (alarm.qrRequired) ...[
                 const SizedBox(height: 14),
                 WakeSecondaryButton(
                   label: 'Print backup code',

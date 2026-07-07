@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -13,6 +15,7 @@ import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/history_cubit/dismissal_history_cubit.dart';
+import 'scanner_screen.dart';
 
 /// Dismisses an item-scan alarm by photographing the required object and
 /// verifying it with the on-device image recogniser. On a match it sends the
@@ -34,15 +37,26 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
   String? _statusMessage;
   List<RecognizedItem> _lastDetected = const [];
 
-  /// Failed match attempts this session. On-device labelling can simply never
-  /// recognise the target (bad lighting, unusual object), which would otherwise
-  /// trap the user with a ringing clock. After [_maxAttemptsBeforeFallback]
-  /// misses we surface a manual dismissal escape hatch.
-  int _failedAttempts = 0;
-  static const int _maxAttemptsBeforeFallback = 3;
+  /// The printed backup QR is the ONLY bypass when the item can't be scanned,
+  /// and it is gated: it only becomes available [_backupGate] after the alarm
+  /// started ringing, so the user must genuinely attempt the wake task first.
+  /// There is deliberately no free "dismiss anyway" escape.
+  static const Duration _backupGate = Duration(minutes: 3);
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    // Tick every second so the "backup available in M:SS" countdown advances and
+    // the backup button appears the moment the gate elapses.
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   void dispose() {
+    _ticker?.cancel();
     _recognizer.close();
     super.dispose();
   }
@@ -73,7 +87,6 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
       if (!matched) {
         setState(() {
           _isProcessing = false;
-          _failedAttempts++;
           _lastDetected = detected.take(3).toList();
           _statusMessage = detected.isEmpty
               ? "Couldn't recognise anything. Try again with better lighting."
@@ -138,6 +151,53 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
             'Item recognised, but dismissal could not be sent to the clock.';
       });
     }
+  }
+
+  /// The gated backup-code affordance. While the alarm is ringing, shows a
+  /// countdown until [_backupGate] elapses, then a button to scan the printed
+  /// backup QR (the only sanctioned bypass — no free dismiss). Hidden entirely
+  /// when this alarm isn't the one currently ringing (nothing to gate against).
+  Widget _buildBackupGate(ColorScheme scheme) {
+    final alarmState = context.read<AlarmBloc>().state;
+    final ringingSince = alarmState.ringingAlarmId == widget.alarm.id
+        ? alarmState.ringingSince
+        : null;
+    if (ringingSince == null) return const SizedBox.shrink();
+
+    final remaining = _backupGate - DateTime.now().difference(ringingSince);
+    if (remaining > Duration.zero) {
+      final total = remaining.inSeconds;
+      final mmss = '${total ~/ 60}:${(total % 60).toString().padLeft(2, '0')}';
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text(
+          "Can't scan it? Backup code unlocks in $mmss",
+          textAlign: TextAlign.center,
+          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextButton.icon(
+        onPressed: _isProcessing ? null : _openBackupScanner,
+        icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+        label: const Text("Can't scan the item? Use the backup code"),
+        style: TextButton.styleFrom(foregroundColor: scheme.primary),
+      ),
+    );
+  }
+
+  Future<void> _openBackupScanner() async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ScannerScreen(alarmId: widget.alarm.id),
+      ),
+    );
+    // The QR scanner dismissed the alarm — pop this screen too so the user lands
+    // back on the (now cleared) home surface instead of the stale scan prompt.
+    if (result == true && mounted) Navigator.pop(context, true);
   }
 
   @override
@@ -250,18 +310,7 @@ class _ItemScanScreenState extends State<ItemScanScreen> {
                       ],
                     ),
                   ),
-                if (_failedAttempts >= _maxAttemptsBeforeFallback)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: TextButton.icon(
-                      onPressed: _isProcessing ? null : _dismiss,
-                      icon: const Icon(Icons.lock_open_rounded, size: 18),
-                      label: const Text("Can't scan the item? Dismiss anyway"),
-                      style: TextButton.styleFrom(
-                        foregroundColor: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
+                _buildBackupGate(scheme),
                 WakePrimaryButton(
                   label: _isProcessing ? 'Checking…' : 'Photograph Item',
                   icon: Icons.photo_camera_rounded,

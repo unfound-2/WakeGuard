@@ -10,7 +10,10 @@ import '../blocs/ble_bloc/ble_event.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../domain/repositories/ble_repository.dart';
+import '../../domain/entities/alarm.dart';
+import '../../core/utils/alarm_time_utils.dart';
 import '../widgets/liquid_glass_tab_bar.dart';
+import '../widgets/ringing_dismissal.dart';
 import 'tabs/home_tab.dart';
 import 'tabs/alarms_tab.dart';
 import 'tabs/clock_tab.dart';
@@ -222,6 +225,152 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// A ringing-alarm banner that slides down over every tab whenever an alarm is
+  /// sounding. Tapping the banner (or its button) runs the task-aware dismissal:
+  /// "Dismiss" for a no-task alarm, "Take Photo" for an item alarm, "Scan QR"
+  /// for a QR alarm — the same [RingingDismissal] the Home card and Alarms row
+  /// use, so all three surfaces always agree.
+  Widget _buildRingingBanner() {
+    return BlocBuilder<AlarmBloc, AlarmState>(
+      buildWhen: (prev, curr) =>
+          prev.ringingAlarmId != curr.ringingAlarmId ||
+          prev.alarms != curr.alarms,
+      builder: (context, alarmState) {
+        final id = alarmState.ringingAlarmId;
+        Alarm? ringing;
+        if (id != null) {
+          for (final a in alarmState.alarms) {
+            if (a.id == id) {
+              ringing = a;
+              break;
+            }
+          }
+        }
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: ringing == null
+              ? const SizedBox(width: double.infinity)
+              : _ringingBannerContent(context, ringing),
+        );
+      },
+    );
+  }
+
+  Widget _ringingBannerContent(BuildContext context, Alarm alarm) {
+    final scheme = Theme.of(context).colorScheme;
+    final error = scheme.error;
+    final is24Hour = context.read<SettingsBloc>().state.is24HourTime;
+    final timeStr = AlarmTimeUtils.formatTime(
+      alarm.hour,
+      alarm.minute,
+      is24Hour: is24Hour,
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => RingingDismissal.trigger(context, alarm),
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 12,
+            bottom: 14,
+            left: 16,
+            right: 16,
+          ),
+          decoration: BoxDecoration(
+            color: error.withValues(alpha: 0.16),
+            border: Border(
+              bottom: BorderSide(
+                color: error.withValues(alpha: 0.5),
+                width: 1.5,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: error.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.notifications_active_rounded,
+                  color: error,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'ALARM RINGING',
+                          style: TextStyle(
+                            color: error,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          timeStr,
+                          style: TextStyle(
+                            color: scheme.onSurface,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${alarm.displayName} · ${RingingDismissal.instruction(alarm)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: error,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: Icon(RingingDismissal.actionIcon(alarm), size: 18),
+                label: Text(
+                  RingingDismissal.actionLabel(alarm),
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                onPressed: () => RingingDismissal.trigger(context, alarm),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiBlocListener(
@@ -302,6 +451,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         extendBody: true,
         body: Column(
           children: [
+            _buildRingingBanner(),
             _buildConnectivityBanner(),
             // IndexedStack keeps every tab mounted so scroll position and
             // in-tab state (e.g. live timer tickers) survive tab switches.

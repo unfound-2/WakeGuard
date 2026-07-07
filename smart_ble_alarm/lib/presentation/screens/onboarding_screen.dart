@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/challenge/wake_challenge_options.dart';
 import '../../core/theme/glass.dart';
 import '../../core/theme/wake_widgets.dart';
-import '../blocs/settings_bloc/settings_bloc.dart';
 import 'setup_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -62,16 +59,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
     _OnboardingPage(
       eyebrow: 'Personalize',
-      title: 'Choose a wake object.',
+      title: 'Pick a wake object per alarm.',
       body:
-          'Pick something you naturally interact with in the morning, like a bathroom sink, toothbrush, coffee maker, or medication.',
+          'When you create a protected alarm, you choose what to verify — like a bathroom sink, toothbrush, coffee maker, or medication — right in the alarm editor.',
       icon: Icons.auto_awesome,
       bullets: [
-        'Editable any time in Settings',
+        'Set it per alarm in the editor',
         'Use an object that starts your routine',
         'Keep it far enough away to get moving',
       ],
-      showsWakeObjectPicker: true,
     ),
     _OnboardingPage(
       eyebrow: 'Setup',
@@ -131,99 +127,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  void _showWakeObjectSheet(SettingsState settingsState) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.only(bottom: 12),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: Text(
-                  'Choose wake object',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-              ),
-              ...WakeChallengeOptions.suggestedObjects.map(
-                (option) => ListTile(
-                  title: Text(option),
-                  trailing: settingsState.wakeObjectName == option
-                      ? Icon(
-                          Icons.check,
-                          color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () {
-                    context.read<SettingsBloc>().add(
-                      UpdateWakeObjectEvent(option),
-                    );
-                    Navigator.pop(sheetContext);
-                  },
-                ),
-              ),
-              ListTile(
-                leading: Icon(
-                  Icons.edit,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                title: const Text('Custom object'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showCustomWakeObjectDialog(settingsState.wakeObjectName);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _showCustomWakeObjectDialog(String currentValue) {
-    final controller = TextEditingController(text: currentValue);
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Custom wake object'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              hintText: 'Bathroom sink, coffee maker, medication...',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                context.read<SettingsBloc>().add(
-                  UpdateWakeObjectEvent(controller.text),
-                );
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    ).whenComplete(controller.dispose);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -247,12 +150,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       onPageChanged: (index) =>
                           setState(() => _selectedPage = index),
                       itemBuilder: (context, index) {
-                        return _OnboardingPageView(
-                          page: _pages[index],
-                          onChooseWakeObject: () => _showWakeObjectSheet(
-                            context.read<SettingsBloc>().state,
-                          ),
-                        );
+                        return _OnboardingPageView(page: _pages[index]);
                       },
                     ),
                   ),
@@ -283,7 +181,6 @@ class _OnboardingPage {
   final String body;
   final IconData icon;
   final List<String> bullets;
-  final bool showsWakeObjectPicker;
 
   const _OnboardingPage({
     required this.eyebrow,
@@ -291,7 +188,6 @@ class _OnboardingPage {
     required this.body,
     required this.icon,
     required this.bullets,
-    this.showsWakeObjectPicker = false,
   });
 }
 
@@ -339,11 +235,9 @@ class _OnboardingHeader extends StatelessWidget {
 
 class _OnboardingPageView extends StatelessWidget {
   final _OnboardingPage page;
-  final VoidCallback onChooseWakeObject;
 
   const _OnboardingPageView({
     required this.page,
-    required this.onChooseWakeObject,
   });
 
   @override
@@ -411,57 +305,6 @@ class _OnboardingPageView extends StatelessWidget {
               ),
             ),
           ),
-          if (page.showsWakeObjectPicker) ...[
-            const SizedBox(height: 12),
-            BlocBuilder<SettingsBloc, SettingsState>(
-              builder: (context, settingsState) {
-                return GlassCard(
-                  borderRadius: 20,
-                  padding: const EdgeInsets.all(16),
-                  shadows: wakeCardShadow(context),
-                  onTap: onChooseWakeObject,
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.center_focus_strong,
-                        color: colorScheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Wake object',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: colorScheme.onSurface,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              settingsState.wakeObjectName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
         ],
       ),
     );

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/challenge/wake_challenge_options.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/glass.dart';
 import '../../core/theme/wake_widgets.dart';
@@ -306,9 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildChallengeSection(SettingsState settings) {
     return WakeSection(
       title: 'Wake Challenge',
-      subtitle:
-          'Set the default for new alarms. Pick the object to verify per '
-          'alarm in the alarm editor.',
+      subtitle: 'Set whether new alarms start with a wake challenge.',
       child: GlassCard(
         padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
         shadows: wakeCardShadow(context),
@@ -326,16 +323,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-            Divider(height: 1, color: Theme.of(context).dividerColor),
-            WakeSettingsRow(
-              icon: Icons.center_focus_strong_rounded,
-              title: 'Default wake object',
-              subtitle: settings.wakeObjectName,
-              onTap: () => _showWakeObjectPicker(settings.wakeObjectName),
-            ),
             _footnote(
-              'New object-verification alarms start with this wake object; '
-              'change it per alarm in the alarm editor. Challenges use '
+              'Choose the QR or object-verification method — and the object to '
+              'photograph — per alarm in the alarm editor. Challenges use '
               'on-device AI verification, with printed backup codes as a '
               'fallback.',
               icon: Icons.auto_awesome,
@@ -692,96 +682,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const SnackBar(
         content: Text('Local alarms, timers, and history cleared.'),
       ),
-    );
-  }
-
-  // ---- Wake object picker -------------------------------------------------
-
-  /// Sentinel returned by the picker sheet to mean "let me type my own".
-  static const String _customWakeObjectSentinel = '__wakeguard_custom__';
-
-  Future<void> _showWakeObjectPicker(String current) async {
-    final settingsBloc = context.read<SettingsBloc>();
-    final scheme = Theme.of(context).colorScheme;
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: GlassCard(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            shadows: wakeCardShadow(sheetContext),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
-                  child: Text(
-                    'Default wake object',
-                    style: Theme.of(sheetContext).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                for (final option in WakeChallengeOptions.suggestedObjects)
-                  ListTile(
-                    title: Text(option),
-                    trailing: option == current
-                        ? Icon(Icons.check_rounded, color: scheme.primary)
-                        : null,
-                    onTap: () => Navigator.pop(sheetContext, option),
-                  ),
-                ListTile(
-                  leading: Icon(Icons.edit_rounded, color: scheme.primary),
-                  title: const Text('Custom object…'),
-                  onTap: () =>
-                      Navigator.pop(sheetContext, _customWakeObjectSentinel),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    if (choice == null || !mounted) return;
-    if (choice == _customWakeObjectSentinel) {
-      await _showCustomWakeObjectDialog(current);
-      return;
-    }
-    settingsBloc.add(
-      UpdateWakeObjectEvent(WakeChallengeOptions.cleanObjectName(choice)),
-    );
-  }
-
-  Future<void> _showCustomWakeObjectDialog(String current) async {
-    final controller = TextEditingController(text: current);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Custom wake object'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(hintText: 'e.g. Bathroom sink'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (result == null || !mounted) return;
-    context.read<SettingsBloc>().add(
-      UpdateWakeObjectEvent(WakeChallengeOptions.cleanObjectName(result)),
     );
   }
 

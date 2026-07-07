@@ -97,6 +97,12 @@ class AlarmState extends Equatable {
   final int driftPpm;
   final bool isLoading;
   final int? ringingAlarmId;
+
+  /// Wall-clock instant the current ring started (null when nothing is ringing).
+  /// In-memory only, never persisted — it drives the "backup code available only
+  /// 3 minutes after the alarm rings" gate on the item-scan dismissal screen.
+  final DateTime? ringingSince;
+
   final String? syncError;
 
   const AlarmState({
@@ -107,6 +113,7 @@ class AlarmState extends Equatable {
     this.driftPpm = 0,
     this.isLoading = false,
     this.ringingAlarmId,
+    this.ringingSince,
     this.syncError,
   });
 
@@ -118,6 +125,7 @@ class AlarmState extends Equatable {
     int? driftPpm,
     bool? isLoading,
     int? ringingAlarmId,
+    DateTime? ringingSince,
     String? syncError,
     bool clearRingingAlarm = false,
     bool clearSyncError = false,
@@ -132,6 +140,9 @@ class AlarmState extends Equatable {
       ringingAlarmId: clearRingingAlarm
           ? null
           : (ringingAlarmId ?? this.ringingAlarmId),
+      ringingSince: clearRingingAlarm
+          ? null
+          : (ringingSince ?? this.ringingSince),
       syncError: clearSyncError ? null : (syncError ?? this.syncError),
     );
   }
@@ -156,6 +167,7 @@ class AlarmState extends Equatable {
     driftPpm,
     isLoading,
     ringingAlarmId,
+    ringingSince,
     syncError,
   ];
 }
@@ -285,10 +297,16 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
       }
     }
 
+    // Stamp the ring-start time only when a *new* alarm begins ringing (not on
+    // the clock's repeated 0x08 re-broadcasts for the same alarm), so the
+    // 3-minute backup-code gate measures from the true start.
+    final bool startingNewRing =
+        event.alarmId != null && event.alarmId != state.ringingAlarmId;
     emit(
       state.copyWith(
         ringingAlarmId: event.alarmId,
         clearRingingAlarm: event.alarmId == null,
+        ringingSince: startingNewRing ? DateTime.now() : null,
       ),
     );
   }

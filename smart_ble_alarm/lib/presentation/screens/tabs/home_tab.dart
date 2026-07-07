@@ -15,8 +15,7 @@ import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../../blocs/timer_cubit/countdown_timer_cubit.dart';
 import '../../widgets/create_timer_sheet.dart';
 import '../alarm_edit_screen.dart';
-import '../item_scan_screen.dart';
-import '../scanner_screen.dart';
+import '../../widgets/ringing_dismissal.dart';
 
 /// The Home dashboard, matching the native WakeGuard HomeView: live header,
 /// connection overview, metric tiles, the next-alarm / ringing card, quick
@@ -420,179 +419,210 @@ class _HomeTabState extends State<HomeTab> {
     return BlocBuilder<AlarmBloc, AlarmState>(
       builder: (context, alarmState) {
         final now = DateTime.now();
-        final entry = _nextAlarmEntry(alarmState, now);
-        if (entry == null) return const SizedBox.shrink();
 
-        final activeNextAlarm = entry.alarm;
-        final nextOccurrence = entry.occurrence;
-        final isRinging = alarmState.ringingAlarmId == activeNextAlarm.id;
+        // If something is ringing, the card shows THAT alarm (looked up by id)
+        // regardless of whether it's still the "soonest" — a one-time alarm that
+        // just fired has no future occurrence, so keying off _nextAlarmEntry
+        // alone would hide the ring. Otherwise show the soonest upcoming alarm.
+        final ringingId = alarmState.ringingAlarmId;
+        Alarm? ringingAlarm;
+        if (ringingId != null) {
+          for (final a in alarmState.alarms) {
+            if (a.id == ringingId) {
+              ringingAlarm = a;
+              break;
+            }
+          }
+        }
+        final entry = _nextAlarmEntry(alarmState, now);
+        if (ringingAlarm == null && entry == null) {
+          return const SizedBox.shrink();
+        }
 
         return BlocBuilder<SettingsBloc, SettingsState>(
           builder: (context, settingsState) {
+            final is24Hour = settingsState.is24HourTime;
+            if (ringingAlarm != null) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: _ringingCard(context, ringingAlarm, is24Hour),
+              );
+            }
+
+            final activeNextAlarm = entry!.alarm;
+            final nextOccurrence = entry.occurrence;
+            // (entry is non-null here: the early-return above only spares us when
+            // both ringingAlarm and entry are null, and ringingAlarm==null here.)
             final timeStr = AlarmTimeUtils.formatTime(
               activeNextAlarm.hour,
               activeNextAlarm.minute,
-              is24Hour: settingsState.is24HourTime,
+              is24Hour: is24Hour,
             );
             final primary = Theme.of(context).colorScheme.primary;
-            final error = Theme.of(context).colorScheme.error;
-            final usesItem = activeNextAlarm.usesItemScan;
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 24),
               child: GlassCard(
                 padding: const EdgeInsets.all(22),
-                // Tapping the (non-ringing) next-alarm card jumps to the Alarms
-                // tab to manage it. While ringing the card's dismiss button
-                // owns the interaction, so the whole-card tap is disabled.
-                onTap: isRinging ? null : widget.onOpenAlarms,
-                tintColor: isRinging ? error : primary,
-                borderColor: isRinging
-                    ? error
-                    : primary.withValues(alpha: 0.4),
-                borderWidth: isRinging ? 2 : 1,
+                onTap: widget.onOpenAlarms,
+                tintColor: primary,
+                borderColor: primary.withValues(alpha: 0.4),
+                borderWidth: 1,
                 shadows: [
                   BoxShadow(
-                    color: (isRinging ? error : primary).withValues(
-                      alpha: 0.22,
-                    ),
+                    color: primary.withValues(alpha: 0.22),
                     blurRadius: 24,
                     spreadRadius: -4,
                   ),
                 ],
-                child: isRinging
-                    ? Column(
-                        children: [
-                          Text(
-                            'ALARM RINGING',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: error,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 2,
-                              fontSize: 15,
-                            ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'NEXT ALARM',
+                          style: TextStyle(
+                            color: primary,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.5,
+                            fontSize: 12,
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            timeStr,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              fontSize: 44,
-                              fontWeight: FontWeight.w800,
-                            ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          timeStr,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
                           ),
-                          const SizedBox(height: 12),
-                          Text(
-                            usesItem
-                                ? 'Verify ${activeNextAlarm.itemLabel!} '
-                                      'to dismiss.'
-                                : 'Scan the printed backup code to dismiss.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                              fontSize: 13,
-                            ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          AlarmTimeUtils.formatNextOccurrence(
+                            nextOccurrence,
+                            now,
                           ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: error,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                              ),
-                              icon: Icon(
-                                usesItem
-                                    ? Icons.center_focus_strong_rounded
-                                    : Icons.qr_code_scanner_rounded,
-                                size: 26,
-                              ),
-                              label: Text(
-                                usesItem
-                                    ? 'VERIFY WAKE OBJECT'
-                                    : 'SCAN BACKUP CODE',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              onPressed: () =>
-                                  _pushDismissal(context, activeNextAlarm),
-                            ),
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            fontSize: 12,
                           ),
-                        ],
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'NEXT ALARM',
-                                style: TextStyle(
-                                  color: primary,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.5,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                timeStr,
-                                style: TextStyle(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                  fontSize: 34,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                AlarmTimeUtils.formatNextOccurrence(
-                                  nextOccurrence,
-                                  now,
-                                ),
-                                style: TextStyle(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: primary.withValues(alpha: 0.12),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.alarm_on_rounded,
-                              color: primary,
-                              size: 34,
-                            ),
-                          ),
-                        ],
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: primary.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
                       ),
+                      child: Icon(
+                        Icons.alarm_on_rounded,
+                        color: primary,
+                        size: 34,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
         );
       },
+    );
+  }
+
+  /// The big Home ringing card — mirrors the top ringing banner, larger. Uses
+  /// the shared [RingingDismissal] so its button reads "Dismiss" / "Take Photo"
+  /// / "Scan QR" exactly like the banner and the Alarms-tab row.
+  Widget _ringingCard(BuildContext context, Alarm alarm, bool is24Hour) {
+    final scheme = Theme.of(context).colorScheme;
+    final error = scheme.error;
+    final timeStr = AlarmTimeUtils.formatTime(
+      alarm.hour,
+      alarm.minute,
+      is24Hour: is24Hour,
+    );
+    return GlassCard(
+      padding: const EdgeInsets.all(24),
+      tintColor: error,
+      borderColor: error,
+      borderWidth: 2,
+      shadows: [
+        BoxShadow(
+          color: error.withValues(alpha: 0.24),
+          blurRadius: 28,
+          spreadRadius: -4,
+        ),
+      ],
+      child: Column(
+        children: [
+          Text(
+            'ALARM RINGING',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: error,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            timeStr,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: scheme.onSurface,
+              fontSize: 52,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            alarm.displayName,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            RingingDismissal.instruction(alarm),
+            textAlign: TextAlign.center,
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: error,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              icon: Icon(RingingDismissal.actionIcon(alarm), size: 26),
+              label: Text(
+                RingingDismissal.actionLabel(alarm).toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              onPressed: () => RingingDismissal.trigger(context, alarm),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -666,12 +696,15 @@ class _HomeTabState extends State<HomeTab> {
               children: [
                 _buildSyncSummary(),
                 const SizedBox(height: 12),
-                WakeSecondaryButton(
-                  label: 'Sync Now',
-                  icon: Icons.sync_rounded,
-                  // Always enabled: when disconnected the flow explains why it
-                  // can't sync instead of silently disabling the button.
-                  onPressed: () => _syncNow(context),
+                ValueListenableBuilder<bool>(
+                  valueListenable: clockSyncInProgress,
+                  builder: (context, syncing, _) => WakeSecondaryButton(
+                    label: syncing ? 'Synchronizing…' : 'Sync Now',
+                    icon: Icons.sync_rounded,
+                    // Disabled only while a sync is already running; otherwise
+                    // always enabled (disconnected is explained in the flow).
+                    onPressed: syncing ? null : () => _syncNow(context),
+                  ),
                 ),
               ],
             ),
@@ -773,20 +806,6 @@ class _HomeTabState extends State<HomeTab> {
     }
     await syncConnectedClock(context, bleState.device, showSuccess: true);
   }
-
-  /// Routes to the correct dismissal flow for [alarm]: the item-recognition
-  /// screen for item alarms, the QR scanner otherwise.
-  void _pushDismissal(BuildContext context, Alarm alarm) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => alarm.usesItemScan
-            ? ItemScanScreen(alarm: alarm)
-            : ScannerScreen(alarmId: alarm.id),
-      ),
-    );
-  }
-
 }
 
 /// Rebuilds [builder] on a fixed [interval] so relative time labels (the live

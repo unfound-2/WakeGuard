@@ -194,7 +194,9 @@ The Arduino Uno R3 firmware uses an asynchronous, cooperative multitasking model
   `uint8_t qrRequired; // 0: Button Dismissal, 1: Cryptographic QR Code Scan Required`  
   `uint8_t snoozeCount;// Max button snoozes allowed (0 = disabled); byte[5] of 0x02`  
   `uint8_t snoozeMinutes;// Snooze length in minutes (0 = clock default); byte[6] of 0x02`  
-  `uint8_t reserved[3];// Headroom for future per-alarm wire fields — adding one is a`  
+  `uint8_t volume;     // Ring loudness 1..100 (0 = clock default ~78%); byte[7] of 0x02`  
+  `uint8_t fadeSeconds;// Gradual-wake fade-in length in s (0 = no fade); byte[8] of 0x02`  
+  `uint8_t reserved[1];// Headroom for one more per-alarm wire field — adding one is a`  
   `                    // length-guarded wire byte with no EEPROM migration.`  
 `};`
 
@@ -297,7 +299,7 @@ If the parser detects an escape byte, it discards the \\ and restores the next b
 | Command ID | Command Name | Sender Node | Payload Details | Response Requirements |
 | :---- | :---- | :---- | :---- | :---- |
 | **0x01** | TIME\_SYNC\_WRITE | Mobile App | \[Epoch Time: uint32\] | Return code 0x81 indicating update success. |
-| **0x02** | ALARM\_DB\_ADD | Mobile App | \[ID: uint8\] \[Hr: uint8\] \[Min: uint8\] \[Mask: uint8\] \[QR: uint8\] \[Snooze: uint8\] \[Length: uint8\] | Return code 0x82 with the added alarm's ID. `Snooze` (byte 5) = max button snoozes (0 = disabled); `Length` (byte 6) = snooze length in minutes (0 = clock default). Optional & backward-compatible: the clock reads each byte only once LEN reaches it (≥ 6, ≥ 7), older firmware ignores trailing bytes, and a shorter frame from an older app falls back to clock defaults. |
+| **0x02** | ALARM\_DB\_ADD | Mobile App | \[ID: uint8\] \[Hr: uint8\] \[Min: uint8\] \[Mask: uint8\] \[QR: uint8\] \[Snooze: uint8\] \[Length: uint8\] \[Vol: uint8\] \[Fade: uint8\] | Return code 0x82 with the added alarm's ID. `Snooze` (byte 5) = max button snoozes (0 = disabled); `Length` (byte 6) = snooze length in minutes (0 = clock default); `Vol` (byte 7) = ring loudness 1..100 (0 = clock default); `Fade` (byte 8) = gradual-wake fade-in length in seconds (0 = no fade). Optional & backward-compatible: the clock reads each byte only once LEN reaches it (≥ 6, ≥ 7, ≥ 8, ≥ 9), older firmware ignores trailing bytes, and a shorter frame from an older app falls back to clock defaults. |
 | **0x03** | ALARM\_DB\_DEL | Mobile App | \[ID: uint8\] | Return code 0x83 confirming deletion. |
 | **0x04** | SYNC\_START | Mobile App | None | Return code 0x84 confirming sync state. |
 | **0x05** | SYNC\_END | Mobile App | None | Return code 0x85 confirming sync completion. |
@@ -599,8 +601,13 @@ The BLEConnectionBloc manages connection states, automatic reconnections, and ba
         
       `FlutterBluePlus.scanResults.listen((results) {`  
         `for (ScanResult r in results) {`  
+          `// Also matches the advertised name "WG Clock" (set via AT+NAME on`  
+          `// the module at boot) and "wakeguard"; the FFE0 service filter above`  
+          `// is the primary, name-independent match, so a rename never breaks it.`  
           `if (r.device.platformName.toLowerCase().contains("hm-10") ||`   
-              `r.device.platformName.toLowerCase().contains("hmsoft")) {`  
+              `r.device.platformName.toLowerCase().contains("hmsoft") ||`  
+              `r.device.platformName.toLowerCase().contains("wg clock") ||`  
+              `r.device.platformName.toLowerCase().contains("wakeguard")) {`  
             `add(DeviceFoundEvent(r.device));`  
             `FlutterBluePlus.stopScan();`  
             `break;`  
