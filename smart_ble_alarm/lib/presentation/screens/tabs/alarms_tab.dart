@@ -12,6 +12,7 @@ import '../../../core/theme/wake_widgets.dart';
 import '../../../core/utils/alarm_time_utils.dart';
 import '../../../data/datasources/secure_key_datasource.dart';
 import '../../../domain/entities/alarm.dart';
+import '../../../domain/repositories/ble_repository.dart';
 import '../../../domain/usecases/print_qr_code.dart';
 import '../../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../blocs/ble_bloc/ble_bloc.dart';
@@ -606,15 +607,38 @@ class _TimersSectionState extends State<_TimersSection> {
             ),
           ),
           IconButton(
-            tooltip: 'Clear from list',
-            icon: Icon(Icons.close_rounded, color: accent),
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              context.read<CountdownTimerCubit>().removeTimer(timer.id);
-            },
+            tooltip: done ? 'Stop timer' : 'Cancel timer',
+            icon: Icon(
+              done ? Icons.stop_rounded : Icons.close_rounded,
+              color: accent,
+            ),
+            onPressed: () => _stopTimer(context, timer),
           ),
         ],
       ),
     );
+  }
+
+  /// Stops the timer on the clock (0x0B) and removes the local mirror. Sending
+  /// the stop command is what actually silences a finished-timer chime or drops
+  /// a still-running countdown on the hardware — previously the ✕ only cleared
+  /// the app's list while the clock kept sounding until its 60s auto-timeout.
+  Future<void> _stopTimer(BuildContext context, CountdownTimer timer) async {
+    HapticFeedback.selectionClick();
+    final cubit = context.read<CountdownTimerCubit>();
+    final bleState = context.read<BleConnectionBloc>().state;
+    if (bleState is BleConnected) {
+      try {
+        await context.read<BleRepository>().sendCommand(
+          bleState.device,
+          0x0B,
+          const [],
+        );
+      } catch (_) {
+        // Best-effort: still clear the mirror so the UI recovers even if the
+        // write failed (the clock also self-silences after its timeout).
+      }
+    }
+    cubit.removeTimer(timer.id);
   }
 }

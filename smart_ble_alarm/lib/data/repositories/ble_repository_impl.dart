@@ -64,7 +64,18 @@ class BleRepositoryImpl implements BleRepository {
       autoConnect: false,
       timeout: const Duration(seconds: 15),
     );
-    final services = await device.discoverServices();
+    // discoverServices()/setNotifyValue() have no built-in timeout. HM-10 GATT
+    // discovery occasionally stalls AFTER a successful low-level connect; without
+    // a cap the caller (the bloc) would await forever and the UI would sit on
+    // "Reconnecting…" with no recovery. Bound them and disconnect on timeout so
+    // the failure propagates and the bloc can reset to Disconnected.
+    final services = await device.discoverServices().timeout(
+      const Duration(seconds: 12),
+      onTimeout: () async {
+        await device.disconnect();
+        throw TimeoutException('Service discovery timed out');
+      },
+    );
 
     // Find HM-10 characteristic
     for (BluetoothService service in services) {
@@ -77,7 +88,13 @@ class BleRepositoryImpl implements BleRepository {
             _txRxCharacteristic = characteristic;
 
             // Subscribe to notifications
-            await characteristic.setNotifyValue(true);
+            await characteristic.setNotifyValue(true).timeout(
+              const Duration(seconds: 8),
+              onTimeout: () async {
+                await device.disconnect();
+                throw TimeoutException('Enabling notifications timed out');
+              },
+            );
             _characteristicSub = characteristic.lastValueStream.listen((value) {
               if (value.isNotEmpty) {
                 _processIncomingBytes(value);
@@ -131,15 +148,26 @@ class BleRepositoryImpl implements BleRepository {
     if (_txRxCharacteristic == null) {
       throw Exception("Characteristic not found. Are you connected?");
     }
+    final characteristic = _txRxCharacteristic!;
     List<int> frame = BleFraming.encodeFrame(cmd, payload);
 
-    // Send in chunks of 20 bytes (MTU limit)
+    // Prefer acknowledged writes when the characteristic supports them: a
+    // write-with-response awaits the peer's confirmation, so a congested BLE link
+    // can't silently drop a chunk and corrupt a multi-chunk frame mid-sync (the
+    // clock would then reject that frame and the alarm/setting would go missing).
+    // Fall back to write-without-response only when that's all FFE1 exposes.
+    final acked = characteristic.properties.write;
+
+    // Send in chunks of 20 bytes (default ATT MTU minus 3-byte header).
     for (int i = 0; i < frame.length; i += 20) {
       int end = (i + 20 < frame.length) ? i + 20 : frame.length;
       List<int> chunk = frame.sublist(i, end);
-      await _txRxCharacteristic!.write(chunk, withoutResponse: true);
-      // Small delay between chunks for reliable transmission
-      await Future.delayed(const Duration(milliseconds: 20));
+      await characteristic.write(chunk, withoutResponse: !acked);
+      // Acked writes are self-pacing; unacked ones need a gap so the HM-10's
+      // 64-byte UART buffer can drain between chunks.
+      if (!acked) {
+        await Future.delayed(const Duration(milliseconds: 20));
+      }
     }
   }
 

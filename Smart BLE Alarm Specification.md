@@ -308,6 +308,7 @@ If the parser detects an escape byte, it discards the \\ and restores the next b
 | **0x08** | ALARM\_TRIGGERED | Clock Node | \[AlarmID: uint8\] | App returns receipt confirmation 0x88. |
 | **0x09** | ALARM\_DISMISS | Mobile App | \[AlarmID: uint8\] \[Hash: 8-byte token\] | Return code 0x89 confirming buzzer silencer. |
 | **0x0A** | TIMER\_SET | Mobile App | \[DurationSeconds: uint32\] | Return code 0x8A confirming timer start. |
+| **0x0B** | TIMER\_STOP | Mobile App | *(no payload)* | Cancels a running countdown and silences a finished-timer chime. Return code 0x8B. Sent by the app's timer ✕ button so a ringing/running timer can be dismissed instead of waiting for the clock's 60s auto-timeout. |
 
 ### **Error and Exception Codes**
 

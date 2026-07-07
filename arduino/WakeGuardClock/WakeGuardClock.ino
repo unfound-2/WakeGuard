@@ -99,6 +99,20 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 #define PIN_BUTTON    10
 #define PIN_LDR       A0
 
+// ---- Buzzer type -----------------------------------------------------------
+// 1 = ACTIVE buzzer (has a built-in oscillator: makes sound on steady DC, fixed
+//     pitch, fixed loudness). Confirmed on this unit 2026-07-07 via the
+//     BuzzerTest sketches — steady DC produced a tone, square waves produced
+//     garble. In this mode the alarm/timer patterns play as on/off BEEP
+//     rhythms, and per-alarm volume% and the gradual-wake fade are NO-OPs
+//     because the hardware physically cannot vary its loudness.
+// 0 = PASSIVE piezo/speaker (needs a driven frequency): the original mode that
+//     supports the chime melodies, volume, and gradual-wake fade via Timer1 PWM.
+// Same wiring either way (D9 -> buzzer -> GND); this only changes how D9 is driven.
+#ifndef BUZZER_IS_ACTIVE
+#define BUZZER_IS_ACTIVE 1
+#endif
+
 // ============================================================================
 //  PROTOCOL CONSTANTS  (must match ble_framing.dart exactly)
 // ============================================================================
@@ -118,6 +132,7 @@ static const uint8_t CMD_QR_KEY      = 0x07;
 static const uint8_t CMD_RING_ACK    = 0x88; // app -> clock: "I received your 0x08"
 static const uint8_t CMD_DISMISS     = 0x09;
 static const uint8_t CMD_TIMER_SET   = 0x0A;
+static const uint8_t CMD_TIMER_STOP  = 0x0B; // app -> clock: cancel/silence the countdown timer
 
 // Clock -> App responses / notifications
 static const uint8_t ACK_TIME_SYNC   = 0x81;
@@ -130,6 +145,7 @@ static const uint8_t ACK_QR_KEY      = 0x87;
 static const uint8_t NOTIFY_RING     = 0x08; // clock -> app: alarm started ringing
 static const uint8_t ACK_DISMISS     = 0x89; // clock -> app: buzzer silenced / ring stopped
 static const uint8_t ACK_TIMER_SET   = 0x8A;
+static const uint8_t ACK_TIMER_STOP  = 0x8B; // clock -> app: timer cancelled / silenced
 static const uint8_t CMD_ERROR       = 0xFF;
 
 // Error sub-codes (payload byte of a 0xFF frame)
@@ -325,6 +341,7 @@ void applyBuzzStep();
 void endRing(bool notifyApp);
 void tryDismiss(uint8_t id, const uint8_t *token);
 void startTimer(uint32_t seconds);
+void stopTimer();
 void handleFrame(uint8_t *body, uint8_t n);
 
 // ============================================================================
@@ -743,6 +760,11 @@ void handleFrame(uint8_t *body, uint8_t n) {
       sendAck(ACK_TIMER_SET);
       break;
     }
+    case CMD_TIMER_STOP: {                 // (no payload) cancel a running or finished timer
+      stopTimer();
+      sendAck(ACK_TIMER_STOP);
+      break;
+    }
     case CMD_RING_ACK:                     // app confirmed it saw the ring
       appAckedRing = true;
       break;
@@ -889,6 +911,18 @@ void startTimer(uint32_t seconds) {
   timerEndEpoch = currentEpoch + seconds;
 }
 
+// Cancel a countdown from the app (0x0B): drops a still-running timer AND
+// silences a finished-timer chime. A ringing alarm owns the speaker, so only
+// turn the buzzer off if no alarm is currently sounding.
+void stopTimer() {
+  timerActive = false;
+  timerDone   = false;
+  // A ringing alarm owns the speaker; only silence if no alarm is sounding.
+  // buzzerSetMode(BUZZ_OFF) is a no-op if the buzzer is already off, so this is
+  // safe during a snooze gap too. (Mirrors serviceTimer's auto-silence.)
+  if (!ringActive) buzzerSetMode(BUZZ_OFF);
+}
+
 void serviceTimer() {
   if (timerActive && currentEpoch >= timerEndEpoch) {
     timerActive = false;
@@ -928,28 +962,49 @@ BuzzMode buzzMode = BUZZ_OFF;
 uint8_t envTable[ENV_LEN];
 
 void soundOff() {
+#if BUZZER_IS_ACTIVE
+  // Active buzzer: silence is simply the pin LOW. Timer1 is never engaged.
+  digitalWrite(PIN_BUZZER, LOW);
+#else
   TCCR1A = 0;               // release OC1A (pin returns to the port latch = LOW)
   TCCR1B = 0;               // stop Timer1's clock
   digitalWrite(PIN_BUZZER, LOW);
+#endif
 }
 
 // Set the loudness of the note in progress. OCR1A is double-buffered (latched at
 // TOP), so this is glitch-free to call every service tick to shape the envelope.
 void soundSetVol(uint8_t vol) {
+#if BUZZER_IS_ACTIVE
+  // Active buzzer has fixed loudness — it can't be shaped. Deliberately a no-op
+  // so the per-note decay envelope doesn't chop the beep off mid-note; on/off is
+  // owned by soundStart()/soundOff() at note/rest boundaries.
+  (void)vol;
+#else
   uint16_t top = ICR1;
   if (top == 0) return;
   // Duty peaks near 50% (a square wave) at vol=255; lower duty = quieter.
   OCR1A = (uint16_t)(((uint32_t)top * vol) / 512UL);  // vol 0 => duty 0 => silent
+#endif
 }
 
 // Begin a new note at frequency `hz`, loudness `vol` (0..255).
 void soundStart(uint16_t hz, uint8_t vol) {
+#if BUZZER_IS_ACTIVE
+  // Active buzzer: pitch and loudness are fixed in hardware, so a "note" is just
+  // the pin driven HIGH. applyBuzzStep() only calls this for real notes (rests
+  // call soundOff()), so the alarm/timer patterns come out as beep rhythms.
+  (void)hz;
+  (void)vol;
+  digitalWrite(PIN_BUZZER, HIGH);
+#else
   if (hz < 123) { soundOff(); return; }    // below this, TOP overflows 16 bits
   ICR1 = (uint16_t)(F_CPU / (2UL * hz));    // phase-correct: f = F_CPU / (2*TOP)
   soundSetVol(vol);
   TCNT1 = 0;                                // clean phase start avoids a wrap click
   TCCR1A = _BV(COM1A1) | _BV(WGM11);        // non-inverting, phase-correct PWM,
   TCCR1B = _BV(WGM13) | _BV(CS10);          // TOP = ICR1, prescaler 1
+#endif
 }
 
 void soundInit() {
@@ -988,20 +1043,24 @@ uint8_t masterVolNow() {
 //  SoftwareSerial clean windows to receive the dismiss frame while ringing.
 struct ToneStep { uint16_t freq; uint16_t ms; }; // freq 0 = silence
 
-// A warm ascending major arpeggio (G5-C6-E6) that steps down to resolve on C6
-// and rings out through the bell decay — a gentle wake chime, not a jarring beep.
+// An ascending major arpeggio (G6-C7-E7) that steps down to resolve on C7 and
+// rings out through the bell decay. Pitched an octave up from the "musical"
+// register on purpose: a passive piezo's output peaks sharply around 2-4 kHz
+// and is far quieter below ~1.5 kHz, so keeping the notes in the 1.5-2.6 kHz
+// band is what makes the alarm actually loud on the hardware buzzer.
 const ToneStep ALARM_PATTERN[] = {
-  { 784, 260}, {0, 30},   // G5
-  {1047, 260}, {0, 30},   // C6
-  {1319, 300}, {0, 40},   // E6  (bright peak)
-  {1175, 260}, {0, 30},   // D6
-  {1047, 480},            // C6  (resolve — held, decays away)
+  {1568, 260}, {0, 30},   // G6
+  {2093, 260}, {0, 30},   // C7
+  {2637, 300}, {0, 40},   // E7  (bright peak — near the piezo's resonance)
+  {2349, 260}, {0, 30},   // D7
+  {2093, 480},            // C7  (resolve — held, decays away)
   {   0, 620},            // breathe before the phrase repeats
 };
-// A short two-note "ding-dong" for finished timers, distinct from the alarm.
+// A short two-note "ding-dong" for finished timers, distinct from the alarm,
+// kept in the same loud piezo band.
 const ToneStep TIMER_PATTERN[] = {
-  {1319, 200}, {0, 60},   // E6
-  {1047, 340},            // C6
+  {2637, 200}, {0, 60},   // E7
+  {2093, 340},            // C7
   {   0, 520},
 };
 const uint8_t ALARM_STEPS = sizeof(ALARM_PATTERN) / sizeof(ToneStep);
@@ -1304,14 +1363,47 @@ void configureBleName() {
 }
 #endif
 
-// Power-on self-test: a short rising blip proving the speaker + Timer1 PWM path
-// works at boot, independent of BLE/time sync. If you hear this but alarms are
-// silent, the fault is upstream (the clock never got a time sync, so checkAlarms
-// never fires); if you DON'T hear it, it's wiring or the PWM registers.
+// Power-on self-test: a rising frequency SWEEP (0.5 -> 4.5 kHz) proving the
+// speaker + Timer1 PWM path works at boot, independent of BLE/time sync. A
+// sweep (rather than a fixed chime) is used deliberately: a passive piezo has a
+// sharp resonant peak — usually somewhere in 2-4 kHz — and can be almost
+// inaudible off it, so sweeping the whole band guarantees the peak is excited
+// and you hear a chirp if the hardware works AT ALL.
+//
+// Diagnostic: if you hear this chirp but ALARMS stay silent, the fault is
+// upstream — the clock never got a time sync, so checkAlarms() returns on
+// !haveTime and never fires (fix the app-side connect/sync). If you DON'T hear
+// the chirp, it is the audio hardware: check the buzzer wiring (D9 -> buzzer ->
+// GND), that PIN_BUZZER matches the pin you soldered, and that it's a passive
+// piezo/speaker (an ACTIVE buzzer ignores frequency and needs a steady DC pin).
 void bootSelfTestChime() {
-  soundStart(1047, VOLUME_TIMER); delay(150); // C6
-  soundStart(1319, VOLUME_TIMER); delay(150); // E6
-  soundStart(1568, VOLUME_TIMER); delay(200); // G6
+  // Two-phase test that makes ANY working buzzer on D9 audible, and tells the
+  // buzzer TYPE apart:
+  //   Phase 1 — steady DC (pin driven HIGH). An ACTIVE buzzer (built-in
+  //     oscillator) beeps here; a passive piezo only clicks faintly.
+  //   Phase 2 — PWM frequency sweep. A PASSIVE piezo/speaker sings across the
+  //     sweep and crosses its loud resonance; an active buzzer stays quiet.
+  // Diagnosis on next power-on:
+  //   • beep in phase 1 but silent sweep  => ACTIVE buzzer (this firmware drives
+  //     it as passive; it needs steady-DC alarm tones — tell the app dev).
+  //   • hear the rising sweep             => PASSIVE buzzer OK; if alarms are
+  //     still silent the fault is upstream (no time sync => checkAlarms returns).
+  //   • silent in BOTH phases             => wiring/pin/dead hardware: confirm
+  //     D9 -> buzzer -> GND, PIN_BUZZER matches the soldered pin, and (for a
+  //     coil speaker) that a transistor driver is present — a pin can't drive 8Ω.
+
+  // Phase 1: steady DC. soundInit() left the pin OUTPUT/LOW; Timer1 is idle so
+  // plain digitalWrite owns the pin here.
+  digitalWrite(PIN_BUZZER, HIGH);
+  delay(300);
+  digitalWrite(PIN_BUZZER, LOW);
+  delay(150);
+
+  // Phase 2: PWM sweep (soundStart takes over OC1A via Timer1).
+  for (uint16_t hz = 500; hz <= 4500; hz += 250) {
+    soundStart(hz, VOLUME_TIMER);
+    delay(40);
+  }
   soundOff();
 }
 

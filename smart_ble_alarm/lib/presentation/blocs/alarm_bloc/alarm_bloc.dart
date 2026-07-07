@@ -463,9 +463,11 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
           ]);
           pendingDeletes.remove(alarmId);
         } catch (_) {
+          // Don't surface a card here: this handler only runs inside the full
+          // sync driven by syncConnectedClock, which owns the single
+          // (retry-gated) failure message. Just report the failure upward.
           const message =
               'Some deleted alarms could not be removed from the clock.';
-          emit(state.copyWith(syncError: message));
           _completeSync(event.completer, error: Exception(message));
           return;
         }
@@ -491,11 +493,13 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
           syncFailedIds.add(alarm.id);
           const message = 'Some alarms could not be synced to the clock.';
           await _saveSyncedHashes(syncedHashes);
+          // Keep the per-alarm "not synced" chip (syncFailedIds) but DON'T set
+          // syncError: the enclosing syncConnectedClock shows the one card. The
+          // completer error still propagates so it can retry / report.
           emit(
             state.copyWith(
               syncedHashes: syncedHashes,
               syncFailedIds: syncFailedIds,
-              syncError: message,
             ),
           );
           _completeSync(event.completer, error: Exception(message));

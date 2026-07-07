@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/repositories/ble_repository.dart';
 import '../../presentation/blocs/alarm_bloc/alarm_bloc.dart';
 import '../../presentation/blocs/settings_bloc/settings_bloc.dart';
-import '../theme/app_colors.dart';
+import '../ui/app_snackbar.dart';
 import 'ble_payloads.dart';
 
 /// Wall-clock instant of the last successful full sync, surfaced on the Clock
@@ -36,8 +36,15 @@ Future<void> loadLastClockSync() async {
 /// handshake (0x04), time (0x01, honouring the Auto Time Sync setting), the
 /// alarm table, display settings (0x06), and commit (0x05).
 ///
-/// Shows a success snackbar only when [showSuccess] is true (user-initiated
-/// syncs); failures always surface a snackbar. Returns true on success.
+/// [showSuccess] marks a user-initiated sync (the "Sync Now" buttons): it shows
+/// a success card on completion AND the failure card if every attempt fails.
+/// Background/auto syncs (on connect, on a resumed link) pass `false` and are
+/// SILENT on failure — the connectivity banner already conveys link state and
+/// the sync auto-retries, so a red card there just read as a spurious "bug".
+///
+/// A freshly-established HM-10 link is flaky for the first few hundred ms, so a
+/// failed sequence is retried once after a short settle delay before it counts
+/// as a real failure. Returns true on success.
 Future<bool> syncConnectedClock(
   BuildContext context,
   BluetoothDevice device, {
@@ -49,62 +56,83 @@ Future<bool> syncConnectedClock(
   if (clockSyncInProgress.value) return false;
   clockSyncInProgress.value = true;
 
+  // Capture blocs/repo up front so the retry loop below never touches an
+  // unmounted BuildContext for lookups (only .mounted-guarded UI uses it).
   final repo = context.read<BleRepository>();
   final alarmBloc = context.read<AlarmBloc>();
-  final settings = context.read<SettingsBloc>().state;
+  final settingsBloc = context.read<SettingsBloc>();
+  final bool userInitiated = showSuccess;
+
+  // One retry: the common failure is a write that lands before the link has
+  // settled right after connecting, which succeeds on a second pass.
+  const int maxAttempts = 2;
 
   try {
-    await repo.sendCommand(device, 0x04, const []);
-    if (settings.autoTimeSync || showSuccess) {
-      // Manual "Sync Now" always pushes time; background syncs respect the
-      // Auto Time Sync toggle.
-      await repo.sendCommand(device, 0x01, BlePayloads.currentEpochSeconds());
-    }
-    final alarmSync = Completer<void>();
-    alarmBloc.add(SyncAlarmsToDeviceEvent(device, completer: alarmSync));
-    await alarmSync.future;
-    await repo.sendCommand(
-      device,
-      0x06,
-      BlePayloads.clockSettings(
-        autoDim: settings.autoDim,
-        sleepStartHour: settings.sleepStartHour,
-        sleepStartMinute: settings.sleepStartMinute,
-        sleepEndHour: settings.sleepEndHour,
-        sleepEndMinute: settings.sleepEndMinute,
-      ),
-    );
-    await repo.sendCommand(device, 0x05, const []);
-
-    lastClockSync.value = DateTime.now();
-    unawaited(
-      SharedPreferences.getInstance().then(
-        (prefs) => prefs.setInt(
-          'lastSyncEpochMs',
-          lastClockSync.value!.millisecondsSinceEpoch,
-        ),
-      ),
-    );
-
-    if (showSuccess && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Clock sync complete.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    }
-    return true;
-  } catch (_) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Clock sync failed. Local changes are still saved.',
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final settings = settingsBloc.state;
+        await repo.sendCommand(device, 0x04, const []);
+        if (settings.autoTimeSync || userInitiated) {
+          // Manual "Sync Now" always pushes time; background syncs respect the
+          // Auto Time Sync toggle.
+          await repo.sendCommand(
+            device,
+            0x01,
+            BlePayloads.currentEpochSeconds(),
+          );
+        }
+        final alarmSync = Completer<void>();
+        alarmBloc.add(SyncAlarmsToDeviceEvent(device, completer: alarmSync));
+        await alarmSync.future;
+        await repo.sendCommand(
+          device,
+          0x06,
+          BlePayloads.clockSettings(
+            autoDim: settings.autoDim,
+            sleepStartHour: settings.sleepStartHour,
+            sleepStartMinute: settings.sleepStartMinute,
+            sleepEndHour: settings.sleepEndHour,
+            sleepEndMinute: settings.sleepEndMinute,
           ),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+        );
+        await repo.sendCommand(device, 0x05, const []);
+
+        lastClockSync.value = DateTime.now();
+        unawaited(
+          SharedPreferences.getInstance().then(
+            (prefs) => prefs.setInt(
+              'lastSyncEpochMs',
+              lastClockSync.value!.millisecondsSinceEpoch,
+            ),
+          ),
+        );
+
+        if (showSuccess && context.mounted) {
+          showAppSnackBar(
+            context,
+            'Clock sync complete.',
+            type: AppSnackType.success,
+          );
+        }
+        return true;
+      } catch (_) {
+        if (attempt < maxAttempts) {
+          // Let the link settle, then try the whole sequence once more.
+          await Future.delayed(const Duration(milliseconds: 600));
+          continue;
+        }
+        // Only user-initiated syncs surface a failure card; auto syncs stay
+        // silent (the banner covers link state, and the next change/reconnect
+        // re-syncs).
+        if (userInitiated && context.mounted) {
+          showAppSnackBar(
+            context,
+            'Clock sync failed. Local changes are still saved.',
+            type: AppSnackType.error,
+          );
+        }
+        return false;
+      }
     }
     return false;
   } finally {

@@ -82,7 +82,20 @@ class BleFraming {
       }
 
       if (restarted) continue;
-      if (eofIndex == null) break;
+      if (eofIndex == null) {
+        // No terminator yet. Normally we keep the partial and wait for more
+        // bytes — but if an EOF was dropped/corrupted on-air this SOF would never
+        // close, and every later notification would append forever, poisoning the
+        // buffer so no subsequent frame (ring 0x08, stopped 0x89) is ever decoded.
+        // A legal frame is at most SOF + escaped(cmd+len+15 data+cs) + EOF, so
+        // anything past this is unrecoverable: drop this SOF and re-scan.
+        const maxFrameBytes = 3 + (2 + 15 + 1) * 2 + 1; // ~40 bytes, generous
+        if (buffer.length > maxFrameBytes) {
+          buffer.removeAt(0);
+          continue;
+        }
+        break;
+      }
 
       if (_isValidUnescapedFrame(unescaped)) {
         final cmd = unescaped[0];

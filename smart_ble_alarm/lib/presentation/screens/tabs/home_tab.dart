@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/ble/clock_sync.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/ui/app_snackbar.dart';
 import '../../../core/theme/glass.dart';
 import '../../../core/theme/wake_widgets.dart';
 import '../../../core/utils/alarm_time_utils.dart';
@@ -796,11 +797,10 @@ class _HomeTabState extends State<HomeTab> {
   Future<void> _syncNow(BuildContext context) async {
     final bleState = context.read<BleConnectionBloc>().state;
     if (bleState is! BleConnected) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Connect to the clock before syncing.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
+      showAppSnackBar(
+        context,
+        'Connect to the clock before syncing.',
+        type: AppSnackType.error,
       );
       return;
     }

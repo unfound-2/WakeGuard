@@ -4,6 +4,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/ble/ble_payloads.dart';
 import '../../core/ble/clock_sync.dart';
+import '../../core/ui/app_snackbar.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
 import '../blocs/ble_bloc/ble_event.dart';
@@ -391,12 +392,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               previous.syncError != current.syncError &&
               current.syncError != null,
           listener: (context, state) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(state.syncError!),
-                backgroundColor: Theme.of(context).colorScheme.error,
-              ),
-            );
+            // Feedback for a per-change direct push (edit/delete while
+            // connected). Replaces any prior card instead of queueing behind it.
+            showAppSnackBar(context, state.syncError!, type: AppSnackType.error);
           },
         ),
         // Re-run backup-notification scheduling when the toggle flips; the
@@ -434,15 +432,32 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 );
               } catch (_) {
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text(
-                      'Clock settings saved locally, but sync failed.',
-                    ),
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                  ),
+                showAppSnackBar(
+                  context,
+                  'Clock settings saved locally, but sync failed.',
+                  type: AppSnackType.error,
                 );
               }
+            } else {
+              // Disconnected: kick a reconnect so this change flushes via the
+              // full sync that runs on connect, rather than waiting for the next
+              // app-open. Safe/idempotent — ReconnectEvent no-ops if there is no
+              // remembered clock or one is already connecting.
+              context.read<BleConnectionBloc>().add(ReconnectEvent());
+            }
+          },
+        ),
+        // Any alarm change auto-syncs to the clock: when connected, AlarmBloc
+        // pushes the alarm directly; when disconnected, kick a reconnect so the
+        // pending change flushes through the on-connect full sync instead of
+        // waiting for the next app-open / manual reconnect.
+        BlocListener<AlarmBloc, AlarmState>(
+          listenWhen: (previous, current) =>
+              previous.alarms != current.alarms ||
+              previous.pendingDeleteIds != current.pendingDeleteIds,
+          listener: (context, state) {
+            if (context.read<BleConnectionBloc>().state is! BleConnected) {
+              context.read<BleConnectionBloc>().add(ReconnectEvent());
             }
           },
         ),

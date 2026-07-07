@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'app_colors.dart';
 import 'glass.dart';
 
@@ -31,6 +32,16 @@ class AppTheme {
         ? AppColors.glassStrokeDark
         : AppColors.glassStrokeLight;
     final brightness = isDarkMode ? Brightness.dark : Brightness.light;
+
+    // Status-bar (clock/wifi/battery) icon colour. Without this the OS defaults
+    // to light (white) icons, which vanish on the light theme's pale background.
+    // iOS reads `statusBarBrightness` (brightness of the bar's backdrop); Android
+    // reads `statusBarIconBrightness`. Set both so the icons always contrast.
+    final systemOverlay = SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarBrightness: brightness,
+      statusBarIconBrightness: isDarkMode ? Brightness.light : Brightness.dark,
+    );
 
     // Pick black/white for text drawn on the accent based on its luminance, so
     // a light accent preset doesn't leave white-on-light text unreadable.
@@ -82,6 +93,7 @@ class AppTheme {
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
+        systemOverlayStyle: systemOverlay,
         elevation: 0,
         centerTitle: true,
         iconTheme: IconThemeData(color: textPrimary),

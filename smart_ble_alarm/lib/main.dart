@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
@@ -199,6 +200,24 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                   isDarkMode: true,
                 ),
                 themeMode: themeMode,
+                // Enforce the status-bar icon colour for EVERY route, including
+                // screens with no AppBar (e.g. the alarm editor). Otherwise the
+                // last AppBar's overlay style can linger — leaving white icons on
+                // the light background after navigating away.
+                builder: (context, child) {
+                  final isLight =
+                      Theme.of(context).brightness == Brightness.light;
+                  return AnnotatedRegion<SystemUiOverlayStyle>(
+                    value: SystemUiOverlayStyle(
+                      statusBarColor: Colors.transparent,
+                      statusBarBrightness:
+                          isLight ? Brightness.light : Brightness.dark,
+                      statusBarIconBrightness:
+                          isLight ? Brightness.dark : Brightness.light,
+                    ),
+                    child: child ?? const SizedBox.shrink(),
+                  );
+                },
                 home: _rememberedDeviceId == null
                     ? ((widget.prefs.getBool('hasSeenOnboarding') ?? false)
                           ? SetupScreen(

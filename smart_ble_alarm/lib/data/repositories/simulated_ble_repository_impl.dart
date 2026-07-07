@@ -111,6 +111,9 @@ class SimulatedBleRepositoryImpl implements BleRepository {
       case 0x0A:
         returnCode = 0x8A;
         break; // TIMER_SET
+      case 0x0B:
+        returnCode = 0x8B;
+        break; // TIMER_STOP
       default:
         returnCode = 0x84;
         break; // fallback
