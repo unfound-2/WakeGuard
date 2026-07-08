@@ -18,10 +18,17 @@ class SetupScreen extends StatefulWidget {
   /// developer-mode button is hidden.
   final VoidCallback? onEnterDeveloperMode;
 
+  /// Invoked when the user taps "Skip". When provided (from `main.dart`), the
+  /// app persists the skip and shows the main app; the callback owns navigation
+  /// so the skip choice survives relaunches. Falls back to local navigation if
+  /// null.
+  final VoidCallback? onSkip;
+
   const SetupScreen({
     super.key,
     required this.prefs,
     this.onEnterDeveloperMode,
+    this.onSkip,
   });
 
   @override
@@ -50,6 +57,24 @@ class _SetupScreenState extends State<SetupScreen> {
     context.read<BleConnectionBloc>().add(StartScanEvent());
   }
 
+  /// Enter the app without pairing a clock. WakeGuard works fully offline —
+  /// alarms are saved locally and mirrored to backup notifications — so this
+  /// just stops the scan and opens the main app. No rememberedDeviceId is
+  /// written, so the next launch returns to this screen to pair.
+  void _skipPairing() {
+    context.read<BleConnectionBloc>().add(StopScanEvent());
+    final onSkip = widget.onSkip;
+    if (onSkip != null) {
+      // App-level handler persists the skip and swaps `home:` to MainScreen.
+      onSkip();
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainScreen()),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -74,27 +99,48 @@ class _SetupScreenState extends State<SetupScreen> {
               return ListView(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                 children: [
-                  if (widget.onEnterDeveloperMode != null)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: widget.onEnterDeveloperMode,
-                        icon: const Icon(
-                          Icons.developer_mode_rounded,
-                          size: 18,
-                        ),
-                        label: const Text('Enter developer mode'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant,
-                          textStyle: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                  Row(
+                    children: [
+                      if (widget.onEnterDeveloperMode != null)
+                        TextButton.icon(
+                          onPressed: widget.onEnterDeveloperMode,
+                          icon: const Icon(
+                            Icons.developer_mode_rounded,
+                            size: 18,
+                          ),
+                          label: const Text('Enter developer mode'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
+                      const Spacer(),
+                      // Top-right escape hatch: use the app without a clock.
+                      TextButton(
+                        onPressed: _skipPairing,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.primary,
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('Skip'),
+                            SizedBox(width: 4),
+                            Icon(Icons.arrow_forward_rounded, size: 18),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
+                  ),
                   const _PairingHeader(),
                   const SizedBox(height: 22),
                   _StatusCard(scanning: scanning),

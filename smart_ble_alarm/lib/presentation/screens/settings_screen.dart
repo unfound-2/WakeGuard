@@ -30,11 +30,17 @@ class SettingsScreen extends StatefulWidget {
   /// (in `main.dart`) that forgets the clock and restarts onboarding.
   final VoidCallback? onUnpairDevice;
 
+  /// Non-null only when the user skipped pairing (no clock yet). When provided,
+  /// the Advanced section shows "Connect a Clock", which returns to the pairing
+  /// screen via the app-level callback in `main.dart`.
+  final VoidCallback? onConnectClock;
+
   const SettingsScreen({
     super.key,
     this.isTab = false,
     this.onExitDeveloperMode,
     this.onUnpairDevice,
+    this.onConnectClock,
   });
 
   @override
@@ -521,6 +527,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: 'Unpair Device',
                 subtitle: 'Forget this clock and set up a new one',
                 onTap: _confirmUnpair,
+              ),
+              Divider(height: 1, color: Theme.of(context).dividerColor),
+            ] else if (widget.onConnectClock != null) ...[
+              WakeSettingsRow(
+                icon: Icons.bluetooth_searching_rounded,
+                title: 'Connect a Clock',
+                subtitle: 'Pair your WakeGuard clock to sync alarms',
+                onTap: widget.onConnectClock,
               ),
               Divider(height: 1, color: Theme.of(context).dividerColor),
             ],

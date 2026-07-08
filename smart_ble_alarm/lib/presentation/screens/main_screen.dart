@@ -31,10 +31,16 @@ class MainScreen extends StatefulWidget {
   /// prefs stay in agreement.
   final VoidCallback? onUnpairDevice;
 
+  /// When non-null (the user skipped pairing and has no clock), Settings shows a
+  /// "Connect a Clock" action that returns to the pairing screen. Wired in
+  /// `main.dart`.
+  final VoidCallback? onConnectClock;
+
   const MainScreen({
     super.key,
     this.onExitDeveloperMode,
     this.onUnpairDevice,
+    this.onConnectClock,
   });
 
   @override
@@ -58,6 +64,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       isTab: true,
       onExitDeveloperMode: widget.onExitDeveloperMode,
       onUnpairDevice: widget.onUnpairDevice,
+      onConnectClock: widget.onConnectClock,
     ),
   ];
 

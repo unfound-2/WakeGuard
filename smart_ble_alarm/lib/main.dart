@@ -74,6 +74,10 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
   // real radio.
   late BleRepository _bleRepository = widget.bleRepository;
   late String? _rememberedDeviceId = widget.rememberedDeviceId;
+  // True when the user tapped "Skip" on the pairing screen. Persisted so a
+  // relaunch does NOT force the pairing screen again — the app opens straight
+  // into MainScreen (offline) until they pair via Settings → "Connect a Clock".
+  late bool _setupSkipped = widget.prefs.getBool('setupSkipped') ?? false;
   // Bumped to tear down and recreate the provider/bloc subtree so the new
   // BleConnectionBloc binds to the freshly-selected repository.
   int _backendGeneration = 0;
@@ -121,6 +125,26 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
     widget.prefs.setBool('hasSeenOnboarding', false);
     setState(() {
       _rememberedDeviceId = null;
+    });
+  }
+
+  /// User tapped "Skip" on the pairing screen: enter the app without a clock and
+  /// REMEMBER the choice so relaunches skip pairing too (per the user's request).
+  /// Cleared only by [_connectClock] or a successful pair.
+  void _skipPairing() {
+    widget.prefs.setBool('setupSkipped', true);
+    setState(() {
+      _setupSkipped = true;
+    });
+  }
+
+  /// Settings → "Connect a Clock": drop the skip and return to the pairing
+  /// screen so the user can pair a physical clock. Flipping the flag rebuilds
+  /// `home:` to SetupScreen (rememberedDeviceId is still null here).
+  void _connectClock() {
+    widget.prefs.remove('setupSkipped');
+    setState(() {
+      _setupSkipped = false;
     });
   }
 
@@ -218,18 +242,8 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                     child: child ?? const SizedBox.shrink(),
                   );
                 },
-                home: _rememberedDeviceId == null
-                    ? ((widget.prefs.getBool('hasSeenOnboarding') ?? false)
-                          ? SetupScreen(
-                              prefs: widget.prefs,
-                              // Developer mode swaps the app onto the simulated
-                              // clock — a debug affordance only. Hide it from
-                              // release builds so end users never hit it.
-                              onEnterDeveloperMode:
-                                  kDebugMode ? _enterDeveloperMode : null,
-                            )
-                          : OnboardingScreen(prefs: widget.prefs))
-                    : MainScreen(
+                home: _rememberedDeviceId != null
+                    ? MainScreen(
                         // Offer the "leave the simulator" action only while the
                         // simulated backend is active; on a real clock it's null
                         // so the Settings button stays hidden.
@@ -244,7 +258,23 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                             _bleRepository is SimulatedBleRepositoryImpl
                             ? null
                             : _unpairDevice,
-                      ),
+                      )
+                    // No paired clock: if the user skipped pairing, open the app
+                    // offline (with a Settings → "Connect a Clock" way back in);
+                    // otherwise show pairing (or first-run onboarding).
+                    : _setupSkipped
+                    ? MainScreen(onConnectClock: _connectClock)
+                    : ((widget.prefs.getBool('hasSeenOnboarding') ?? false)
+                          ? SetupScreen(
+                              prefs: widget.prefs,
+                              // Developer mode swaps the app onto the simulated
+                              // clock — a debug affordance only. Hide it from
+                              // release builds so end users never hit it.
+                              onEnterDeveloperMode:
+                                  kDebugMode ? _enterDeveloperMode : null,
+                              onSkip: _skipPairing,
+                            )
+                          : OnboardingScreen(prefs: widget.prefs)),
                 debugShowCheckedModeBanner: false,
               );
             },
