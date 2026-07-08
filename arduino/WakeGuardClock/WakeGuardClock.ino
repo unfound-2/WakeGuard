@@ -8,9 +8,10 @@
  *  HARDWARE (as wired for this build):
  *    - Arduino Uno R3 (ATmega328P, 16 MHz, no RTC)
  *    - HM-10 BLE module   (transparent serial-over-BLE, service FFE0 / char FFE1)
- *    - 16x2 I2C LCD1602   (PCF8574 backpack, address 0x27, backlight on/off only)
+ *    - 2.4"/2.8" ILI9341  240x320 SPI TFT on hardware SPI (backlight LED tied
+ *                         straight to 3.3V, so it is ALWAYS ON; touch pins unused)
  *    - Passive speaker    (driven by Timer1 PWM on D9 — NOT an active buzzer)
- *    - (optional) momentary push button for snooze / backlight wake
+ *    - (optional) momentary push button for snooze / backlight wake (now on D4)
  *    - (optional) photoresistor (LDR) for ambient auto-dim
  *
  *  This firmware is the "clock node". The phone app is the configuration master
@@ -35,20 +36,36 @@
  *                                                               [2k]
  *                                                                 |
  *                                                                GND   (~3.3V)
- *    LCD  VCC -> 5V, GND -> GND, SDA -> A4, SCL -> A5
+ *    ILI9341 TFT — a 3.3V-logic panel, so every 5V Arduino OUTPUT feeding it goes
+ *    through a resistor divider. MISO is an INPUT to the Arduino (no divider), and
+ *    the backlight is tied directly to 3.3V (no GPIO control):
+ *        Display VCC      -> 5V
+ *        Display GND      -> GND
+ *        Display LED      -> 3.3V                 (backlight, permanently on)
+ *        Display SDO/MISO -> D12                  (direct, no divider)
+ *        Display SCK      <- D13 --[divider]-->   (SPI clock)
+ *        Display SDI/MOSI <- D11 --[divider]-->   (SPI data in)
+ *        Display CS       <- D10 --[divider]-->   (chip select)
+ *        Display DC/RS    <- D7  --[divider]-->   (data/command; moved off D9)
+ *        Display RESET    <- D8  --[divider]-->   (reset)
+ *        Display T_*      : touch pins intentionally left UNCONNECTED
+ *      Divider = Arduino pin --[1k]--+--> display, with [2k] from that node to GND
+ *      (a 5V HIGH becomes ~3.3V). Any ~1:2 ratio works (1k/2k, 2.2k/3.3k, ...).
  *    Speaker(+) -> D9,  Speaker(-) -> GND   (add a 100R series resistor to tame
  *                                            volume/current if desired)
- *    Button -> D10 to GND (uses internal pull-up; harmless/ignored if absent)
+ *    Button -> D4 to GND (internal pull-up; harmless/ignored if absent — moved off
+ *                         D10 because the TFT now uses D10 for CS)
  *    LDR    -> A0 divider (only used if ENABLE_LDR is set)
  *
  *  ----------------------------------------------------------------------------
- *  LIBRARIES
+ *  LIBRARIES  (install these two via the Arduino IDE Library Manager)
  *  ----------------------------------------------------------------------------
- *    NONE to install — this sketch is self-contained. Wire, SoftwareSerial and
- *    EEPROM all ship with the Arduino AVR core. The 16x2 I2C LCD is driven by a
- *    small built-in PCF8574/HD44780 driver (class LcdI2C below), so you do NOT
- *    need the "LiquidCrystal I2C" library. If your backpack maps its expander
- *    pins unusually, adjust the Rs/Rw/En/backlight bit masks in LcdI2C.
+ *    - "Adafruit GFX Library"
+ *    - "Adafruit ILI9341"
+ *  (Library Manager will offer to pull in "Adafruit BusIO" as a dependency — accept
+ *  it.) SoftwareSerial, SPI and EEPROM ship with the Arduino AVR core. The panel is
+ *  a 240x320 ILI9341 on hardware SPI; to swap in a different controller later,
+ *  change the #include, the `tft` constructor, and (if needed) the init call.
  *
  *  ----------------------------------------------------------------------------
  *  ONE-TIME CONFIGURATION YOU SHOULD CHECK  (see the block just below)
@@ -58,12 +75,15 @@
  *                                display/ring in UTC. (No BLE command carries a
  *                                timezone, so it must live here.)
  *    - USE_24H_DISPLAY         : 24-hour vs 12-hour clock face.
- *    - LCD_I2C_ADDRESS         : 0x27 or 0x3F depending on your backpack.
+ *    - TFT_ROTATION            : 1 or 3 = landscape (320x240); flip to the other if
+ *                                the panel reads upside down. 0/2 give portrait.
  * ============================================================================
  */
 
 #include <SoftwareSerial.h>
-#include <Wire.h>
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ILI9341.h>
 #include <EEPROM.h>
 
 // ============================================================================
@@ -78,7 +98,7 @@
 static const long TIMEZONE_OFFSET_SECONDS = 0L;
 
 #define USE_24H_DISPLAY   1        // 1 = HH:MM:SS 24h, 0 = hh:mm:ss AM/PM
-#define LCD_I2C_ADDRESS   0x27     // try 0x3F if the screen stays blank
+#define TFT_ROTATION      1        // 1 or 3 = landscape 320x240; flip if upside down
 
 #define ENABLE_SNOOZE_BUTTON 1     // physical snooze / backlight-wake button on D10
 #define ENABLE_LDR           0     // ambient-light auto-dim on A0 (off by default)
@@ -92,12 +112,17 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 #define TIMER_DONE_TIMEOUT_S 60    // auto-silence a finished timer after this long
 #define BACKLIGHT_WAKE_MS    10000UL // button wakes the backlight for 10s
 
-// ---- Pin assignments (match the wiring table in the spec) ------------------
+// ---- Pin assignments (match the wiring table in the header) ----------------
 #define PIN_HM10_TXD  2   // Arduino RX  (<- HM-10 TXD)
 #define PIN_HM10_RXD  3   // Arduino TX  (-> HM-10 RXD, via divider)
 #define PIN_BUZZER    9
-#define PIN_BUTTON    10
+#define PIN_BUTTON    4   // moved off D10: the TFT now uses D10 for CS
 #define PIN_LDR       A0
+
+// ---- ILI9341 TFT (hardware SPI: MOSI=D11, MISO=D12, SCK=D13) ----------------
+#define TFT_CS   10
+#define TFT_DC    7
+#define TFT_RST   8
 
 // ---- Buzzer type -----------------------------------------------------------
 // 1 = ACTIVE buzzer (has a built-in oscillator: makes sound on steady DC, fixed
@@ -230,103 +255,29 @@ bool     syncing        = false;
 bool     alarmsDirty    = false;  // alarm table changed but not yet flushed to
                                   // EEPROM (writes are batched during a sync)
 uint32_t syncBannerUntilMs = 0;   // show "SYNCED" briefly after 0x05
+uint32_t syncStartMs    = 0;      // millis() at SYNC_START, to bound a stuck sync
 
 // ---- Connection heuristic --------------------------------------------------
 uint32_t lastFrameMs    = 0;      // millis() of the last valid frame from the app
 static const uint32_t LINK_TIMEOUT_MS = 20000UL;
+// A real sync batch (<=5 alarms + tokens + settings) completes in ~1-2s. If we've
+// been "syncing" this long, the closing 0x05 was lost — force-end so the UI (which
+// pauses rendering during a sync) can't hang. See serviceSyncFlush / renderTft.
+static const uint32_t SYNC_MAX_MS = 8000UL;
 
 // ---- Backlight -------------------------------------------------------------
 bool     backlightOn    = true;
 uint32_t backlightWakeUntilMs = 0;
 
 // ============================================================================
-//  MINIMAL 16x2 I2C LCD DRIVER  (PCF8574 backpack + HD44780, 4-bit mode)
-// ----------------------------------------------------------------------------
-//  Replaces the external LiquidCrystal_I2C library so the sketch needs no
-//  add-on libraries. Bit mapping is the near-universal backpack wiring:
-//    P0=RS  P1=RW  P2=EN  P3=Backlight  P4..P7=D4..D7
-//  Only the methods this firmware uses are implemented.
-// ============================================================================
-class LcdI2C {
- public:
-  LcdI2C(uint8_t addr, uint8_t cols, uint8_t rows)
-      : _addr(addr), _cols(cols), _rows(rows), _backlight(BL) {}
-
-  void init() {
-    delay(50);                       // wait for the HD44780 to power up
-    expanderWrite(0);
-    delay(100);
-    // Force 4-bit mode via the documented reset dance.
-    write4(0x30); delayMicroseconds(4500);
-    write4(0x30); delayMicroseconds(4500);
-    write4(0x30); delayMicroseconds(150);
-    write4(0x20);                     // now in 4-bit mode
-    command(0x28);                    // function set: 4-bit, 2 lines, 5x8 font
-    command(0x0C);                    // display on, cursor off, blink off
-    command(0x01); delay(2);          // clear
-    command(0x06);                    // entry mode: increment, no shift
-  }
-
-  void clear() { command(0x01); delay(2); }
-
-  void setCursor(uint8_t col, uint8_t row) {
-    static const uint8_t rowOffset[2] = {0x00, 0x40};
-    if (row >= _rows) row = _rows - 1;
-    command(0x80 | (col + rowOffset[row]));
-  }
-
-  void backlight()   { _backlight = BL; expanderWrite(0); }
-  void noBacklight() { _backlight = 0;  expanderWrite(0); }
-
-  void createChar(uint8_t location, uint8_t charmap[]) {
-    location &= 0x7;
-    command(0x40 | (location << 3));
-    for (uint8_t i = 0; i < 8; i++) write(charmap[i]);
-  }
-
-  void write(uint8_t value) { send(value, RS); }
-
-  void print(const char *s) { while (*s) write((uint8_t)*s++); }
-  void print(const __FlashStringHelper *s) {
-    const char *p = reinterpret_cast<const char *>(s);
-    uint8_t c;
-    while ((c = pgm_read_byte(p++)) != 0) write(c);
-  }
-
- private:
-  static const uint8_t RS = 0x01, RW = 0x02, EN = 0x04, BL = 0x08;
-  uint8_t _addr, _cols, _rows, _backlight;
-
-  void command(uint8_t value) { send(value, 0); }
-
-  void send(uint8_t value, uint8_t mode) {
-    write4((value & 0xF0) | mode);
-    write4(((value << 4) & 0xF0) | mode);
-  }
-
-  void write4(uint8_t nibbleAndCtrl) {
-    expanderWrite(nibbleAndCtrl);
-    pulse(nibbleAndCtrl);
-  }
-
-  void expanderWrite(uint8_t data) {
-    Wire.beginTransmission(_addr);
-    Wire.write(data | _backlight);
-    Wire.endTransmission();
-  }
-
-  void pulse(uint8_t data) {
-    expanderWrite(data | EN);
-    delayMicroseconds(1);
-    expanderWrite(data & ~EN);
-    delayMicroseconds(50);
-  }
-};
-
-// ============================================================================
 //  DEVICE INSTANCES
+// ----------------------------------------------------------------------------
+//  The ILI9341 panel is driven by Adafruit_GFX + Adafruit_ILI9341 over hardware
+//  SPI (MOSI=D11, MISO=D12, SCK=D13); only CS/DC/RST are passed to the ctor. The
+//  old self-contained LcdI2C driver is gone — the display layer now lives in the
+//  "ILI9341 TFT USER INTERFACE" section further down.
 // ============================================================================
-LcdI2C lcd(LCD_I2C_ADDRESS, 16, 2);
+Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 SoftwareSerial bleSerial(PIN_HM10_TXD, PIN_HM10_RXD); // (rxPin, txPin)
 
 // ---- Forward declarations --------------------------------------------------
@@ -409,10 +360,14 @@ void persistAlarms() {
 
 // Belt-and-suspenders for the batched writes above: if a sync's closing 0x05 is
 // ever lost, don't leave the alarm changes unpersisted (or the clock stuck in
-// "syncing"). Once the link has gone idle past the timeout, flush and clear.
+// "syncing" — which now also freezes the display, since renderTft() skips drawing
+// while syncing). Clear if the link goes idle past the timeout, OR if a sync has
+// simply run too long (a real batch finishes in ~1-2s; SYNC_MAX_MS means 0x05 was lost).
 void serviceSyncFlush() {
   if (!syncing && !alarmsDirty) return;
-  if (lastFrameMs != 0 && (uint32_t)(millis() - lastFrameMs) >= LINK_TIMEOUT_MS) {
+  bool linkIdle  = (lastFrameMs != 0 && (uint32_t)(millis() - lastFrameMs) >= LINK_TIMEOUT_MS);
+  bool syncStuck = (syncing && syncStartMs != 0 && (uint32_t)(millis() - syncStartMs) >= SYNC_MAX_MS);
+  if (linkIdle || syncStuck) {
     if (alarmsDirty) { eepromSaveAlarms(); alarmsDirty = false; }
     syncing = false;
   }
@@ -718,6 +673,7 @@ void handleFrame(uint8_t *body, uint8_t n) {
     }
     case CMD_SYNC_START:
       syncing = true;
+      syncStartMs = millis();
       sendAck(ACK_SYNC_START);
       break;
     case CMD_SYNC_END:
@@ -1162,47 +1118,77 @@ void serviceBacklight() {
     if (inSleep || (autoDimMode && dark)) wantOn = false;
   }
 
-  if (wantOn != backlightOn) {
-    backlightOn = wantOn;
-    if (wantOn) lcd.backlight();
-    else        lcd.noBacklight();
-  }
+  // The backlight LED is hard-wired to 3.3V, so it can't be dimmed in hardware.
+  // Instead the renderer blanks the panel to black while backlightOn is false
+  // (renderTft's SCR_BLANK mode) — the visible equivalent of "backlight off".
+  backlightOn = wantOn;
 }
 
 // ============================================================================
-//  16x2 LCD USER INTERFACE
+//  ILI9341 TFT USER INTERFACE  (240x320 panel driven in 320x240 landscape)
+// ----------------------------------------------------------------------------
+//  Replaces the old 16x2 LCD. Rendering keeps the LCD's "only draw what changed"
+//  idea, but per text field: each field caches its last drawn string and repaints
+//  only when it differs. setTextColor(fg,bg) fills every glyph cell's background,
+//  so a fixed-width, space-padded field cleanly overwrites its predecessor with
+//  no ghosting and no flicker. A full-screen fill happens ONLY on a mode change
+//  (clock <-> ring <-> timer-up <-> syncing <-> blank), never per frame — this
+//  keeps SPI traffic low so it can't starve the SoftwareSerial RX during a sync.
 // ============================================================================
-// CGRAM custom glyphs (from the spec): 1=BT connected, 2=BT disconnected,
-// 3=alarm bell, 4=timer.
-byte GLYPH_BT_ON[8]  = {0b01100,0b01010,0b01100,0b01010,0b01100,0b00000,0b00000,0b00000};
-byte GLYPH_BT_OFF[8] = {0b10001,0b01010,0b00100,0b01010,0b10001,0b00000,0b00000,0b00000};
-byte GLYPH_BELL[8]   = {0b00100,0b01110,0b01110,0b01110,0b11111,0b00000,0b00100,0b00000};
-byte GLYPH_TIMER[8]  = {0b11111,0b01001,0b00100,0b01010,0b10001,0b11111,0b00000,0b00000};
-#define CH_BT_ON  1
-#define CH_BT_OFF 2
-#define CH_BELL   3
-#define CH_TIMER  4
+// Colours (RGB565). The ILI9341_* names come from the Adafruit header.
+#define COL_BG       ILI9341_BLACK
+#define COL_TITLE    ILI9341_CYAN
+#define COL_TIME     ILI9341_WHITE
+#define COL_DATE     0x9CD3            // soft blue-grey
+#define COL_INFO     ILI9341_YELLOW
+#define COL_LINK_ON  ILI9341_GREEN
+#define COL_LINK_OFF 0x7BEF            // dim grey
+#define COL_ALERT    ILI9341_RED
+#define COL_ALERT_TX ILI9341_WHITE
+#define COL_SYNC     ILI9341_CYAN
 
-char line0[17];
-char line1[17];
-char prev0[17];
-char prev1[17];
-
-const char *DOW_NAMES[7] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
-
-void lcdRegisterGlyphs() {
-  lcd.createChar(CH_BT_ON,  GLYPH_BT_ON);
-  lcd.createChar(CH_BT_OFF, GLYPH_BT_OFF);
-  lcd.createChar(CH_BELL,   GLYPH_BELL);
-  lcd.createChar(CH_TIMER,  GLYPH_TIMER);
-}
+const char *DOW_FULL[7] = {"SUNDAY","MONDAY","TUESDAY","WEDNESDAY",
+                           "THURSDAY","FRIDAY","SATURDAY"};
 
 bool linkUp() { return lastFrameMs != 0 && (millis() - lastFrameMs) < LINK_TIMEOUT_MS; }
 
-void padLine(char *buf) {
-  int n = strlen(buf);
-  for (int i = n; i < 16; i++) buf[i] = ' ';
-  buf[16] = '\0';
+// ---- Field-diff rendering primitives ---------------------------------------
+enum ScreenMode { SCR_NONE, SCR_BLANK, SCR_CLOCK, SCR_RING, SCR_TIMER_DONE };
+ScreenMode scrMode = SCR_NONE;
+
+// Per-field "last drawn" caches (sentinel first byte => force a repaint).
+char pvTitle[28], pvLink[28], pvTime[28], pvDate[28], pvInfo[28];
+char pvRingFlash[28], pvRingTime[28], pvRingHint[28];
+char pvTdFlash[28], pvTd2[28];
+
+// Invalidate every field cache so the next render of the active mode repaints in
+// full (used right after a full-screen clear on a mode change).
+void forceRedrawAll() {
+  char *all[] = {pvTitle, pvLink, pvTime, pvDate, pvInfo, pvRingFlash, pvRingTime,
+                 pvRingHint, pvTdFlash, pvTd2};
+  for (uint8_t i = 0; i < sizeof(all) / sizeof(all[0]); i++) {
+    all[i][0] = '\x01'; all[i][1] = '\0';
+  }
+}
+
+// Copy `s` into `out`, padded with spaces to exactly `width` chars (out>=width+1).
+// The trailing spaces are what erase a longer previous string with no ghosting.
+void padTo(char *out, const char *s, uint8_t width) {
+  uint8_t i = 0;
+  for (; s[i] && i < width; i++) out[i] = s[i];
+  for (; i < width; i++) out[i] = ' ';
+  out[width] = '\0';
+}
+
+// Draw a text field only when its string changed since the last call.
+void drawField(int16_t x, int16_t y, uint8_t size, uint16_t fg,
+               const char *s, char *prev) {
+  if (strcmp(s, prev) == 0) return;
+  tft.setTextSize(size);
+  tft.setTextColor(fg, COL_BG);
+  tft.setCursor(x, y);
+  tft.print(s);
+  strcpy(prev, s);
 }
 
 // Format a compact "time until" string (<= 6 chars): "6d23h", "23h59m", "59m".
@@ -1244,94 +1230,131 @@ uint32_t minutesUntilAlarm(int slot, LocalTime now) {
   return 0xFFFFFFFFUL;
 }
 
-void buildClockLine0() {
-  if (!haveTime) {
-    strcpy(line0, "--:--:--  ---");
-  } else {
-    LocalTime t = localNow();
+// ---- Clock-face field builders ---------------------------------------------
+void buildTimeStr(char *out) {                     // always 8 chars: "HH:MM:SS"
+  if (!haveTime) { strcpy(out, "--:--:--"); return; }
+  LocalTime t = localNow();
 #if USE_24H_DISPLAY
-    snprintf(line0, 17, "%02u:%02u:%02u %s",
-             t.hh, t.mm, t.ss, DOW_NAMES[t.dow]);
+  snprintf(out, 9, "%02u:%02u:%02u", t.hh, t.mm, t.ss);
 #else
-    uint8_t h12 = t.hh % 12; if (h12 == 0) h12 = 12;
-    char ap = (t.hh < 12) ? 'A' : 'P';
-    snprintf(line0, 17, "%2u:%02u:%02u%c %s",
-             h12, t.mm, t.ss, ap, DOW_NAMES[t.dow]);
+  uint8_t h12 = t.hh % 12; if (h12 == 0) h12 = 12;
+  snprintf(out, 9, "%2u:%02u:%02u", h12, t.mm, t.ss);   // leading space keeps 8 chars
 #endif
-  }
-  padLine(line0);
-  // Bluetooth status glyph in the top-right corner.
-  line0[15] = linkUp() ? (char)CH_BT_ON : (char)CH_BT_OFF;
 }
 
-void buildClockLine1() {
-  if (timerActive) {                               // timer takes the info line
+void buildDateStr(char *out) {
+  if (!haveTime) { strcpy(out, "sync needed"); return; }
+  LocalTime t = localNow();
+#if USE_24H_DISPLAY
+  snprintf(out, 15, "%s", DOW_FULL[t.dow]);
+#else
+  snprintf(out, 15, "%s %s", DOW_FULL[t.dow], (t.hh < 12) ? "AM" : "PM");
+#endif
+}
+
+// Bottom status line: running countdown timer, else next alarm, else a hint or
+// the brief "Synced!" banner after a sync completes.
+void buildInfoStr(char *out) {
+  if (timerActive) {
     uint32_t rem = (timerEndEpoch > currentEpoch) ? (timerEndEpoch - currentEpoch) : 0;
     uint16_t hh = rem / 3600; uint8_t mm = (rem % 3600) / 60; uint8_t ss = rem % 60;
-    snprintf(line1, 17, "%c %02u:%02u:%02u", (char)CH_TIMER, hh, mm, ss);
-    padLine(line1);
+    snprintf(out, 27, "Timer %02u:%02u:%02u", hh, mm, ss);
     return;
   }
-  if (!haveTime) { strcpy(line1, "Open app to sync"); padLine(line1); return; }
+  if (!haveTime) { strcpy(out, "Open the app to sync"); return; }
+  if ((int32_t)(millis() - syncBannerUntilMs) < 0) { strcpy(out, "Synced!"); return; }
 
-  // Next upcoming alarm.
   LocalTime t = localNow();
   uint32_t best = 0xFFFFFFFFUL; int bestSlot = -1;
   for (int i = 0; i < MAX_ALARMS; i++) {
     uint32_t m = minutesUntilAlarm(i, t);
     if (m < best) { best = m; bestSlot = i; }
   }
-  if (bestSlot < 0) { strcpy(line1, "No alarms set"); padLine(line1); return; }
-
+  if (bestSlot < 0) { strcpy(out, "No alarms set"); return; }
   char cd[8]; formatCountdown(best, cd);
-  snprintf(line1, 17, "%c %02u:%02u %s",
-           (char)CH_BELL, alarms[bestSlot].hour, alarms[bestSlot].minute, cd);
-  padLine(line1);
+  snprintf(out, 27, "Next %02u:%02u in %s",
+           alarms[bestSlot].hour, alarms[bestSlot].minute, cd);
 }
 
-void renderLcd() {
-  uint32_t nowMs = millis();
+// ---- Per-mode renderers (each only repaints fields that changed) -----------
+void renderClock() {
+  char buf[28], pad[28];
 
-  if (ringActive) {
-    // Flash the alert every 500ms (spec "ACTIVE ALARM STATE").
-    bool on = ((nowMs / 500) % 2) == 0;
-    if (on) snprintf(line0, 17, " !!! ALARM !!! ");
-    else    strcpy(line0, "");
-    padLine(line0);
+  drawField(8, 10, 2, COL_TITLE, "WakeGuard", pvTitle);          // static title
+
+  padTo(pad, linkUp() ? "BLE ON" : "BLE --", 6);                 // link status
+  drawField(224, 10, 2, linkUp() ? COL_LINK_ON : COL_LINK_OFF, pad, pvLink);
+
+  buildTimeStr(buf);
+  drawField(40, 92, 5, COL_TIME, buf, pvTime);                   // big HH:MM:SS
+
+  buildDateStr(buf); padTo(pad, buf, 14);
+  drawField(40, 152, 3, COL_DATE, pad, pvDate);                  // day + AM/PM
+
+  buildInfoStr(buf); padTo(pad, buf, 26);
+  drawField(8, 212, 2, COL_INFO, pad, pvInfo);                   // status line
+}
+
+void renderRing(uint32_t nowMs) {
+  // Flashing headline; the "off" phase draws spaces which erase it (no clear).
+  bool on = ((nowMs / 500) % 2) == 0;
+  drawField(70, 44, 6, COL_ALERT, on ? "ALARM" : "     ", pvRingFlash);
+
+  char ts[8];
 #if USE_24H_DISPLAY
-    snprintf(line1, 17, "    %02u:%02u", ringHour, ringMinute);
+  snprintf(ts, 8, "%02u:%02u", ringHour, ringMinute);
 #else
-    { uint8_t h12 = ringHour % 12; if (h12 == 0) h12 = 12;
-      char ap = (ringHour < 12) ? 'A' : 'P';
-      snprintf(line1, 17, "   %2u:%02u %cM", h12, ringMinute, ap); }
+  { uint8_t h12 = ringHour % 12; if (h12 == 0) h12 = 12;
+    snprintf(ts, 8, "%2u:%02u%s", h12, ringMinute, (ringHour < 12) ? "a" : "p"); }
 #endif
-    padLine(line1);
-  } else if (timerDone) {
-    bool on = ((nowMs / 500) % 2) == 0;
-    strcpy(line0, on ? " !! TIMER UP !! " : "");
-    padLine(line0);
-    strcpy(line1, "  Time's up!");
-    padLine(line1);
-  } else if (syncing) {
-    strcpy(line0, "SYNCHRONIZING...");
-    padLine(line0);
-    strcpy(line1, "  Please wait");
-    padLine(line1);
-  } else if ((int32_t)(nowMs - syncBannerUntilMs) < 0) { // rollover-safe compare
-    strcpy(line0, "   SYNC OK!");
-    padLine(line0);
-    buildClockLine1();
-  } else {
-    buildClockLine0();
-    buildClockLine1();
+  drawField(100, 118, 4, COL_ALERT_TX, ts, pvRingTime);
+
+  char pad[28];
+  padTo(pad, ringSecured ? "Dismiss in the app" : "Press button to stop", 22);
+  drawField(20, 178, 2, COL_ALERT_TX, pad, pvRingHint);
+}
+
+void renderTimerDone(uint32_t nowMs) {
+  bool on = ((nowMs / 500) % 2) == 0;
+  drawField(70, 60, 6, COL_INFO, on ? "TIMER" : "     ", pvTdFlash);
+  drawField(70, 128, 3, COL_ALERT_TX, "Time's up!", pvTd2);
+}
+
+// Top-level display refresh. Picks a screen mode with the same priority the LCD
+// used, repaints the whole panel once on a mode change, then diff-updates that
+// mode's text fields. Throttled so bursts of small redraws can't hog the SPI bus.
+void renderTft() {
+  static uint32_t lastRenderMs = 0;
+  uint32_t nowMs = millis();
+  if ((uint32_t)(nowMs - lastRenderMs) < 120UL) return;
+  lastRenderMs = nowMs;
+
+  // CRITICAL: do not touch the SPI bus while a sync batch is streaming. A blocking
+  // panel write (a full-screen fillScreen is ~150ms) would stall loop() long enough
+  // to overflow the 64-byte SoftwareSerial RX buffer and drop sync frames — e.g.
+  // TIME_SYNC (clock would then show --:--:-- forever) or SYNC_END (UI would hang).
+  // The screen holds its last frame for the ~1-2s the batch takes and repaints the
+  // instant it ends; serviceSyncFlush() force-ends a stuck sync after SYNC_MAX_MS.
+  if (syncing) return;
+
+  ScreenMode want;
+  if (ringActive)        want = SCR_RING;        // ring/timer force the panel on
+  else if (timerDone)    want = SCR_TIMER_DONE;
+  else if (!backlightOn) want = SCR_BLANK;       // auto-dim: blank to black
+  else                   want = SCR_CLOCK;
+
+  if (want != scrMode) {          // mode change: clear once, force a full repaint
+    scrMode = want;
+    tft.fillScreen(COL_BG);
+    forceRedrawAll();
   }
 
-  // Only push changed characters to avoid flicker.
-  if (strcmp(line0, prev0) != 0) {
-    lcd.setCursor(0, 0); lcd.print(line0); strcpy(prev0, line0);
-  }
-  if (strcmp(line1, prev1) != 0) {
-    lcd.setCursor(0, 1); lcd.print(line1); strcpy(prev1, line1);
+  switch (scrMode) {
+    case SCR_BLANK:      break;                    // nothing but black
+    case SCR_CLOCK:      renderClock();            break;
+    case SCR_RING:       renderRing(nowMs);        break;
+    case SCR_TIMER_DONE: renderTimerDone(nowMs);   break;
+    default:             break;
   }
 }
 
@@ -1419,10 +1442,9 @@ void setup() {
   configureBleName();    // advertise as "WG Clock" (best-effort, one-time)
 #endif
 
-  Wire.begin();
-  lcd.init();
-  lcd.backlight();
-  lcdRegisterGlyphs();
+  tft.begin();
+  tft.setRotation(TFT_ROTATION);   // landscape 320x240
+  tft.fillScreen(COL_BG);
 
   for (int i = 0; i < MAX_ALARMS; i++) lastFiredMinute[i] = 0xFFFFFFFFUL;
   eepromLoadAll();
@@ -1430,10 +1452,13 @@ void setup() {
   lastMicros = micros();
 
   // Splash.
-  lcd.clear();
-  lcd.setCursor(0, 0); lcd.print(F("   WakeGuard"));
-  lcd.setCursor(0, 1); lcd.print(F("  clock ready"));
-  prev0[0] = prev1[0] = '\1'; prev0[1] = prev1[1] = '\0'; // force first render
+  tft.setTextSize(4);
+  tft.setTextColor(COL_TITLE, COL_BG);
+  tft.setCursor(43, 84);   tft.print(F("WakeGuard"));
+  tft.setTextSize(2);
+  tft.setTextColor(COL_DATE, COL_BG);
+  tft.setCursor(94, 140);  tft.print(F("clock ready"));
+  scrMode = SCR_NONE;      // make the first renderTft() lay out a fresh screen
 
   bootSelfTestChime();  // audible proof the speaker + PWM path works at power-on
 }
@@ -1448,5 +1473,5 @@ void loop() {
   serviceButton();  // 7. read the physical button
   serviceBacklight();// 8. sleep-window / ambient / wake backlight control
   serviceSyncFlush();// 9. flush batched alarm writes if a sync's 0x05 was lost
-  renderLcd();      // 10. refresh the display (diffed)
+  renderTft();      // 10. refresh the TFT (mode-aware, field-diffed)
 }
