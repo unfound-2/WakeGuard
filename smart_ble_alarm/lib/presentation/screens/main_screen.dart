@@ -204,13 +204,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }) {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 10,
-        bottom: 10,
-        left: 16,
-        right: 16,
+      // No status-bar inset here: the parent SafeArea already positions the
+      // overlay below the status bar.
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: BoxDecoration(
+        // Opaque (blended over the surface) so the banner reads cleanly while
+        // floating OVER content, rather than letting content bleed through.
+        color: Color.alphaBlend(
+          color.withValues(alpha: 0.16),
+          Theme.of(context).colorScheme.surface,
+        ),
+        border: Border(
+          bottom: BorderSide(color: color.withValues(alpha: 0.35), width: 1),
+        ),
       ),
-      color: color.withValues(alpha: 0.14),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -282,14 +289,14 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         onTap: () => RingingDismissal.trigger(context, alarm),
         child: Container(
           width: double.infinity,
-          padding: EdgeInsets.only(
-            top: MediaQuery.of(context).padding.top + 12,
-            bottom: 14,
-            left: 16,
-            right: 16,
-          ),
+          // No status-bar inset here: the parent SafeArea handles it.
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
           decoration: BoxDecoration(
-            color: error.withValues(alpha: 0.16),
+            // Opaque so the ringing alert fully covers content it floats over.
+            color: Color.alphaBlend(
+              error.withValues(alpha: 0.16),
+              scheme.surface,
+            ),
             border: Border(
               bottom: BorderSide(
                 color: error.withValues(alpha: 0.5),
@@ -471,14 +478,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       ],
       child: Scaffold(
         extendBody: true,
-        body: Column(
+        body: Stack(
           children: [
-            _buildRingingBanner(),
-            _buildConnectivityBanner(),
-            // IndexedStack keeps every tab mounted so scroll position and
-            // in-tab state (e.g. live timer tickers) survive tab switches.
-            Expanded(
-              child: IndexedStack(index: _currentIndex, children: _buildTabs()),
+            // Content fills the whole screen; each tab applies its own top
+            // SafeArea. IndexedStack keeps every tab mounted so scroll position
+            // and in-tab state (e.g. live timer tickers) survive tab switches.
+            Positioned.fill(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: _buildTabs(),
+              ),
+            ),
+            // Banners are an OVERLAY, not part of the layout: they float over
+            // the content instead of reserving height (which pushed content
+            // down and double-counted the status-bar inset). SafeArea(top) pins
+            // them just below the status bar so the system clock/battery stay
+            // legible on the app background.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildRingingBanner(),
+                    _buildConnectivityBanner(),
+                  ],
+                ),
+              ),
             ),
           ],
         ),

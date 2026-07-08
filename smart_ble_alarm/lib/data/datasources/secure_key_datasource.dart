@@ -5,11 +5,20 @@ import 'package:crypto/crypto.dart';
 
 class SecureKeyDatasource {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
-  static const String _keyPrefix = 'alarm_key_';
 
-  Future<List<int>> _getOrGenerateKey(int alarmId) async {
-    String keyName = '$_keyPrefix$alarmId';
-    String? base64Key = await _storage.read(key: keyName);
+  // A single app-wide dismissal key. Every alarm shares ONE backup code, so the
+  // key — and the 8-byte token derived from it — is independent of alarm id: one
+  // printed QR dismisses any protected alarm. The `alarmId` parameters below are
+  // kept purely for call-site compatibility (scanner/item-scan/sync all still
+  // pass an id); they no longer select the key.
+  static const String _globalKeyName = 'alarm_key_global';
+
+  // Fixed, domain-separated HMAC payload so the shared token is stable for the
+  // life of the key and identical across alarms ('W','G').
+  static const List<int> _tokenPayload = <int>[0x57, 0x47];
+
+  Future<List<int>> _getOrGenerateKey() async {
+    final String? base64Key = await _storage.read(key: _globalKeyName);
     if (base64Key != null) {
       return base64Decode(base64Key);
     }
@@ -17,27 +26,24 @@ class SecureKeyDatasource {
     // Generate new 128-bit (16 byte) random key
     final random = Random.secure();
     final keyBytes = List<int>.generate(16, (_) => random.nextInt(256));
-    await _storage.write(key: keyName, value: base64Encode(keyBytes));
+    await _storage.write(key: _globalKeyName, value: base64Encode(keyBytes));
     return keyBytes;
   }
 
-  /// Removes the stored key for an alarm id. Call this when an alarm is deleted
-  /// so a future alarm that reuses the id (the hardware only has 5 slots) gets a
-  /// freshly generated key instead of silently inheriting the old one — which
-  /// would let a previously printed QR/token dismiss the unrelated new alarm.
-  Future<void> deleteKey(int alarmId) async {
-    await _storage.delete(key: '$_keyPrefix$alarmId');
-  }
+  /// No-op, retained for call-site compatibility. With a single app-wide backup
+  /// code, deleting or rotating a key would invalidate the shared printed code
+  /// for EVERY alarm, so alarm add/delete must never touch it.
+  Future<void> deleteKey(int alarmId) async {}
 
-  /// Generates the static 8-byte token for a given alarm
+  /// The static 8-byte dismissal token. Independent of [alarmId] — the one code
+  /// works for all alarms — so the token pushed to each clock slot (0x07) and
+  /// sent on dismissal (0x09) is identical, and any printed code dismisses any
+  /// protected alarm.
   Future<List<int>> getDailyToken(int alarmId) async {
-    final key = await _getOrGenerateKey(alarmId);
-
-    // Payload = AlarmID (static so printed backup code is permanently valid)
-    List<int> payload = [alarmId];
+    final key = await _getOrGenerateKey();
 
     var hmac = Hmac(sha256, key);
-    var digest = hmac.convert(payload);
+    var digest = hmac.convert(_tokenPayload);
 
     // Return first 8 bytes of the hash as the token
     return digest.bytes.sublist(0, 8);

@@ -6,16 +6,14 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/glass.dart';
 import '../../../core/theme/wake_widgets.dart';
 import '../../../core/utils/alarm_time_utils.dart';
-import '../../../domain/entities/alarm.dart';
+import '../../../data/datasources/secure_key_datasource.dart';
+import '../../../domain/usecases/print_qr_code.dart';
 import '../../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../blocs/ble_bloc/ble_bloc.dart';
 import '../../blocs/ble_bloc/ble_event.dart';
 import '../../blocs/ble_bloc/ble_state.dart';
 import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../../blocs/timer_cubit/countdown_timer_cubit.dart';
-import '../../widgets/ringing_dismissal.dart';
-import '../item_scan_screen.dart';
-import '../scanner_screen.dart';
 import '../setup_screen.dart';
 
 /// The Clock tab: everything that controls the physical WakeGuard clock —
@@ -481,7 +479,8 @@ class _ClockTabState extends State<ClockTab> {
     return WakeSection(
       title: 'Backup Code',
       subtitle:
-          'Use printed codes only when object verification is unavailable.',
+          'One printed code that dismisses any protected alarm — for when '
+          'object verification is unavailable.',
       child: GlassCard(
         padding: const EdgeInsets.all(18),
         shadows: wakeCardShadow(context),
@@ -510,9 +509,10 @@ class _ClockTabState extends State<ClockTab> {
                       ),
                       const SizedBox(height: 5),
                       Text(
-                        'Each protected alarm has a signed printable code. '
-                        'Print codes from the Alarms tab; scan one here to '
-                        'dismiss a ringing alarm.',
+                        'One signed code works for every protected alarm. '
+                        'Print it, keep it somewhere safe, and scan it on the '
+                        'ringing screen if you can\'t complete the wake '
+                        'challenge.',
                         style: TextStyle(
                           fontSize: 13,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -525,9 +525,9 @@ class _ClockTabState extends State<ClockTab> {
             ),
             const SizedBox(height: 16),
             WakePrimaryButton(
-              label: 'Open Backup Scanner',
-              icon: Icons.qr_code_scanner_rounded,
-              onPressed: () => _openBackupScanner(context),
+              label: 'Print Backup Code',
+              icon: Icons.print_rounded,
+              onPressed: () => _printBackupCode(context),
             ),
           ],
         ),
@@ -535,87 +535,23 @@ class _ClockTabState extends State<ClockTab> {
     );
   }
 
-  void _openBackupScanner(BuildContext context) {
-    final alarmState = context.read<AlarmBloc>().state;
-    final ringingAlarmId = alarmState.ringingAlarmId;
-    if (ringingAlarmId != null) {
-      final ringing = alarmState.alarms.where((a) => a.id == ringingAlarmId);
-      if (ringing.isNotEmpty) {
-        // Route the live ring through the shared dismissal so a no-task alarm
-        // gets a direct Dismiss (not a QR scanner it can't satisfy) and an item
-        // alarm gets the gated backup flow.
-        RingingDismissal.trigger(context, ringing.first);
-        return;
-      }
-    }
-
-    final taskAlarms = alarmState.alarms.where((a) => a.qrRequired).toList();
-    if (taskAlarms.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+  /// Opens the OS print dialog for the single app-wide backup QR code (works for
+  /// every protected alarm — see [SecureKeyDatasource]).
+  Future<void> _printBackupCode(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final usecase = PrintQrCodeUseCase(
+      secureKeyDatasource: SecureKeyDatasource(),
+    );
+    try {
+      await usecase.execute();
+    } catch (_) {
+      messenger.showSnackBar(
         SnackBar(
-          content: const Text('No challenge-protected alarms are available.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
+          content: const Text('Unable to open the print dialog.'),
+          backgroundColor: scheme.error,
         ),
       );
-      return;
     }
-    if (taskAlarms.length == 1) {
-      _pushDismissal(context, taskAlarms.first);
-      return;
-    }
-
-    final is24Hour = context.read<SettingsBloc>().state.is24HourTime;
-    showModalBottomSheet(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'Choose alarm',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-            ),
-            for (final alarm in taskAlarms)
-              ListTile(
-                leading: Icon(
-                  alarm.usesItemScan
-                      ? Icons.center_focus_strong
-                      : Icons.qr_code,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                title: Text(
-                  AlarmTimeUtils.formatTime(
-                    alarm.hour,
-                    alarm.minute,
-                    is24Hour: is24Hour,
-                  ),
-                ),
-                subtitle: Text(AlarmTimeUtils.formatDays(alarm.dayMask)),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _pushDismissal(context, alarm);
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _pushDismissal(BuildContext context, Alarm alarm) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => alarm.usesItemScan
-            ? ItemScanScreen(alarm: alarm)
-            : ScannerScreen(alarmId: alarm.id),
-      ),
-    );
   }
 }

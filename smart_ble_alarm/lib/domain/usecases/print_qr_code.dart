@@ -8,10 +8,12 @@ class PrintQrCodeUseCase {
 
   PrintQrCodeUseCase({required this.secureKeyDatasource});
 
-  Future<void> execute(int alarmId) async {
-    final String qrData = await secureKeyDatasource.getQRCodeData(alarmId);
+  /// Prints the single app-wide backup code. It is not alarm-specific — one
+  /// printed QR dismisses any protected alarm (see [SecureKeyDatasource]).
+  Future<void> execute() async {
+    final String qrData = await secureKeyDatasource.getQRCodeData(0);
     if (qrData.isEmpty) {
-      throw StateError('No QR key is available for alarm $alarmId.');
+      throw StateError('No backup code is available.');
     }
 
     final doc = pw.Document();
@@ -30,7 +32,7 @@ class PrintQrCodeUseCase {
                   style: const pw.TextStyle(fontSize: 14),
                 ),
                 pw.Text(
-                  'Alarm Identifier: $alarmId',
+                  'Works for every protected alarm',
                   style: const pw.TextStyle(fontSize: 8),
                 ),
                 pw.SizedBox(height: 12),
@@ -55,7 +57,7 @@ class PrintQrCodeUseCase {
     // Triggers the Android Print Manager seamlessly (previously iOS AirPrint)
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => doc.save(),
-      name: 'WakeGuard_Backup_Code_$alarmId.pdf',
+      name: 'WakeGuard_Backup_Code.pdf',
     );
   }
 }

@@ -6,9 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/theme/glass.dart';
 import '../../core/theme/wake_widgets.dart';
 import '../../data/datasources/image_recognition_datasource.dart';
-import '../../data/datasources/secure_key_datasource.dart';
 import '../../domain/entities/alarm.dart';
-import '../../domain/usecases/print_qr_code.dart';
 import '../blocs/alarm_bloc/alarm_bloc.dart';
 import '../blocs/ble_bloc/ble_bloc.dart';
 import '../blocs/ble_bloc/ble_state.dart';
@@ -393,17 +391,9 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
                     const SizedBox(height: 16),
                     _buildItemCapture(),
                   ],
-                  // Existing protected alarms (QR or item-scan) can reprint their
-                  // backup code here; new alarms get a code once saved. For item
-                  // alarms this printed code is the 3-minute backup bypass.
-                  if (widget.alarm != null) ...[
-                    const SizedBox(height: 16),
-                    WakeSecondaryButton(
-                      label: 'Print backup code',
-                      icon: Icons.print_rounded,
-                      onPressed: () => _printCode(widget.alarm!.id),
-                    ),
-                  ],
+                  // The printable backup code is now a single app-wide code
+                  // managed from Clock settings, so there's no per-alarm print
+                  // action here.
                 ],
               ],
             ),
@@ -796,23 +786,6 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _printCode(int alarmId) async {
-    final usecase = PrintQrCodeUseCase(
-      secureKeyDatasource: SecureKeyDatasource(),
-    );
-    try {
-      await usecase.execute(alarmId);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Unable to open the print dialog.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
   }
 
   Widget _methodChip(

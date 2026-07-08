@@ -10,10 +10,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/glass.dart';
 import '../../../core/theme/wake_widgets.dart';
 import '../../../core/utils/alarm_time_utils.dart';
-import '../../../data/datasources/secure_key_datasource.dart';
 import '../../../domain/entities/alarm.dart';
 import '../../../domain/repositories/ble_repository.dart';
-import '../../../domain/usecases/print_qr_code.dart';
 import '../../blocs/alarm_bloc/alarm_bloc.dart';
 import '../../blocs/ble_bloc/ble_bloc.dart';
 import '../../blocs/ble_bloc/ble_state.dart';
@@ -237,7 +235,21 @@ class _AlarmsTabState extends State<AlarmsTab> {
         onTap: () => _openEditor(context, alarm),
         child: GlassCard(
           padding: const EdgeInsets.all(18),
-          shadows: wakeCardShadow(context),
+          // While ringing, the card takes on the same error tint/border as the
+          // Home ringing card so the live alarm — and its dismiss/scan/photo
+          // action — is unmistakable here too.
+          tintColor: isRinging ? scheme.error : null,
+          borderColor: isRinging ? scheme.error : null,
+          borderWidth: isRinging ? 2 : 1,
+          shadows: isRinging
+              ? [
+                  BoxShadow(
+                    color: scheme.error.withValues(alpha: 0.24),
+                    blurRadius: 24,
+                    spreadRadius: -4,
+                  ),
+                ]
+              : wakeCardShadow(context),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -331,6 +343,12 @@ class _AlarmsTabState extends State<AlarmsTab> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  if (isRinging)
+                    WakeStatusPill(
+                      label: 'Ringing now',
+                      icon: Icons.notifications_active_rounded,
+                      color: scheme.error,
+                    ),
                   WakeStatusPill(
                     label: AlarmTimeUtils.formatDays(alarm.dayMask),
                     icon: Icons.repeat_rounded,
@@ -356,17 +374,6 @@ class _AlarmsTabState extends State<AlarmsTab> {
                     ),
                 ],
               ),
-              // Every protected alarm (QR or item-scan) carries a printable
-              // backup code — for item alarms it's the 3-minute backup bypass.
-              // Each alarm's code is unique to its id.
-              if (alarm.qrRequired) ...[
-                const SizedBox(height: 14),
-                WakeSecondaryButton(
-                  label: 'Print backup code',
-                  icon: Icons.print_rounded,
-                  onPressed: () => _printCode(context, alarm.id),
-                ),
-              ],
             ],
           ),
         ),
@@ -450,24 +457,6 @@ class _AlarmsTabState extends State<AlarmsTab> {
     showCreateTimerSheet(context);
   }
 
-  /// Opens the OS print dialog for [alarmId]'s unique backup QR code.
-  Future<void> _printCode(BuildContext context, int alarmId) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    final usecase = PrintQrCodeUseCase(
-      secureKeyDatasource: SecureKeyDatasource(),
-    );
-    try {
-      await usecase.execute(alarmId);
-    } catch (_) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('Unable to open the print dialog.'),
-          backgroundColor: scheme.error,
-        ),
-      );
-    }
-  }
 }
 
 /// Live view of app-side timer mirrors, shown on the Timer subtab. Rebuilds
