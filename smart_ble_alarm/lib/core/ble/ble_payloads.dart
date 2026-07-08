@@ -59,19 +59,22 @@ class BlePayloads {
     ];
   }
 
-  static List<int> clockSettings({
-    required bool autoDim,
-    required int sleepStartHour,
-    required int sleepStartMinute,
-    required int sleepEndHour,
-    required int sleepEndMinute,
+  /// Clock-face display settings, command 0x06 → `[flags, theme, accent]`.
+  ///
+  /// `flags` bit0 = 24-hour time, bit1 = show seconds, bit2 = show date.
+  /// `theme` 0 = dark, 1 = light. `accent` 0 = amber, 1 = blue, 2 = green,
+  /// 3 = violet. The firmware reads each byte under a `len >=` guard, so the
+  /// frame can grow later without breaking older clocks.
+  static List<int> clockDisplaySettings({
+    required bool use24h,
+    required bool showSeconds,
+    required bool showDate,
+    required int theme,
+    required int accent,
   }) {
-    return [
-      autoDim ? 1 : 0,
-      sleepStartHour & 0xFF,
-      sleepStartMinute & 0xFF,
-      sleepEndHour & 0xFF,
-      sleepEndMinute & 0xFF,
-    ];
+    final flags = (use24h ? 0x01 : 0) |
+        (showSeconds ? 0x02 : 0) |
+        (showDate ? 0x04 : 0);
+    return [flags, theme & 0x01, accent & 0x03];
   }
 }

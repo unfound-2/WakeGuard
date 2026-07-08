@@ -12,11 +12,13 @@ import '../blocs/history_cubit/dismissal_history_cubit.dart';
 import '../blocs/settings_bloc/settings_bloc.dart';
 import '../blocs/timer_cubit/countdown_timer_cubit.dart';
 import 'dismissal_history_screen.dart';
+import 'tabs/clock_tab.dart';
 
 /// App preferences in the native WakeGuard SettingsView layout: profile
-/// header, then Appearance / Time / Wake Challenge / Notifications / Data /
-/// General / Advanced sections on glass cards. Hardware controls (display,
-/// Bluetooth, sync, factory reset) live in the Clock tab, not here.
+/// header, then Appearance / Time / Device / Wake Challenge / Notifications /
+/// Data / General / Advanced sections on glass cards. The clock's Bluetooth,
+/// sync, and backup-code controls open from the Device row (ClockDeviceScreen);
+/// the clock's screen customization lives on the Display tab.
 class SettingsScreen extends StatefulWidget {
   final bool isTab;
 
@@ -84,6 +86,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _buildAppearanceSection(settings),
                 const SizedBox(height: 24),
                 _buildTimeSection(settings),
+                const SizedBox(height: 24),
+                _buildClockDeviceSection(),
                 const SizedBox(height: 24),
                 _buildChallengeSection(settings),
                 const SizedBox(height: 24),
@@ -301,6 +305,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Clock device -------------------------------------------------------
+
+  Widget _buildClockDeviceSection() {
+    return WakeSection(
+      title: 'Device',
+      subtitle: 'Manage the physical WakeGuard clock.',
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        shadows: wakeCardShadow(context),
+        child: WakeSettingsRow(
+          icon: Icons.watch_rounded,
+          title: 'WakeGuard Clock',
+          subtitle: 'Bluetooth connection, sync, and backup code',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ClockDeviceScreen()),
+          ),
         ),
       ),
     );

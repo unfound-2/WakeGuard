@@ -57,7 +57,7 @@ Flutter code is clean-architecture layered under `smart_ble_alarm/lib/`:
   | 0x02 | ALARM_ADD (upsert) | **9 bytes**: `[id,hour,min,dayMask,qrRequired,snoozeCount,snoozeDur,volume,gradualWake]` |
   | 0x03 | ALARM_DEL | `[id]` |
   | 0x04 / 0x05 | SYNC_START / SYNC_END | (brackets a sync batch) |
-  | 0x06 | SETTINGS | `[autoDim,sleepStartH,sleepStartM,sleepEndH,sleepEndM]` |
+  | 0x06 | SETTINGS (display) | `[flags,theme,accent]` — flags bit0=24h, bit1=seconds, bit2=date; theme 0=dark/1=light; accent 0..3 (amber/blue/green/violet). Length-guarded; firmware runtime-applies + persists. (Was auto-dim/sleep, removed when the backlight became hardwired.) |
   | 0x07 | QR_KEY (store token) | `[id, token×8]` — per-slot dismissal token |
   | 0x09 | DISMISS | `[id, token×8]` — clock `memcmp`s vs stored token (0-token OK if `!ringSecured`) |
   | 0x0A / 0x0B | TIMER_SET / TIMER_STOP | timer control |

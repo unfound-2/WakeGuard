@@ -11,7 +11,7 @@
  *    - 2.4"/2.8" ILI9341  240x320 SPI TFT on hardware SPI (backlight LED tied
  *                         straight to 3.3V, so it is ALWAYS ON; touch pins unused)
  *    - Passive speaker    (driven by Timer1 PWM on D9 — NOT an active buzzer)
- *    - (optional) momentary push button for snooze / backlight wake (now on D4)
+ *    - (optional) momentary push button for snooze while ringing (on D4)
  *    - (optional) photoresistor (LDR) for ambient auto-dim
  *
  *  This firmware is the "clock node". The phone app is the configuration master
@@ -86,6 +86,46 @@
 #include <Adafruit_ILI9341.h>
 #include <EEPROM.h>
 
+// ---- Clock-face font -------------------------------------------------------
+// The old face scaled the built-in 5x7 bitmap font to size 5/6, so each "pixel"
+// became a 5x5 block — that blocky look is what we're replacing. FreeSansBold is
+// an anti-aliased proportional font that ships WITH Adafruit_GFX (no extra
+// library to install); drawn at its native size it reads like a real UI font.
+//
+// It costs ~4 KB of flash. If the sketch ever overflows the Uno's 32 KB program
+// space, set USE_CUSTOM_FONTS to 0: the whole new glass layout still renders,
+// just with the built-in font (blockier, but guaranteed to fit).
+#define USE_CUSTOM_FONTS 1
+#if USE_CUSTOM_FONTS
+  #include <Fonts/FreeSansBold12pt7b.h>
+  #define UI_FONT   (&FreeSansBold12pt7b)  // proportional, anti-aliased
+  #define SZ_TIME   2                       // ~40 px tall HH:MM
+  #define SZ_TEXT   1                       // labels / date / status
+  #define SZ_HEAD   2                       // ring / timer headline
+#else
+  #define UI_FONT   ((const GFXfont *)NULL) // built-in 5x7 bitmap
+  #define SZ_TIME   4
+  #define SZ_TEXT   2
+  #define SZ_HEAD   3
+#endif
+
+// A clock-face text "slot": remembers its last drawn string + exact pixel box so
+// it can erase-and-repaint only when the string changes (see drawSlot, far
+// below). Defined here at file scope so the Arduino IDE's auto-generated
+// function prototypes — inserted before the first function — can see the type;
+// the renderer and its TextSlot globals live down in the TFT UI section.
+struct TextSlot {
+  char     prev[28];   // last drawn string ('\x01' sentinel => force repaint)
+  int16_t  bx, by;     // last drawn bounding box (absolute pixels)
+  uint16_t bw, bh;     // last drawn box size (bh==0 => nothing to erase)
+};
+
+// Which whole-screen layout the face is showing. Declared here (not down in the
+// TFT section) because the 0x06 SETTINGS handler resets it to force a repaint,
+// and that handler is defined earlier in the file than the renderer.
+enum ScreenMode { SCR_NONE, SCR_CLOCK, SCR_RING, SCR_TIMER_DONE };
+ScreenMode scrMode = SCR_NONE;
+
 // ============================================================================
 //  USER CONFIGURATION
 // ============================================================================
@@ -100,7 +140,7 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 #define USE_24H_DISPLAY   1        // 1 = HH:MM:SS 24h, 0 = hh:mm:ss AM/PM
 #define TFT_ROTATION      1        // 1 or 3 = landscape 320x240; flip if upside down
 
-#define ENABLE_SNOOZE_BUTTON 1     // physical snooze / backlight-wake button on D10
+#define ENABLE_SNOOZE_BUTTON 1     // physical snooze button on D4 (ignored if absent)
 #define ENABLE_LDR           0     // ambient-light auto-dim on A0 (off by default)
 #define LDR_DARK_THRESHOLD   180   // analogRead below this => "dark" => dim
 
@@ -110,7 +150,6 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 #define VOLUME_FADE_FLOOR    40    // gradual-wake starts this soft, then ramps to the target volume
 #define VOLUME_TIMER         210   // fixed loudness for the finished-timer chime (no gradual wake)
 #define TIMER_DONE_TIMEOUT_S 60    // auto-silence a finished timer after this long
-#define BACKLIGHT_WAKE_MS    10000UL // button wakes the backlight for 10s
 
 // ---- Pin assignments (match the wiring table in the header) ----------------
 #define PIN_HM10_TXD  2   // Arduino RX  (<- HM-10 TXD)
@@ -211,12 +250,13 @@ AlarmConfig alarms[MAX_ALARMS];
 // Runtime per-alarm guard so an alarm fires once per minute, not every loop.
 uint32_t lastFiredMinute[MAX_ALARMS];
 
-// Display / dimming settings (from 0x06 SETTINGS_WRITE).
-uint8_t  autoDimMode      = 0;
-uint8_t  sleepStartHour   = 22;
-uint8_t  sleepStartMinute = 0;
-uint8_t  sleepEndHour     = 7;
-uint8_t  sleepEndMinute   = 0;
+// Clock-face display settings (from 0x06 SETTINGS). The phone owns these and
+// re-pushes them on every sync; they persist so the face looks right offline.
+bool     disp24h     = USE_24H_DISPLAY;  // 24-hour vs 12-hour clock face
+bool     dispSeconds = false;            // show seconds in the big time
+bool     dispDate    = true;             // show the day/date line
+uint8_t  dispTheme   = 0;                // 0 = dark, 1 = light
+uint8_t  dispAccent  = 0;                // accent preset index (0..3)
 
 // ---- Timekeeping engine ----------------------------------------------------
 uint32_t currentEpoch   = 0;      // seconds since Unix epoch (UTC), software-kept
@@ -266,8 +306,10 @@ static const uint32_t LINK_TIMEOUT_MS = 20000UL;
 static const uint32_t SYNC_MAX_MS = 8000UL;
 
 // ---- Backlight -------------------------------------------------------------
-bool     backlightOn    = true;
-uint32_t backlightWakeUntilMs = 0;
+// The TFT backlight LED is wired straight to 3.3V: always on at full, with no
+// software brightness or dimming control (no GPIO, no PWM). The app's auto-dim /
+// sleep-window setting is still accepted over BLE for wire compatibility but no
+// longer affects the panel.
 
 // ============================================================================
 //  DEVICE INSTANCES
@@ -302,13 +344,14 @@ void handleFrame(uint8_t *body, uint8_t n);
 //  Autonomy"). EEPROM.update() is used everywhere to minimise write wear.
 //     0x00  magic (0x5A)
 //     0x01  version (1)
-//     0x02  autoDimMode
-//     0x03  sleepStartHour
-//     0x04  sleepStartMinute
-//     0x05  sleepEndHour
-//     0x06  sleepEndMinute
+//     0x02  display flags (bit0 24h, bit1 seconds, bit2 date)
+//     0x03  display theme (0 dark, 1 light)
+//     0x04  display accent (0..3)
+//     0x05  (reserved — was sleepEndHour)
+//     0x06  (reserved — was sleepEndMinute)
 //     0x07  driftPPM (int16, little-endian)
-//     0x09  alarms[MAX_ALARMS] (sizeof(AlarmConfig) each)
+//     0x09  (reserved — was manual brightness; backlight is hardwired now)
+//     0x0A  alarms[MAX_ALARMS] (sizeof(AlarmConfig) each)
 // ============================================================================
 static const int    EE_MAGIC_ADDR   = 0x00;
 static const uint8_t EE_MAGIC        = 0x5A;
@@ -316,21 +359,21 @@ static const uint8_t EE_MAGIC        = 0x5A;
 // size changed, so old EEPROM bytes no longer deserialize. eepromLoadAll() treats a
 // version mismatch like a first boot (wipe + re-stamp); the phone re-sends every
 // alarm on the next connect, so nothing is permanently lost.
-static const uint8_t EE_VERSION      = 2;
+static const uint8_t EE_VERSION      = 3;
 static const int    EE_VERSION_ADDR = 0x01;
-static const int    EE_AUTODIM_ADDR = 0x02;
-static const int    EE_SLEEP_ADDR   = 0x03; // 4 bytes: startH,startM,endH,endM
+static const int    EE_DISP_ADDR    = 0x02; // 3 bytes: flags, theme, accent
 static const int    EE_DRIFT_ADDR   = 0x07; // 2 bytes
-static const int    EE_ALARMS_ADDR  = 0x09;
+// 0x09 is now a reserved byte (formerly manual brightness). Alarms stay at 0x0A so
+// an EEPROM written by the previous firmware still loads without a version bump.
+static const int    EE_ALARMS_ADDR  = 0x0A;
 
 void eepromSaveSettings() {
   EEPROM.update(EE_MAGIC_ADDR, EE_MAGIC);
   EEPROM.update(EE_VERSION_ADDR, EE_VERSION);
-  EEPROM.update(EE_AUTODIM_ADDR, autoDimMode);
-  EEPROM.update(EE_SLEEP_ADDR + 0, sleepStartHour);
-  EEPROM.update(EE_SLEEP_ADDR + 1, sleepStartMinute);
-  EEPROM.update(EE_SLEEP_ADDR + 2, sleepEndHour);
-  EEPROM.update(EE_SLEEP_ADDR + 3, sleepEndMinute);
+  uint8_t flags = (disp24h ? 1 : 0) | (dispSeconds ? 2 : 0) | (dispDate ? 4 : 0);
+  EEPROM.update(EE_DISP_ADDR + 0, flags);
+  EEPROM.update(EE_DISP_ADDR + 1, dispTheme);
+  EEPROM.update(EE_DISP_ADDR + 2, dispAccent);
 }
 
 void eepromSaveDrift() {
@@ -388,11 +431,14 @@ void eepromLoadAll() {
     eepromSaveAlarms();
     return;
   }
-  autoDimMode      = EEPROM.read(EE_AUTODIM_ADDR);
-  sleepStartHour   = EEPROM.read(EE_SLEEP_ADDR + 0);
-  sleepStartMinute = EEPROM.read(EE_SLEEP_ADDR + 1);
-  sleepEndHour     = EEPROM.read(EE_SLEEP_ADDR + 2);
-  sleepEndMinute   = EEPROM.read(EE_SLEEP_ADDR + 3);
+  uint8_t flags = EEPROM.read(EE_DISP_ADDR + 0);
+  if (flags != 0xFF) {              // 0xFF => never written; keep code defaults
+    disp24h     = flags & 0x01;
+    dispSeconds = flags & 0x02;
+    dispDate    = flags & 0x04;
+  }
+  uint8_t th = EEPROM.read(EE_DISP_ADDR + 1); if (th <= 1) dispTheme  = th;
+  uint8_t ac = EEPROM.read(EE_DISP_ADDR + 2); if (ac <= 3) dispAccent = ac;
   int16_t d = (int16_t)(EEPROM.read(EE_DRIFT_ADDR) |
                         ((uint16_t)EEPROM.read(EE_DRIFT_ADDR + 1) << 8));
   driftPPM = d;
@@ -684,15 +730,21 @@ void handleFrame(uint8_t *body, uint8_t n) {
       syncBannerUntilMs = millis() + 1200UL;
       sendAck(ACK_SYNC_END);
       break;
-    case CMD_SETTINGS: {                  // [autoDim,startH,startM,endH,endM]
-      if (len >= 5) {
-        autoDimMode      = data[0] ? 1 : 0;
-        sleepStartHour   = data[1];
-        sleepStartMinute = data[2];
-        sleepEndHour     = data[3];
-        sleepEndMinute   = data[4];
-        eepromSaveSettings();
+    case CMD_SETTINGS: {                  // [flags, theme, accent] (length-guarded)
+      // flags: bit0 24h, bit1 seconds, bit2 date. Older/short payloads leave the
+      // trailing fields unchanged, so this stays forward/backward compatible.
+      if (len >= 1) {
+        disp24h     = data[0] & 0x01;
+        dispSeconds = data[0] & 0x02;
+        dispDate    = data[0] & 0x04;
       }
+      if (len >= 2 && data[1] <= 1) dispTheme  = data[1];
+      if (len >= 3 && data[2] <= 3) dispAccent = data[2];
+      applyTheme();
+      // Force the next renderTft() to repaint the whole panel with the new
+      // theme/accent (not just diff the text slots).
+      scrMode = SCR_NONE;
+      eepromSaveSettings();
       sendAck(ACK_SETTINGS);
       break;
     }
@@ -1063,7 +1115,7 @@ void serviceBuzzer() {
 }
 
 // ============================================================================
-//  PHYSICAL BUTTON + BACKLIGHT / AUTO-DIM
+//  PHYSICAL BUTTON  (snooze / dismiss while ringing)
 // ============================================================================
 bool     lastButton = HIGH;
 uint32_t lastButtonMs = 0;
@@ -1074,54 +1126,10 @@ void serviceButton() {
   uint32_t now = millis();
   if (lastButton == HIGH && cur == LOW && (now - lastButtonMs) > 200UL) {
     lastButtonMs = now;
-    if (ringLatched) {
-      buttonOnRing();
-    } else {
-      backlightWakeUntilMs = now + BACKLIGHT_WAKE_MS; // wake the screen
-    }
+    if (ringLatched) buttonOnRing();   // snooze/dismiss the ring; nothing to do otherwise
   }
   lastButton = cur;
 #endif
-}
-
-// Decide whether the backlight should be on. Priority: any active buzzer or a
-// recent button press forces it on; otherwise the app's sleep window (when
-// autoDim is enabled) and/or ambient darkness turns it off.
-void serviceBacklight() {
-  bool wantOn = true;
-
-  if (ringActive || timerDone) {
-    wantOn = true;
-  } else if ((int32_t)(millis() - backlightWakeUntilMs) < 0) {
-    // Signed difference stays correct across the ~49.7-day millis() rollover,
-    // unlike a bare `millis() < deadline` absolute comparison.
-    wantOn = true;
-  } else {
-    bool inSleep = false;
-    if (autoDimMode && haveTime) {
-      LocalTime t = localNow();
-      uint16_t nowMin  = (uint16_t)t.hh * 60 + t.mm;
-      uint16_t startMin = (uint16_t)sleepStartHour * 60 + sleepStartMinute;
-      uint16_t endMin   = (uint16_t)sleepEndHour * 60 + sleepEndMinute;
-      if (startMin == endMin) {
-        inSleep = false;
-      } else if (startMin < endMin) {
-        inSleep = (nowMin >= startMin && nowMin < endMin);
-      } else { // window wraps past midnight
-        inSleep = (nowMin >= startMin || nowMin < endMin);
-      }
-    }
-    bool dark = false;
-#if ENABLE_LDR
-    dark = (analogRead(PIN_LDR) < LDR_DARK_THRESHOLD);
-#endif
-    if (inSleep || (autoDimMode && dark)) wantOn = false;
-  }
-
-  // The backlight LED is hard-wired to 3.3V, so it can't be dimmed in hardware.
-  // Instead the renderer blanks the panel to black while backlightOn is false
-  // (renderTft's SCR_BLANK mode) — the visible equivalent of "backlight off".
-  backlightOn = wantOn;
 }
 
 // ============================================================================
@@ -1135,17 +1143,61 @@ void serviceBacklight() {
 //  (clock <-> ring <-> timer-up <-> syncing <-> blank), never per frame — this
 //  keeps SPI traffic low so it can't starve the SoftwareSerial RX during a sync.
 // ============================================================================
-// Colours (RGB565). The ILI9341_* names come from the Adafruit header.
-#define COL_BG       ILI9341_BLACK
-#define COL_TITLE    ILI9341_CYAN
-#define COL_TIME     ILI9341_WHITE
-#define COL_DATE     0x9CD3            // soft blue-grey
-#define COL_INFO     ILI9341_YELLOW
-#define COL_LINK_ON  ILI9341_GREEN
-#define COL_LINK_OFF 0x7BEF            // dim grey
-#define COL_ALERT    ILI9341_RED
-#define COL_ALERT_TX ILI9341_WHITE
-#define COL_SYNC     ILI9341_CYAN
+// Palette (RGB565). A dark, desaturated "liquid glass" scheme: a near-black
+// background, a raised slate panel with a hairline stroke + a lighter top
+// specular edge, white time, muted-grey secondary text, and a warm amber accent
+// that mirrors the app's "Ember" tint. The ring mode swaps the panel to a dark
+// red so the whole face reads as an alert.
+// Two clock-face themes plus four selectable accents. The app pushes {theme,
+// accent, flags} over 0x06; applyTheme() copies the chosen set into the g*
+// globals the renderer reads. The link dot is theme-independent.
+// --- Dark theme ---
+#define DARK_BG        0x0862   // near-black navy background
+#define DARK_PANEL     0x1906   // glass panel fill (dark slate)
+#define DARK_PANEL_ALT 0x2862   // ring panel fill (dark red)
+#define DARK_STROKE    0x3A0A   // hairline panel border
+#define DARK_HILITE    0x4AAD   // top specular highlight
+#define DARK_TIME      0xFFFF   // primary time text (white)
+#define DARK_TEXT      0xC618   // secondary text (light grey)
+#define DARK_MUTED     0x8410   // tertiary / hints (muted grey)
+#define DARK_ALERT     0xFACB   // ring headline (soft red)
+// --- Light theme ---
+#define LIGHT_BG        0xCE59  // soft grey field
+#define LIGHT_PANEL     0xFFFF  // white glass panel
+#define LIGHT_PANEL_ALT 0xFCF3  // ring panel fill (pale red)
+#define LIGHT_STROKE    0xB596  // light hairline border
+#define LIGHT_HILITE    0xFFFF  // bright top edge
+#define LIGHT_TIME      0x18E3  // near-black time text
+#define LIGHT_TEXT      0x4208  // dark grey secondary
+#define LIGHT_MUTED     0x8410  // mid grey
+#define LIGHT_ALERT     0xC000  // ring headline (deep red)
+// --- Fixed (both themes) ---
+#define COL_LINK_ON   0x2E6E    // link-up dot (green)
+#define COL_LINK_OFF  0x9CD3    // link-down dot (grey)
+// --- Accent presets, index 0..3: amber, blue, green, violet ---
+static const uint16_t ACCENTS[4] = { 0xFCE0, 0x3C1F, 0x2E6E, 0x8AFF };
+
+// Runtime palette the renderer reads (filled by applyTheme() from dispTheme /
+// dispAccent). Initialised to the dark set; applyTheme() runs at boot.
+uint16_t gBg = DARK_BG, gPanel = DARK_PANEL, gPanelAlt = DARK_PANEL_ALT;
+uint16_t gStroke = DARK_STROKE, gHilite = DARK_HILITE;
+uint16_t gTime = DARK_TIME, gText = DARK_TEXT, gMuted = DARK_MUTED;
+uint16_t gAlert = DARK_ALERT, gAccent = 0xFCE0;
+
+void applyTheme() {
+  if (dispTheme == 1) {            // light
+    gBg = LIGHT_BG; gPanel = LIGHT_PANEL; gPanelAlt = LIGHT_PANEL_ALT;
+    gStroke = LIGHT_STROKE; gHilite = LIGHT_HILITE;
+    gTime = LIGHT_TIME; gText = LIGHT_TEXT; gMuted = LIGHT_MUTED;
+    gAlert = LIGHT_ALERT;
+  } else {                         // dark
+    gBg = DARK_BG; gPanel = DARK_PANEL; gPanelAlt = DARK_PANEL_ALT;
+    gStroke = DARK_STROKE; gHilite = DARK_HILITE;
+    gTime = DARK_TIME; gText = DARK_TEXT; gMuted = DARK_MUTED;
+    gAlert = DARK_ALERT;
+  }
+  gAccent = ACCENTS[dispAccent & 3];
+}
 
 const char *DOW_FULL[7] = {"SUNDAY","MONDAY","TUESDAY","WEDNESDAY",
                            "THURSDAY","FRIDAY","SATURDAY"};
@@ -1153,42 +1205,66 @@ const char *DOW_FULL[7] = {"SUNDAY","MONDAY","TUESDAY","WEDNESDAY",
 bool linkUp() { return lastFrameMs != 0 && (millis() - lastFrameMs) < LINK_TIMEOUT_MS; }
 
 // ---- Field-diff rendering primitives ---------------------------------------
-enum ScreenMode { SCR_NONE, SCR_BLANK, SCR_CLOCK, SCR_RING, SCR_TIMER_DONE };
-ScreenMode scrMode = SCR_NONE;
+// (enum ScreenMode / scrMode are declared near the top of the file so the 0x06
+// SETTINGS handler can force a repaint by resetting scrMode.)
 
-// Per-field "last drawn" caches (sentinel first byte => force a repaint).
-char pvTitle[28], pvLink[28], pvTime[28], pvDate[28], pvInfo[28];
-char pvRingFlash[28], pvRingTime[28], pvRingHint[28];
-char pvTdFlash[28], pvTd2[28];
+// The proportional font can't rely on the old "space-pad to overwrite" trick
+// (glyphs are variable width and setTextColor's background fill is unreliable
+// for custom fonts). Instead each text "slot" (struct TextSlot, defined near the
+// top of the file) remembers the exact pixel box it last drew, so a change is
+// repainted by erasing that box (fill with the current panel colour) and drawing
+// the new string. Only changed slots touch the SPI bus per frame, so the
+// sync-starvation guard in renderTft still holds.
+TextSlot sTitle, sTime, sDate, sInfo;         // clock face
+TextSlot sRingHead, sRingTime, sRingHint;     // ring
+TextSlot sTdHead, sTd2;                        // timer-done
+int8_t   pvLink = -1;                          // last link-dot state (-1 = unknown)
+uint16_t curPanel = DARK_PANEL;                // bg colour behind text this mode
 
-// Invalidate every field cache so the next render of the active mode repaints in
-// full (used right after a full-screen clear on a mode change).
+// The panel is inset 8 px on every side (320x240 landscape -> 304x224 card).
+#define PANEL_X 8
+#define PANEL_Y 8
+#define PANEL_W 304
+#define PANEL_H 224
+#define PANEL_R 22
+
+void resetSlot(TextSlot &s) { s.prev[0] = '\x01'; s.prev[1] = '\0'; s.bh = 0; }
+
+// Invalidate every slot so the next render repaints in full (used right after a
+// mode change repaints the whole panel, which already erased the old text).
 void forceRedrawAll() {
-  char *all[] = {pvTitle, pvLink, pvTime, pvDate, pvInfo, pvRingFlash, pvRingTime,
-                 pvRingHint, pvTdFlash, pvTd2};
-  for (uint8_t i = 0; i < sizeof(all) / sizeof(all[0]); i++) {
-    all[i][0] = '\x01'; all[i][1] = '\0';
+  resetSlot(sTitle); resetSlot(sTime); resetSlot(sDate); resetSlot(sInfo);
+  resetSlot(sRingHead); resetSlot(sRingTime); resetSlot(sRingHint);
+  resetSlot(sTdHead); resetSlot(sTd2);
+  pvLink = -1;
+}
+
+// Draw a text slot only when its string changed. `xRef` is the left edge when
+// `center` is false, or the horizontal centre when true; `yTop` is the top of
+// the glyph box. Works for both the custom and built-in fonts because
+// getTextBounds encodes each font's origin convention. Passing "" just erases.
+void drawSlot(TextSlot &s, int16_t xRef, int16_t yTop, const GFXfont *font,
+              uint8_t size, uint16_t fg, const char *str, bool center) {
+  if (strcmp(str, s.prev) == 0) return;
+  // Erase the old box (+1 px margin) with the panel colour. The slots all sit in
+  // the panel interior, well clear of the border/highlight/accent chrome, so the
+  // margin can't nibble those.
+  if (s.bh) tft.fillRect(s.bx - 1, s.by - 1, s.bw + 2, s.bh + 2, curPanel);
+  s.bh = 0;
+  if (str[0] != '\0') {
+    tft.setFont(font);
+    tft.setTextSize(size);
+    tft.setTextColor(fg);
+    int16_t bx, by; uint16_t bw, bh;
+    tft.getTextBounds(str, 0, 0, &bx, &by, &bw, &bh);
+    int16_t left = center ? (xRef - (int16_t)bw / 2) : xRef;
+    int16_t curX = left - bx;          // shift so the box's left lands on `left`
+    int16_t curY = yTop - by;          // shift so the box's top lands on `yTop`
+    tft.setCursor(curX, curY);
+    tft.print(str);
+    s.bx = left; s.by = yTop; s.bw = bw; s.bh = bh;
   }
-}
-
-// Copy `s` into `out`, padded with spaces to exactly `width` chars (out>=width+1).
-// The trailing spaces are what erase a longer previous string with no ghosting.
-void padTo(char *out, const char *s, uint8_t width) {
-  uint8_t i = 0;
-  for (; s[i] && i < width; i++) out[i] = s[i];
-  for (; i < width; i++) out[i] = ' ';
-  out[width] = '\0';
-}
-
-// Draw a text field only when its string changed since the last call.
-void drawField(int16_t x, int16_t y, uint8_t size, uint16_t fg,
-               const char *s, char *prev) {
-  if (strcmp(s, prev) == 0) return;
-  tft.setTextSize(size);
-  tft.setTextColor(fg, COL_BG);
-  tft.setCursor(x, y);
-  tft.print(s);
-  strcpy(prev, s);
+  strcpy(s.prev, str);
 }
 
 // Format a compact "time until" string (<= 6 chars): "6d23h", "23h59m", "59m".
@@ -1231,25 +1307,29 @@ uint32_t minutesUntilAlarm(int slot, LocalTime now) {
 }
 
 // ---- Clock-face field builders ---------------------------------------------
-void buildTimeStr(char *out) {                     // always 8 chars: "HH:MM:SS"
-  if (!haveTime) { strcpy(out, "--:--:--"); return; }
+// Big clock reads HH:MM only (like an iOS lock screen): it redraws once a minute
+// instead of once a second, which keeps the large glyph flicker-free and the SPI
+// bus quiet. Seconds were dropped deliberately for the refined look.
+void buildHHMM(char *out) {
+  // Honours the runtime 24h flag and the "show seconds" toggle (both pushed by
+  // the app over 0x06). With seconds on, the big time redraws every second.
+  if (!haveTime) { strcpy(out, dispSeconds ? "--:--:--" : "--:--"); return; }
   LocalTime t = localNow();
-#if USE_24H_DISPLAY
-  snprintf(out, 9, "%02u:%02u:%02u", t.hh, t.mm, t.ss);
-#else
-  uint8_t h12 = t.hh % 12; if (h12 == 0) h12 = 12;
-  snprintf(out, 9, "%2u:%02u:%02u", h12, t.mm, t.ss);   // leading space keeps 8 chars
-#endif
+  if (disp24h) {
+    if (dispSeconds) snprintf(out, 9, "%02u:%02u:%02u", t.hh, t.mm, t.ss);
+    else             snprintf(out, 9, "%02u:%02u", t.hh, t.mm);
+  } else {
+    uint8_t h12 = t.hh % 12; if (h12 == 0) h12 = 12;
+    if (dispSeconds) snprintf(out, 9, "%u:%02u:%02u", h12, t.mm, t.ss);
+    else             snprintf(out, 9, "%u:%02u", h12, t.mm);
+  }
 }
 
 void buildDateStr(char *out) {
   if (!haveTime) { strcpy(out, "sync needed"); return; }
   LocalTime t = localNow();
-#if USE_24H_DISPLAY
-  snprintf(out, 15, "%s", DOW_FULL[t.dow]);
-#else
-  snprintf(out, 15, "%s %s", DOW_FULL[t.dow], (t.hh < 12) ? "AM" : "PM");
-#endif
+  if (disp24h) snprintf(out, 15, "%s", DOW_FULL[t.dow]);
+  else snprintf(out, 15, "%s %s", DOW_FULL[t.dow], (t.hh < 12) ? "AM" : "PM");
 }
 
 // Bottom status line: running countdown timer, else next alarm, else a hint or
@@ -1276,48 +1356,78 @@ void buildInfoStr(char *out) {
            alarms[bestSlot].hour, alarms[bestSlot].minute, cd);
 }
 
-// ---- Per-mode renderers (each only repaints fields that changed) -----------
+// Small link-status indicator: a filled dot in the top-right of the panel, green
+// when the app link is live, dim grey otherwise. Redrawn only on state change.
+void drawLinkDot() {
+  int8_t up = linkUp() ? 1 : 0;
+  if (up == pvLink) return;
+  pvLink = up;
+  uint16_t c = up ? COL_LINK_ON : COL_LINK_OFF;
+  tft.fillCircle(286, 34, 6, c);
+  tft.drawCircle(286, 34, 8, up ? COL_LINK_ON : gStroke);   // faint halo
+}
+
+// ---- Per-mode renderers (each only repaints slots that changed) ------------
 void renderClock() {
-  char buf[28], pad[28];
+  char buf[28];
 
-  drawField(8, 10, 2, COL_TITLE, "WakeGuard", pvTitle);          // static title
+  drawSlot(sTitle, 24, 22, UI_FONT, SZ_TEXT, gAccent, "WakeGuard", false);
+  drawLinkDot();
 
-  padTo(pad, linkUp() ? "BLE ON" : "BLE --", 6);                 // link status
-  drawField(224, 10, 2, linkUp() ? COL_LINK_ON : COL_LINK_OFF, pad, pvLink);
+  buildHHMM(buf);
+  // With the date hidden, nudge the time down so it stays visually centred.
+  drawSlot(sTime, 160, dispDate ? 86 : 100, UI_FONT, SZ_TIME, gTime, buf, true);
 
-  buildTimeStr(buf);
-  drawField(40, 92, 5, COL_TIME, buf, pvTime);                   // big HH:MM:SS
+  // Show or hide the day/date line per the "show date" toggle; "" erases it.
+  if (dispDate) buildDateStr(buf); else buf[0] = '\0';
+  drawSlot(sDate, 160, 150, UI_FONT, SZ_TEXT, gText, buf, true);
 
-  buildDateStr(buf); padTo(pad, buf, 14);
-  drawField(40, 152, 3, COL_DATE, pad, pvDate);                  // day + AM/PM
-
-  buildInfoStr(buf); padTo(pad, buf, 26);
-  drawField(8, 212, 2, COL_INFO, pad, pvInfo);                   // status line
+  buildInfoStr(buf);
+  drawSlot(sInfo, 20, 196, UI_FONT, SZ_TEXT, gAccent, buf, false);
 }
 
 void renderRing(uint32_t nowMs) {
-  // Flashing headline; the "off" phase draws spaces which erase it (no clear).
+  // Flashing headline: the "off" phase passes "" so drawSlot erases it.
   bool on = ((nowMs / 500) % 2) == 0;
-  drawField(70, 44, 6, COL_ALERT, on ? "ALARM" : "     ", pvRingFlash);
+  drawSlot(sRingHead, 160, 40, UI_FONT, SZ_HEAD, gAlert, on ? "ALARM" : "",
+           true);
 
   char ts[8];
-#if USE_24H_DISPLAY
-  snprintf(ts, 8, "%02u:%02u", ringHour, ringMinute);
-#else
-  { uint8_t h12 = ringHour % 12; if (h12 == 0) h12 = 12;
-    snprintf(ts, 8, "%2u:%02u%s", h12, ringMinute, (ringHour < 12) ? "a" : "p"); }
-#endif
-  drawField(100, 118, 4, COL_ALERT_TX, ts, pvRingTime);
+  if (disp24h) {
+    snprintf(ts, 8, "%02u:%02u", ringHour, ringMinute);
+  } else {
+    uint8_t h12 = ringHour % 12; if (h12 == 0) h12 = 12;
+    snprintf(ts, 8, "%u:%02u%s", h12, ringMinute, (ringHour < 12) ? "a" : "p");
+  }
+  drawSlot(sRingTime, 160, 104, UI_FONT, SZ_TIME, gTime, ts, true);
 
-  char pad[28];
-  padTo(pad, ringSecured ? "Dismiss in the app" : "Press button to stop", 22);
-  drawField(20, 178, 2, COL_ALERT_TX, pad, pvRingHint);
+  drawSlot(sRingHint, 160, 176, UI_FONT, SZ_TEXT, gText,
+           ringSecured ? "Dismiss in the app" : "Press button to stop", true);
 }
 
 void renderTimerDone(uint32_t nowMs) {
   bool on = ((nowMs / 500) % 2) == 0;
-  drawField(70, 60, 6, COL_INFO, on ? "TIMER" : "     ", pvTdFlash);
-  drawField(70, 128, 3, COL_ALERT_TX, "Time's up!", pvTd2);
+  drawSlot(sTdHead, 160, 62, UI_FONT, SZ_HEAD, gAccent, on ? "TIMER" : "",
+           true);
+  drawSlot(sTd2, 160, 130, UI_FONT, SZ_TIME, gTime, "Time's up!", true);
+}
+
+// Paint the full "glass" backdrop: near-black field, a raised rounded panel in
+// `panelCol`, a hairline border, and a short lighter specular edge along the top
+// so the panel reads as a translucent pane of glass. Drawn ONCE per mode change
+// (never per frame) so its ~250ms of SPI traffic can't starve the BLE RX — the
+// per-frame path only repaints changed text slots. `clockChrome` adds the amber
+// accent underline beneath the "WakeGuard" title on the clock face.
+void drawPanel(uint16_t panelCol, bool clockChrome) {
+  tft.fillScreen(gBg);
+  tft.fillRoundRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, PANEL_R, panelCol);
+  tft.drawRoundRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, PANEL_R, gStroke);
+  // Specular highlight: a soft light streak just inside the top edge.
+  tft.drawFastHLine(PANEL_X + 44, PANEL_Y + 3, PANEL_W - 88, gHilite);
+  tft.drawFastHLine(PANEL_X + 70, PANEL_Y + 4, PANEL_W - 140, gHilite);
+  if (clockChrome) {
+    tft.fillRect(24, 47, 84, 3, gAccent);   // accent bar under the title
+  }
 }
 
 // Top-level display refresh. Picks a screen mode with the same priority the LCD
@@ -1338,19 +1448,18 @@ void renderTft() {
   if (syncing) return;
 
   ScreenMode want;
-  if (ringActive)        want = SCR_RING;        // ring/timer force the panel on
-  else if (timerDone)    want = SCR_TIMER_DONE;
-  else if (!backlightOn) want = SCR_BLANK;       // auto-dim: blank to black
-  else                   want = SCR_CLOCK;
+  if (ringActive)     want = SCR_RING;           // ring/timer take the whole panel
+  else if (timerDone) want = SCR_TIMER_DONE;
+  else                want = SCR_CLOCK;
 
-  if (want != scrMode) {          // mode change: clear once, force a full repaint
+  if (want != scrMode) {          // mode change: repaint the panel, force redraw
     scrMode = want;
-    tft.fillScreen(COL_BG);
+    curPanel = (want == SCR_RING) ? gPanelAlt : gPanel;
+    drawPanel(curPanel, want == SCR_CLOCK);
     forceRedrawAll();
   }
 
   switch (scrMode) {
-    case SCR_BLANK:      break;                    // nothing but black
     case SCR_CLOCK:      renderClock();            break;
     case SCR_RING:       renderRing(nowMs);        break;
     case SCR_TIMER_DONE: renderTimerDone(nowMs);   break;
@@ -1444,20 +1553,30 @@ void setup() {
 
   tft.begin();
   tft.setRotation(TFT_ROTATION);   // landscape 320x240
-  tft.fillScreen(COL_BG);
+  tft.fillScreen(gBg);
 
   for (int i = 0; i < MAX_ALARMS; i++) lastFiredMinute[i] = 0xFFFFFFFFUL;
   eepromLoadAll();
+  applyTheme();           // load the saved theme/accent into the g* palette
 
   lastMicros = micros();
 
-  // Splash.
-  tft.setTextSize(4);
-  tft.setTextColor(COL_TITLE, COL_BG);
-  tft.setCursor(43, 84);   tft.print(F("WakeGuard"));
-  tft.setTextSize(2);
-  tft.setTextColor(COL_DATE, COL_BG);
-  tft.setCursor(94, 140);  tft.print(F("clock ready"));
+  // Splash: the same glass panel the clock face uses, with centred title text.
+  drawPanel(gPanel, false);
+  {
+    int16_t bx, by; uint16_t bw, bh;
+    tft.setFont(UI_FONT);
+    tft.setTextSize(SZ_TIME);
+    tft.setTextColor(gTime);
+    tft.getTextBounds("WakeGuard", 0, 0, &bx, &by, &bw, &bh);
+    tft.setCursor(160 - (int16_t)bw / 2 - bx, 96 - by);
+    tft.print("WakeGuard");
+    tft.setTextSize(SZ_TEXT);
+    tft.setTextColor(gMuted);
+    tft.getTextBounds("clock ready", 0, 0, &bx, &by, &bw, &bh);
+    tft.setCursor(160 - (int16_t)bw / 2 - bx, 150 - by);
+    tft.print("clock ready");
+  }
   scrMode = SCR_NONE;      // make the first renderTft() lay out a fresh screen
 
   bootSelfTestChime();  // audible proof the speaker + PWM path works at power-on
@@ -1471,7 +1590,6 @@ void loop() {
   serviceTimer();   // 5. maintain the countdown timer
   serviceBuzzer();  // 6. step the non-blocking tone pattern
   serviceButton();  // 7. read the physical button
-  serviceBacklight();// 8. sleep-window / ambient / wake backlight control
-  serviceSyncFlush();// 9. flush batched alarm writes if a sync's 0x05 was lost
-  renderTft();      // 10. refresh the TFT (mode-aware, field-diffed)
+  serviceSyncFlush();// 8. flush batched alarm writes if a sync's 0x05 was lost
+  renderTft();      // 9. refresh the TFT (mode-aware, field-diffed)
 }

@@ -84,15 +84,17 @@ Future<bool> syncConnectedClock(
         final alarmSync = Completer<void>();
         alarmBloc.add(SyncAlarmsToDeviceEvent(device, completer: alarmSync));
         await alarmSync.future;
+        // Push the clock-face display settings (theme/accent/seconds/date + the
+        // 24-hour format) so the physical clock matches the app.
         await repo.sendCommand(
           device,
           0x06,
-          BlePayloads.clockSettings(
-            autoDim: settings.autoDim,
-            sleepStartHour: settings.sleepStartHour,
-            sleepStartMinute: settings.sleepStartMinute,
-            sleepEndHour: settings.sleepEndHour,
-            sleepEndMinute: settings.sleepEndMinute,
+          BlePayloads.clockDisplaySettings(
+            use24h: settings.is24HourTime,
+            showSeconds: settings.clockShowSeconds,
+            showDate: settings.clockShowDate,
+            theme: settings.clockThemeLight ? 1 : 0,
+            accent: settings.clockAccentIndex,
           ),
         );
         await repo.sendCommand(device, 0x05, const []);

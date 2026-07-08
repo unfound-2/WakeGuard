@@ -298,28 +298,44 @@ class _AlarmsTabState extends State<AlarmsTab> {
                   // the task-aware dismissal button (Dismiss / Take Photo / Scan
                   // QR) — the same shared action as the banner and Home card.
                   if (isRinging)
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: scheme.error,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                    // Flexible + single-line ellipsizing label: under bold/large
+                    // text the button shrinks to fit the card row instead of
+                    // overflowing; unchanged at normal text sizes.
+                    Flexible(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: scheme.error,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                        onPressed: () =>
+                            RingingDismissal.trigger(context, alarm),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(RingingDismissal.actionIcon(alarm), size: 16),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                RingingDismissal.actionLabel(alarm),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      icon: Icon(RingingDismissal.actionIcon(alarm), size: 16),
-                      label: Text(
-                        RingingDismissal.actionLabel(alarm),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                      onPressed: () => RingingDismissal.trigger(context, alarm),
                     )
                   else
                     Switch(

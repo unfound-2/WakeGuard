@@ -601,25 +601,44 @@ class _HomeTabState extends State<HomeTab> {
           const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton.icon(
+            child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: error,
                 foregroundColor: Colors.white,
                 elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 18),
+                minimumSize: const Size(0, 60),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18),
                 ),
               ),
-              icon: Icon(RingingDismissal.actionIcon(alarm), size: 26),
-              label: Text(
-                RingingDismissal.actionLabel(alarm).toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
               onPressed: () => RingingDismissal.trigger(context, alarm),
+              // Min-height + a Flexible label: bold/large accessibility text
+              // wraps to a second line and the button grows, instead of the
+              // dismiss label being clipped on the ringing screen.
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(RingingDismissal.actionIcon(alarm), size: 26),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      RingingDismissal.actionLabel(alarm).toUpperCase(),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

@@ -16,18 +16,18 @@ import '../../blocs/settings_bloc/settings_bloc.dart';
 import '../../blocs/timer_cubit/countdown_timer_cubit.dart';
 import '../setup_screen.dart';
 
-/// The Clock tab: everything that controls the physical WakeGuard clock —
-/// display behaviour, the Bluetooth link, synchronization, and the printed
-/// backup-code path. App preferences live in Settings; this tab is the
-/// hardware's home (ported from the native ClockView).
-class ClockTab extends StatefulWidget {
-  const ClockTab({super.key});
+/// The WakeGuard Clock device page: everything that manages the physical clock —
+/// the Bluetooth link, synchronization, and the printed backup-code path. Opened
+/// as a sub-page from Settings (the clock's *display* customization lives on the
+/// Display tab; general app preferences live in Settings).
+class ClockDeviceScreen extends StatefulWidget {
+  const ClockDeviceScreen({super.key});
 
   @override
-  State<ClockTab> createState() => _ClockTabState();
+  State<ClockDeviceScreen> createState() => _ClockDeviceScreenState();
 }
 
-class _ClockTabState extends State<ClockTab> {
+class _ClockDeviceScreenState extends State<ClockDeviceScreen> {
   @override
   void initState() {
     super.initState();
@@ -36,37 +36,28 @@ class _ClockTabState extends State<ClockTab> {
 
   @override
   Widget build(BuildContext context) {
-    return GlassBackground(
-      child: SafeArea(
-        bottom: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 130),
-          children: [
-            Text(
-              'Clock',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
-            ),
-            Text(
-              'Controls for the physical alarm clock',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 20),
-            _buildDeviceHeader(),
-            const SizedBox(height: 24),
-            _buildDisplaySection(),
-            const SizedBox(height: 24),
-            _buildBluetoothSection(),
-            const SizedBox(height: 24),
-            _buildSyncSection(),
-            const SizedBox(height: 24),
-            _buildBackupSection(),
-          ],
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('WakeGuard Clock'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: GlassBackground(
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+            children: [
+              _buildDeviceHeader(),
+              const SizedBox(height: 24),
+              _buildBluetoothSection(),
+              const SizedBox(height: 24),
+              _buildSyncSection(),
+              const SizedBox(height: 24),
+              _buildBackupSection(),
+            ],
+          ),
         ),
       ),
     );
@@ -126,111 +117,6 @@ class _ClockTabState extends State<ClockTab> {
         );
       },
     );
-  }
-
-  Widget _buildDisplaySection() {
-    return WakeSection(
-      title: 'Display',
-      subtitle: 'LCD behaviour on the physical clock.',
-      child: BlocBuilder<SettingsBloc, SettingsState>(
-        builder: (context, settings) {
-          return GlassCard(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-            shadows: wakeCardShadow(context),
-            child: Column(
-              children: [
-                WakeSettingsRow(
-                  icon: Icons.brightness_auto_rounded,
-                  title: 'Auto-Dim Display',
-                  subtitle: 'Light sensor turns the backlight off in darkness',
-                  trailing: Switch(
-                    value: settings.autoDim,
-                    onChanged: (val) => context.read<SettingsBloc>().add(
-                      UpdateClockConfigEvent(
-                        val,
-                        settings.sleepStartHour,
-                        settings.sleepStartMinute,
-                        settings.sleepEndHour,
-                        settings.sleepEndMinute,
-                      ),
-                    ),
-                  ),
-                ),
-                Divider(height: 1, color: Theme.of(context).dividerColor),
-                WakeSettingsRow(
-                  icon: Icons.bedtime_rounded,
-                  title: 'Sleep Mode Start',
-                  subtitle: 'Display turns off during these hours',
-                  trailing: _timeChip(
-                    settings.sleepStartHour,
-                    settings.sleepStartMinute,
-                    settings.is24HourTime,
-                  ),
-                  onTap: () => _pickSleepTime(context, true, settings),
-                ),
-                Divider(height: 1, color: Theme.of(context).dividerColor),
-                WakeSettingsRow(
-                  icon: Icons.wb_sunny_rounded,
-                  title: 'Sleep Mode End',
-                  subtitle: 'Display turns back on',
-                  trailing: _timeChip(
-                    settings.sleepEndHour,
-                    settings.sleepEndMinute,
-                    settings.is24HourTime,
-                  ),
-                  onTap: () => _pickSleepTime(context, false, settings),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _timeChip(int hour, int minute, bool is24Hour) {
-    return Text(
-      AlarmTimeUtils.formatTime(hour, minute, is24Hour: is24Hour),
-      style: TextStyle(
-        color: Theme.of(context).colorScheme.primary,
-        fontWeight: FontWeight.w700,
-        fontSize: 15,
-      ),
-    );
-  }
-
-  Future<void> _pickSleepTime(
-    BuildContext context,
-    bool isStart,
-    SettingsState state,
-  ) async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(
-        hour: isStart ? state.sleepStartHour : state.sleepEndHour,
-        minute: isStart ? state.sleepStartMinute : state.sleepEndMinute,
-      ),
-      // Honour the app's own 24-hour setting rather than the OS locale so the
-      // picker matches how times are shown everywhere else in the app.
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(alwaysUse24HourFormat: state.is24HourTime),
-        child: child!,
-      ),
-    );
-    if (picked != null) {
-      if (!context.mounted) return;
-      context.read<SettingsBloc>().add(
-        UpdateClockConfigEvent(
-          state.autoDim,
-          isStart ? picked.hour : state.sleepStartHour,
-          isStart ? picked.minute : state.sleepStartMinute,
-          !isStart ? picked.hour : state.sleepEndHour,
-          !isStart ? picked.minute : state.sleepEndMinute,
-        ),
-      );
-    }
   }
 
   Widget _buildBluetoothSection() {

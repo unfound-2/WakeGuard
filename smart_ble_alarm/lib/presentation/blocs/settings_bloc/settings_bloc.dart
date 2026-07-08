@@ -60,27 +60,22 @@ class ToggleBackupNotificationsEvent extends SettingsEvent {
   List<Object?> get props => [enabled];
 }
 
-class UpdateClockConfigEvent extends SettingsEvent {
-  final bool autoDim;
-  final int sleepStartHour;
-  final int sleepStartMinute;
-  final int sleepEndHour;
-  final int sleepEndMinute;
-  const UpdateClockConfigEvent(
-    this.autoDim,
-    this.sleepStartHour,
-    this.sleepStartMinute,
-    this.sleepEndHour,
-    this.sleepEndMinute,
-  );
+/// Updates the physical clock's display customization (theme/accent/seconds/
+/// date). These are pushed to the clock over BLE (0x06); the 24-hour format
+/// rides along from [is24HourTime].
+class UpdateClockDisplayEvent extends SettingsEvent {
+  final bool themeLight;
+  final int accentIndex;
+  final bool showSeconds;
+  final bool showDate;
+  const UpdateClockDisplayEvent({
+    required this.themeLight,
+    required this.accentIndex,
+    required this.showSeconds,
+    required this.showDate,
+  });
   @override
-  List<Object?> get props => [
-    autoDim,
-    sleepStartHour,
-    sleepStartMinute,
-    sleepEndHour,
-    sleepEndMinute,
-  ];
+  List<Object?> get props => [themeLight, accentIndex, showSeconds, showDate];
 }
 
 // --- State ---
@@ -93,12 +88,11 @@ class SettingsState extends Equatable {
   final bool autoTimeSync;
   final bool backupNotificationsEnabled;
 
-  // Clock specific settings
-  final bool autoDim;
-  final int sleepStartHour;
-  final int sleepStartMinute;
-  final int sleepEndHour;
-  final int sleepEndMinute;
+  // Physical clock display customization (pushed to the clock over 0x06).
+  final bool clockThemeLight; // false = dark face, true = light face
+  final int clockAccentIndex; // 0 amber, 1 blue, 2 green, 3 violet
+  final bool clockShowSeconds;
+  final bool clockShowDate;
 
   const SettingsState({
     this.is24HourTime = false, // false = 12h default
@@ -108,11 +102,10 @@ class SettingsState extends Equatable {
     this.animationsEnabled = true,
     this.autoTimeSync = true,
     this.backupNotificationsEnabled = true,
-    this.autoDim = true,
-    this.sleepStartHour = 22,
-    this.sleepStartMinute = 0,
-    this.sleepEndHour = 6,
-    this.sleepEndMinute = 0,
+    this.clockThemeLight = false,
+    this.clockAccentIndex = 0,
+    this.clockShowSeconds = false,
+    this.clockShowDate = true,
   });
 
   SettingsState copyWith({
@@ -123,11 +116,10 @@ class SettingsState extends Equatable {
     bool? animationsEnabled,
     bool? autoTimeSync,
     bool? backupNotificationsEnabled,
-    bool? autoDim,
-    int? sleepStartHour,
-    int? sleepStartMinute,
-    int? sleepEndHour,
-    int? sleepEndMinute,
+    bool? clockThemeLight,
+    int? clockAccentIndex,
+    bool? clockShowSeconds,
+    bool? clockShowDate,
   }) {
     return SettingsState(
       is24HourTime: is24HourTime ?? this.is24HourTime,
@@ -138,11 +130,10 @@ class SettingsState extends Equatable {
       autoTimeSync: autoTimeSync ?? this.autoTimeSync,
       backupNotificationsEnabled:
           backupNotificationsEnabled ?? this.backupNotificationsEnabled,
-      autoDim: autoDim ?? this.autoDim,
-      sleepStartHour: sleepStartHour ?? this.sleepStartHour,
-      sleepStartMinute: sleepStartMinute ?? this.sleepStartMinute,
-      sleepEndHour: sleepEndHour ?? this.sleepEndHour,
-      sleepEndMinute: sleepEndMinute ?? this.sleepEndMinute,
+      clockThemeLight: clockThemeLight ?? this.clockThemeLight,
+      clockAccentIndex: clockAccentIndex ?? this.clockAccentIndex,
+      clockShowSeconds: clockShowSeconds ?? this.clockShowSeconds,
+      clockShowDate: clockShowDate ?? this.clockShowDate,
     );
   }
 
@@ -155,11 +146,10 @@ class SettingsState extends Equatable {
     animationsEnabled,
     autoTimeSync,
     backupNotificationsEnabled,
-    autoDim,
-    sleepStartHour,
-    sleepStartMinute,
-    sleepEndHour,
-    sleepEndMinute,
+    clockThemeLight,
+    clockAccentIndex,
+    clockShowSeconds,
+    clockShowDate,
   ];
 }
 
@@ -176,7 +166,7 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<ToggleAnimationsEvent>(_onToggleAnimations);
     on<ToggleAutoTimeSyncEvent>(_onToggleAutoTimeSync);
     on<ToggleBackupNotificationsEvent>(_onToggleBackupNotifications);
-    on<UpdateClockConfigEvent>(_onUpdateClockConfig);
+    on<UpdateClockDisplayEvent>(_onUpdateClockDisplay);
   }
 
   void _onLoadSettings(LoadSettingsEvent event, Emitter<SettingsState> emit) {
@@ -190,11 +180,10 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
         autoTimeSync: prefs.getBool('autoTimeSync') ?? true,
         backupNotificationsEnabled:
             prefs.getBool('backupNotificationsEnabled') ?? true,
-        autoDim: prefs.getBool('autoDim') ?? true,
-        sleepStartHour: prefs.getInt('sleepStartHour') ?? 22,
-        sleepStartMinute: prefs.getInt('sleepStartMinute') ?? 0,
-        sleepEndHour: prefs.getInt('sleepEndHour') ?? 6,
-        sleepEndMinute: prefs.getInt('sleepEndMinute') ?? 0,
+        clockThemeLight: prefs.getBool('clockThemeLight') ?? false,
+        clockAccentIndex: prefs.getInt('clockAccentIndex') ?? 0,
+        clockShowSeconds: prefs.getBool('clockShowSeconds') ?? false,
+        clockShowDate: prefs.getBool('clockShowDate') ?? true,
       ),
     );
   }
@@ -255,23 +244,20 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     emit(state.copyWith(backupNotificationsEnabled: event.enabled));
   }
 
-  void _onUpdateClockConfig(
-    UpdateClockConfigEvent event,
+  void _onUpdateClockDisplay(
+    UpdateClockDisplayEvent event,
     Emitter<SettingsState> emit,
   ) async {
-    await prefs.setBool('autoDim', event.autoDim);
-    await prefs.setInt('sleepStartHour', event.sleepStartHour);
-    await prefs.setInt('sleepStartMinute', event.sleepStartMinute);
-    await prefs.setInt('sleepEndHour', event.sleepEndHour);
-    await prefs.setInt('sleepEndMinute', event.sleepEndMinute);
-
+    await prefs.setBool('clockThemeLight', event.themeLight);
+    await prefs.setInt('clockAccentIndex', event.accentIndex);
+    await prefs.setBool('clockShowSeconds', event.showSeconds);
+    await prefs.setBool('clockShowDate', event.showDate);
     emit(
       state.copyWith(
-        autoDim: event.autoDim,
-        sleepStartHour: event.sleepStartHour,
-        sleepStartMinute: event.sleepStartMinute,
-        sleepEndHour: event.sleepEndHour,
-        sleepEndMinute: event.sleepEndMinute,
+        clockThemeLight: event.themeLight,
+        clockAccentIndex: event.accentIndex,
+        clockShowSeconds: event.showSeconds,
+        clockShowDate: event.showDate,
       ),
     );
   }

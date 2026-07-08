@@ -17,7 +17,7 @@ import '../widgets/liquid_glass_tab_bar.dart';
 import '../widgets/ringing_dismissal.dart';
 import 'tabs/home_tab.dart';
 import 'tabs/alarms_tab.dart';
-import 'tabs/clock_tab.dart';
+import 'tabs/display_tab.dart';
 import 'settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -59,7 +59,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   List<Widget> _buildTabs() => [
     HomeTab(onOpenAlarms: () => _openTab(1)),
     const AlarmsTab(),
-    const ClockTab(),
+    const DisplayTab(),
     SettingsScreen(
       isTab: true,
       onExitDeveloperMode: widget.onExitDeveloperMode,
@@ -362,22 +362,43 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(width: 10),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: error,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+              // Flexible + a single-line, ellipsizing label so bold/large text
+              // shrinks this compact button to fit the banner instead of
+              // overflowing the row (normal text is unaffected).
+              Flexible(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: error,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () => RingingDismissal.trigger(context, alarm),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(RingingDismissal.actionIcon(alarm), size: 18),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          RingingDismissal.actionLabel(alarm),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                icon: Icon(RingingDismissal.actionIcon(alarm), size: 18),
-                label: Text(
-                  RingingDismissal.actionLabel(alarm),
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                ),
-                onPressed: () => RingingDismissal.trigger(context, alarm),
               ),
             ],
           ),
@@ -421,43 +442,42 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             context.read<AlarmBloc>().add(LoadAlarmsEvent());
           },
         ),
+        // Live-push clock-face display settings (theme/accent/seconds/date and
+        // the 24-hour format) the moment they change, so tweaks on the Display
+        // tab show on the clock immediately. Disconnected: kick a reconnect so
+        // the change flushes through the on-connect full sync.
         BlocListener<SettingsBloc, SettingsState>(
           listenWhen: (previous, current) =>
-              previous.autoDim != current.autoDim ||
-              previous.sleepStartHour != current.sleepStartHour ||
-              previous.sleepStartMinute != current.sleepStartMinute ||
-              previous.sleepEndHour != current.sleepEndHour ||
-              previous.sleepEndMinute != current.sleepEndMinute,
+              previous.is24HourTime != current.is24HourTime ||
+              previous.clockThemeLight != current.clockThemeLight ||
+              previous.clockAccentIndex != current.clockAccentIndex ||
+              previous.clockShowSeconds != current.clockShowSeconds ||
+              previous.clockShowDate != current.clockShowDate,
           listener: (context, state) async {
             final bleState = context.read<BleConnectionBloc>().state;
-            if (bleState is BleConnected) {
-              final bleRepo = context.read<BleRepository>();
-              try {
-                await bleRepo.sendCommand(
-                  bleState.device,
-                  0x06,
-                  BlePayloads.clockSettings(
-                    autoDim: state.autoDim,
-                    sleepStartHour: state.sleepStartHour,
-                    sleepStartMinute: state.sleepStartMinute,
-                    sleepEndHour: state.sleepEndHour,
-                    sleepEndMinute: state.sleepEndMinute,
-                  ),
-                );
-              } catch (_) {
-                if (!context.mounted) return;
-                showAppSnackBar(
-                  context,
-                  'Clock settings saved locally, but sync failed.',
-                  type: AppSnackType.error,
-                );
-              }
-            } else {
-              // Disconnected: kick a reconnect so this change flushes via the
-              // full sync that runs on connect, rather than waiting for the next
-              // app-open. Safe/idempotent — ReconnectEvent no-ops if there is no
-              // remembered clock or one is already connecting.
+            if (bleState is! BleConnected) {
               context.read<BleConnectionBloc>().add(ReconnectEvent());
+              return;
+            }
+            try {
+              await context.read<BleRepository>().sendCommand(
+                bleState.device,
+                0x06,
+                BlePayloads.clockDisplaySettings(
+                  use24h: state.is24HourTime,
+                  showSeconds: state.clockShowSeconds,
+                  showDate: state.clockShowDate,
+                  theme: state.clockThemeLight ? 1 : 0,
+                  accent: state.clockAccentIndex,
+                ),
+              );
+            } catch (_) {
+              if (!context.mounted) return;
+              showAppSnackBar(
+                context,
+                'Display settings saved, but the clock update failed.',
+                type: AppSnackType.error,
+              );
             }
           },
         ),
@@ -532,9 +552,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               label: 'Alarms',
             ),
             LiquidGlassTabItem(
-              icon: Icons.schedule_outlined,
-              selectedIcon: Icons.schedule_rounded,
-              label: 'Clock',
+              icon: Icons.tune_outlined,
+              selectedIcon: Icons.tune_rounded,
+              label: 'Display',
             ),
             LiquidGlassTabItem(
               icon: Icons.settings_outlined,

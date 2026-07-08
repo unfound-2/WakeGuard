@@ -111,16 +111,40 @@ void main() {
       expect(BlePayloads.alarm(alarm), [3, 8, 0, 0x80, 0, 0, 0, 80, 0]);
     });
 
-    test('encodes clock settings payload with minute precision', () {
+    test('packs clock display settings into [flags, theme, accent]', () {
+      // flags bit0=24h, bit1=seconds, bit2=date. Here: 24h + date, no seconds
+      // => 0b101 = 5; dark theme (0); amber accent (0).
       expect(
-        BlePayloads.clockSettings(
-          autoDim: true,
-          sleepStartHour: 22,
-          sleepStartMinute: 30,
-          sleepEndHour: 6,
-          sleepEndMinute: 15,
+        BlePayloads.clockDisplaySettings(
+          use24h: true,
+          showSeconds: false,
+          showDate: true,
+          theme: 0,
+          accent: 0,
         ),
-        [1, 22, 30, 6, 15],
+        [5, 0, 0],
+      );
+      // Everything on, light theme, violet accent.
+      expect(
+        BlePayloads.clockDisplaySettings(
+          use24h: true,
+          showSeconds: true,
+          showDate: true,
+          theme: 1,
+          accent: 3,
+        ),
+        [7, 1, 3],
+      );
+      // 12-hour, nothing else: all flag bits clear.
+      expect(
+        BlePayloads.clockDisplaySettings(
+          use24h: false,
+          showSeconds: false,
+          showDate: false,
+          theme: 0,
+          accent: 1,
+        ),
+        [0, 0, 1],
       );
     });
   });

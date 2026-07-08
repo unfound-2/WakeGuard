@@ -102,15 +102,20 @@ class WakePrimaryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final fill = color ?? scheme.primary;
+    // A *minimum* height of 54 (not a fixed one) keeps the button identical for
+    // normal text, but lets it grow instead of clipping when iOS Bold Text
+    // widens the label or Dynamic Type scales it up. The label is Flexible so it
+    // wraps to a second line (then ellipsizes) rather than overflowing the row.
     return SizedBox(
-      height: 54,
       width: double.infinity,
-      child: ElevatedButton.icon(
+      child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: fill,
           foregroundColor: fill == scheme.primary
               ? scheme.onPrimary
               : Colors.white,
+          minimumSize: const Size(0, 54),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
@@ -122,10 +127,25 @@ class WakePrimaryButton extends StatelessWidget {
                 HapticFeedback.lightImpact();
                 onPressed!();
               },
-        icon: Icon(icon, size: 20),
-        label: Text(
-          label,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 20),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -150,8 +170,10 @@ class WakeSecondaryButton extends StatelessWidget {
     final glass = GlassTheme.of(context);
     final scheme = Theme.of(context).colorScheme;
     final dark = glass.brightness == Brightness.dark;
+    // Minimum (not fixed) height + a padded, wrap-capable label: normal text
+    // still renders a 48pt pill, but bold/large accessibility text grows the
+    // button and wraps to a second line instead of being clipped.
     return SizedBox(
-      height: 48,
       width: double.infinity,
       child: Material(
         color: glass.elevated.withValues(alpha: dark ? 0.76 : 1),
@@ -167,23 +189,31 @@ class WakeSecondaryButton extends StatelessWidget {
                   HapticFeedback.lightImpact();
                   onPressed!();
                 },
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 18, color: scheme.onSurface),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 18, color: scheme.onSurface),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
