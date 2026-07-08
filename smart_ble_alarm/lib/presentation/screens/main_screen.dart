@@ -50,6 +50,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
   StreamSubscription<List<int>>? _frameSubscription;
+  Timer? _weatherTimer;
 
   void _openTab(int index) => setState(() => _currentIndex = index);
 
@@ -76,6 +77,22 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     // clock rings alarms autonomously, so there's no reason to stay connected
     // (or keep BLE alive in the background) when the app is closed.
     WidgetsBinding.instance.addObserver(this);
+
+    // Refresh the clock's weather periodically while connected. The initial push
+    // rides the on-connect sync; this keeps it current over a long session. It's
+    // best-effort and unawaited, so a failed fetch is silently skipped.
+    _weatherTimer = Timer.periodic(const Duration(minutes: 15), (_) {
+      if (!mounted) return;
+      final bleState = context.read<BleConnectionBloc>().state;
+      if (bleState is! BleConnected) return;
+      unawaited(
+        pushWeatherToClock(
+          context.read<BleRepository>(),
+          bleState.device,
+          context.read<SettingsBloc>().state,
+        ),
+      );
+    });
   }
 
   @override
@@ -93,6 +110,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _frameSubscription?.cancel();
+    _weatherTimer?.cancel();
     super.dispose();
   }
 
@@ -452,7 +470,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               previous.clockThemeLight != current.clockThemeLight ||
               previous.clockAccentIndex != current.clockAccentIndex ||
               previous.clockShowSeconds != current.clockShowSeconds ||
-              previous.clockShowDate != current.clockShowDate,
+              previous.clockShowDate != current.clockShowDate ||
+              previous.clockShowDayOfWeek != current.clockShowDayOfWeek ||
+              previous.clockDateFormat != current.clockDateFormat,
           listener: (context, state) async {
             final bleState = context.read<BleConnectionBloc>().state;
             if (bleState is! BleConnected) {
@@ -467,6 +487,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   use24h: state.is24HourTime,
                   showSeconds: state.clockShowSeconds,
                   showDate: state.clockShowDate,
+                  showDayOfWeek: state.clockShowDayOfWeek,
+                  dateFormat: state.clockDateFormat,
                   theme: state.clockThemeLight ? 1 : 0,
                   accent: state.clockAccentIndex,
                 ),
@@ -479,6 +501,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 type: AppSnackType.error,
               );
             }
+          },
+        ),
+        // Live-push weather the moment the user toggles it on/off or flips the
+        // unit, so the clock's corner updates without waiting for the next sync.
+        // Disconnected changes flush through the on-connect sync.
+        BlocListener<SettingsBloc, SettingsState>(
+          listenWhen: (previous, current) =>
+              previous.showWeather != current.showWeather ||
+              previous.weatherFahrenheit != current.weatherFahrenheit,
+          listener: (context, state) {
+            final bleState = context.read<BleConnectionBloc>().state;
+            if (bleState is! BleConnected) return;
+            unawaited(
+              pushWeatherToClock(
+                context.read<BleRepository>(),
+                bleState.device,
+                state,
+              ),
+            );
           },
         ),
         // Any alarm change auto-syncs to the clock: when connected, AlarmBloc

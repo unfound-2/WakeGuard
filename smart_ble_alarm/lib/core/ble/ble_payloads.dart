@@ -61,20 +61,46 @@ class BlePayloads {
 
   /// Clock-face display settings, command 0x06 → `[flags, theme, accent]`.
   ///
-  /// `flags` bit0 = 24-hour time, bit1 = show seconds, bit2 = show date.
-  /// `theme` 0 = dark, 1 = light. `accent` 0 = amber, 1 = blue, 2 = green,
-  /// 3 = violet. The firmware reads each byte under a `len >=` guard, so the
-  /// frame can grow later without breaking older clocks.
+  /// `flags` bit0 = 24-hour time, bit1 = show seconds, bit2 = show (calendar)
+  /// date, bit3 = show day-of-week, bits4-5 = date format (0 "MMM D", 1 "D MMM",
+  /// 2 "MM/DD/YY", 3 "YYYY-MM-DD"). `theme` 0 = dark, 1 = light. `accent` 0 =
+  /// amber, 1 = blue, 2 = green, 3 = violet. The firmware reads each byte under a
+  /// `len >=` guard and the day-of-week / date-format bits are additive within the
+  /// existing flags byte, so this stays compatible with older clocks (they ignore
+  /// the extra bits) and older app builds (they simply leave those bits clear).
   static List<int> clockDisplaySettings({
     required bool use24h,
     required bool showSeconds,
     required bool showDate,
+    required bool showDayOfWeek,
+    required int dateFormat,
     required int theme,
     required int accent,
   }) {
     final flags = (use24h ? 0x01 : 0) |
         (showSeconds ? 0x02 : 0) |
-        (showDate ? 0x04 : 0);
+        (showDate ? 0x04 : 0) |
+        (showDayOfWeek ? 0x08 : 0) |
+        ((dateFormat & 0x03) << 4);
     return [flags, theme & 0x01, accent & 0x03];
   }
+
+  /// Weather for the clock face, command 0x0C → `[temp, condition]`.
+  ///
+  /// The clock has no network, so the phone fetches weather and pushes it here.
+  /// `temp` is a SIGNED 8-bit whole degree in the user's chosen unit (the app
+  /// converts to °C or °F before sending; the clock just prints the number + a
+  /// degree ring, unit-agnostic). `condition` is a compact bucket the firmware
+  /// knows how to draw: 0 clear, 1 partly cloudy, 2 cloudy, 3 rain, 4 snow,
+  /// 5 thunder, 6 fog.
+  static List<int> weather({required int temp, required int conditionCode}) {
+    // Two's-complement low byte so -5 travels as 0xFB and the firmware's int8_t
+    // cast reads it back as -5.
+    final t = temp.clamp(-99, 99) & 0xFF;
+    return [t, conditionCode & 0x07];
+  }
+
+  /// Weather "hide" frame, command 0x0C → `[0, 0xFF]`. The 0xFF condition tells
+  /// the clock to blank its weather corner (the user turned weather off).
+  static List<int> weatherHidden() => [0, 0xFF];
 }

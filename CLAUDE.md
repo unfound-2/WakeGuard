@@ -57,13 +57,14 @@ Flutter code is clean-architecture layered under `smart_ble_alarm/lib/`:
   | 0x02 | ALARM_ADD (upsert) | **9 bytes**: `[id,hour,min,dayMask,qrRequired,snoozeCount,snoozeDur,volume,gradualWake]` |
   | 0x03 | ALARM_DEL | `[id]` |
   | 0x04 / 0x05 | SYNC_START / SYNC_END | (brackets a sync batch) |
-  | 0x06 | SETTINGS (display) | `[flags,theme,accent]` — flags bit0=24h, bit1=seconds, bit2=date; theme 0=dark/1=light; accent 0..3 (amber/blue/green/violet). Length-guarded; firmware runtime-applies + persists. (Was auto-dim/sleep, removed when the backlight became hardwired.) |
+  | 0x06 | SETTINGS (display) | `[flags,theme,accent]` — flags bit0=24h, bit1=seconds, bit2=showDate(calendar), bit3=showDayOfWeek, bits4-5=dateFormat (0 "MMM D"/1 "D MMM"/2 "MM/DD/YY"/3 "YYYY-MM-DD"); theme 0=dark/1=light; accent 0..3 (amber/blue/green/violet). Day-of-week + date-format bits are **additive within the existing flags byte** (older clocks/app builds ignore/clear them — no frame-length change, no EEPROM version bump). AM/PM is NOT on the date line: it's a small tag drawn beside the centred big time. Length-guarded; firmware runtime-applies + persists. (Was auto-dim/sleep, removed when the backlight became hardwired.) |
   | 0x07 | QR_KEY (store token) | `[id, token×8]` — per-slot dismissal token |
   | 0x09 | DISMISS | `[id, token×8]` — clock `memcmp`s vs stored token (0-token OK if `!ringSecured`) |
   | 0x0A / 0x0B | TIMER_SET / TIMER_STOP | timer control |
+  | 0x0C | WEATHER | `[temp(int8), condCode]` — clock has no network, so the phone fetches (Open-Meteo via IP geolocation) + pushes. `temp` is a signed whole degree in the user's unit (app converts; clock is unit-agnostic, prints number + a drawn degree ring). `condCode` 0..6 = clear/partly/cloudy/rain/snow/thunder/fog (firmware `drawWeatherIcon`); `condCode==0xFF` ⇒ hide the corner. Pushed after each sync + every 15 min (`pushWeatherToClock` in clock_sync). Additive; RAM-only on the clock (not persisted). |
   | 0x88 | RING_ACK (app→clock) | app confirms it saw 0x08 (stops rebroadcast) |
   - **Clock→app**: `0x08` NOTIFY_RING `[alarmId]` (rebroadcast until 0x88); `0x89` ACK_DISMISS (ring stopped);
-    `0x81..0x87,0x8A,0x8B` are ACKs echoing the matching command; `0xFF` CMD_ERROR `[errcode]`.
+    `0x81..0x87,0x8A,0x8B,0x8C` are ACKs echoing the matching command; `0xFF` CMD_ERROR `[errcode]`.
 - **0x02 is a length-guarded positional frame.** Firmware reads trailing bytes only under `len >=` guards;
   older firmware ignores extra trailing bytes. **Extend ONLY by a coordinated app+firmware change** (both
   sides + `Alarm.syncHash` fold) — never one side alone. Byte order and `_byte()` validation live in
@@ -155,6 +156,16 @@ Arduino: open the relevant `arduino/*/*.ino` in Arduino IDE, select the board, u
   print + the pointless backup **scanner** button); **ringing state now shows prominently on the Alarms-tab card**.
 - Also uncommitted/recent: banner-overlay fix (banners overlay content via Stack, don't extend past the status bar),
   Skip-pairing + Connect-a-Clock.
+- **Clock-face redesign + weather + app backgrounds (this session, app verified / firmware static-only)**: TFT face is
+  now **full-bleed** (no panel box), the "WakeGuard" text is a **drawn sunrise-W logo** (`drawLogo`, primitives — no
+  bitmap), the big time uses a **larger native font at 1×** (`TIME_FONT_PT`, default 24pt; step to 18/12 if the Uno
+  overflows 32 KB). New **weather corner** (top-right; `0x0C`, phone-pushed via `WeatherDatasource` = ipapi.co +
+  Open-Meteo, no new deps/permissions on iOS; Android got `INTERNET`). Display tab gained **Show Weather** + **°C/°F**.
+  Settings→Appearance gained an **app background picker** (Minimal/Aurora/Mesh/Waves) — `core/theme/app_background.dart`
+  drives the global `appBackgroundStyle` notifier that `GlassBackground` listens to; animated via CustomPainter, honours
+  reduced-motion. **White-screen fix**: periodic **display self-heal** (re-init+repaint every 5 min on the idle clock,
+  `DISPLAY_HEAL_MS`) + an optional **watchdog** (`ENABLE_WATCHDOG`, set 0 if a clone bootloader loops on reset).
+  ⚠️ Firmware not compiled locally — re-upload from the Arduino IDE and watch the flash line.
 - **Known hardware issue under investigation**: buzzer produced no sound after reflash + cleaning; firmware verified
   correct, so it points to hardware (active-vs-passive mismatch or wiring). Awaiting the 3 BuzzerTest results.
 

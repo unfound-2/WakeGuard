@@ -85,6 +85,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
 #include <EEPROM.h>
+#include <avr/wdt.h>
 
 // ---- Clock-face font -------------------------------------------------------
 // The old face scaled the built-in 5x7 bitmap font to size 5/6, so each "pixel"
@@ -98,12 +99,33 @@
 #define USE_CUSTOM_FONTS 1
 #if USE_CUSTOM_FONTS
   #include <Fonts/FreeSansBold12pt7b.h>
-  #define UI_FONT   (&FreeSansBold12pt7b)  // proportional, anti-aliased
-  #define SZ_TIME   2                       // ~40 px tall HH:MM
+  #define UI_FONT   (&FreeSansBold12pt7b)  // proportional, anti-aliased (labels/date/status)
   #define SZ_TEXT   1                       // labels / date / status
   #define SZ_HEAD   2                       // ring / timer headline
+
+  // --- Big clock time -------------------------------------------------------
+  // The old face drew the 12 pt font at size 2 (every glyph pixel doubled), which
+  // still looks blocky. Drawing a LARGER font at native size 1 is smooth instead.
+  // FreeSansBold24pt7b is the crispest but the heaviest on flash (~14 KB). If the
+  // Arduino IDE reports the sketch overflowing the Uno's 32256-byte program space
+  // on upload, step TIME_FONT_PT DOWN: 24 -> 18 -> 12 (12 falls back to the old
+  // doubled look but is tiny). Nothing else needs to change.
+  #define TIME_FONT_PT 24                   // 24 (crispest) | 18 (lighter) | 12 (fallback)
+  #if   TIME_FONT_PT == 24
+    #include <Fonts/FreeSansBold24pt7b.h>
+    #define TIME_FONT (&FreeSansBold24pt7b)
+    #define SZ_TIME   1
+  #elif TIME_FONT_PT == 18
+    #include <Fonts/FreeSansBold18pt7b.h>
+    #define TIME_FONT (&FreeSansBold18pt7b)
+    #define SZ_TIME   1
+  #else
+    #define TIME_FONT (&FreeSansBold12pt7b)
+    #define SZ_TIME   2
+  #endif
 #else
   #define UI_FONT   ((const GFXfont *)NULL) // built-in 5x7 bitmap
+  #define TIME_FONT ((const GFXfont *)NULL)
   #define SZ_TIME   4
   #define SZ_TEXT   2
   #define SZ_HEAD   3
@@ -139,6 +161,24 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 
 #define USE_24H_DISPLAY   1        // 1 = HH:MM:SS 24h, 0 = hh:mm:ss AM/PM
 #define TFT_ROTATION      1        // 1 or 3 = landscape 320x240; flip if upside down
+
+// ---- Display reliability ---------------------------------------------------
+// Symptom this addresses: "after a while the whole screen goes white and I have
+// to unplug/replug." A white panel while the sketch keeps running means the
+// ILI9341 lost its init state (a supply sag, or SPI-line noise through the
+// resistor dividers corrupted a control register) — the framebuffer is fine but
+// the controller config is gone. We can't reliably read the panel back over the
+// divider'd MISO to detect it, so instead we periodically re-init + repaint the
+// panel while it's just showing the clock. A healthy panel sees a brief repaint;
+// a white/garbled one recovers on its own, no power cycle. Raise this if the
+// periodic repaint is distracting; lower it to recover faster.
+#define DISPLAY_HEAL_MS   300000UL // re-init the TFT every 5 min on the idle clock face
+
+// Hardware watchdog: if loop() ever wedges (e.g. an SPI/UART deadlock) the AVR
+// auto-reboots after ~8 s and setup() re-inits everything. Genuine Uno R3 boards
+// (optiboot) handle this cleanly. If a particular board fails to BOOT after
+// flashing this (an old bootloader can loop on a watchdog reset), set to 0.
+#define ENABLE_WATCHDOG   1
 
 #define ENABLE_SNOOZE_BUTTON 1     // physical snooze button on D4 (ignored if absent)
 #define ENABLE_LDR           0     // ambient-light auto-dim on A0 (off by default)
@@ -197,6 +237,7 @@ static const uint8_t CMD_RING_ACK    = 0x88; // app -> clock: "I received your 0
 static const uint8_t CMD_DISMISS     = 0x09;
 static const uint8_t CMD_TIMER_SET   = 0x0A;
 static const uint8_t CMD_TIMER_STOP  = 0x0B; // app -> clock: cancel/silence the countdown timer
+static const uint8_t CMD_WEATHER     = 0x0C; // app -> clock: [tempInt8, condCode] (condCode 0xFF => hide)
 
 // Clock -> App responses / notifications
 static const uint8_t ACK_TIME_SYNC   = 0x81;
@@ -210,6 +251,7 @@ static const uint8_t NOTIFY_RING     = 0x08; // clock -> app: alarm started ring
 static const uint8_t ACK_DISMISS     = 0x89; // clock -> app: buzzer silenced / ring stopped
 static const uint8_t ACK_TIMER_SET   = 0x8A;
 static const uint8_t ACK_TIMER_STOP  = 0x8B; // clock -> app: timer cancelled / silenced
+static const uint8_t ACK_WEATHER     = 0x8C; // clock -> app: weather received
 static const uint8_t CMD_ERROR       = 0xFF;
 
 // Error sub-codes (payload byte of a 0xFF frame)
@@ -254,9 +296,19 @@ uint32_t lastFiredMinute[MAX_ALARMS];
 // re-pushes them on every sync; they persist so the face looks right offline.
 bool     disp24h     = USE_24H_DISPLAY;  // 24-hour vs 12-hour clock face
 bool     dispSeconds = false;            // show seconds in the big time
-bool     dispDate    = true;             // show the day/date line
+bool     dispDate    = true;             // show the calendar date on the info line
+bool     dispDow     = true;             // show the day-of-week on the info line
+uint8_t  dispDateFmt = 0;                // date format 0..3 (see buildDateOnly)
 uint8_t  dispTheme   = 0;                // 0 = dark, 1 = light
 uint8_t  dispAccent  = 0;                // accent preset index (0..3)
+
+// Weather (from 0x0C WEATHER, pushed by the phone since the clock has no network).
+// RAM-only / not persisted: it's stale within an hour and the app re-pushes it on
+// connect and every ~15 min. condCode is a compact bucket 0..6 (see drawWeatherIcon);
+// 0xFF over the wire means "hide the weather" (user turned it off in the app).
+bool     haveWeather = false;
+int8_t   wxTemp      = 0;                // temperature in the app's chosen unit (°C or °F)
+uint8_t  wxCode      = 0;                // condition bucket 0..6
 
 // ---- Timekeeping engine ----------------------------------------------------
 uint32_t currentEpoch   = 0;      // seconds since Unix epoch (UTC), software-kept
@@ -327,7 +379,8 @@ SoftwareSerial bleSerial(PIN_HM10_TXD, PIN_HM10_RXD); // (rxPin, txPin)
 // first function, because the Arduino build inserts auto-generated prototypes
 // just before the first function — a struct defined lower down would not yet be
 // visible to those prototypes.
-struct LocalTime { uint8_t hh; uint8_t mm; uint8_t ss; uint8_t dow; };
+struct LocalTime { uint8_t hh; uint8_t mm; uint8_t ss; uint8_t dow;
+                   uint16_t year; uint8_t month; uint8_t mday; };
 enum BuzzMode { BUZZ_OFF, BUZZ_ALARM, BUZZ_TIMER };
 void buzzerSetMode(BuzzMode m);
 void applyBuzzStep();
@@ -370,7 +423,8 @@ static const int    EE_ALARMS_ADDR  = 0x0A;
 void eepromSaveSettings() {
   EEPROM.update(EE_MAGIC_ADDR, EE_MAGIC);
   EEPROM.update(EE_VERSION_ADDR, EE_VERSION);
-  uint8_t flags = (disp24h ? 1 : 0) | (dispSeconds ? 2 : 0) | (dispDate ? 4 : 0);
+  uint8_t flags = (disp24h ? 1 : 0) | (dispSeconds ? 2 : 0) | (dispDate ? 4 : 0)
+                | (dispDow ? 8 : 0) | ((dispDateFmt & 0x03) << 4);
   EEPROM.update(EE_DISP_ADDR + 0, flags);
   EEPROM.update(EE_DISP_ADDR + 1, dispTheme);
   EEPROM.update(EE_DISP_ADDR + 2, dispAccent);
@@ -436,6 +490,8 @@ void eepromLoadAll() {
     disp24h     = flags & 0x01;
     dispSeconds = flags & 0x02;
     dispDate    = flags & 0x04;
+    dispDow     = flags & 0x08;
+    dispDateFmt = (flags >> 4) & 0x03;
   }
   uint8_t th = EEPROM.read(EE_DISP_ADDR + 1); if (th <= 1) dispTheme  = th;
   uint8_t ac = EEPROM.read(EE_DISP_ADDR + 2); if (ac <= 3) dispAccent = ac;
@@ -576,7 +632,7 @@ void applyTimeSync(uint32_t epoch) {
 // Decompose the software clock into LOCAL date/time parts. (LocalTime is
 // declared up in the forward-declaration block so prototypes can see it.)
 LocalTime localNow() {
-  LocalTime t = {0, 0, 0, 0};
+  LocalTime t = {0, 0, 0, 0, 1970, 1, 1};
   int64_t local = (int64_t)currentEpoch + (int64_t)TIMEZONE_OFFSET_SECONDS;
   if (local < 0) local = 0;
   uint32_t secOfDay = (uint32_t)(local % 86400);
@@ -585,6 +641,20 @@ LocalTime localNow() {
   t.mm  = (secOfDay % 3600) / 60;
   t.ss  = secOfDay % 60;
   t.dow = (uint8_t)((days + 4) % 7); // Unix day 0 (1970-01-01) was a Thursday
+  // Civil date from days-since-epoch (Howard Hinnant's algorithm, integer-only —
+  // no time.h/gmtime, which would pull in bulky lib code on the Uno).
+  uint32_t z   = days + 719468;              // shift epoch to 0000-03-01
+  uint32_t era = z / 146097;
+  uint32_t doe = z - era * 146097;                                   // [0,146096]
+  uint32_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0,399]
+  uint32_t y   = yoe + era * 400;
+  uint32_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);            // [0,365]
+  uint32_t mp  = (5 * doy + 2) / 153;                                // [0,11]
+  uint8_t  d   = (uint8_t)(doy - (153 * mp + 2) / 5 + 1);            // [1,31]
+  uint8_t  m   = (uint8_t)(mp < 10 ? mp + 3 : mp - 9);               // [1,12]
+  t.mday  = d;
+  t.month = m;
+  t.year  = (uint16_t)(y + (m <= 2 ? 1 : 0));
   return t;
 }
 
@@ -731,12 +801,16 @@ void handleFrame(uint8_t *body, uint8_t n) {
       sendAck(ACK_SYNC_END);
       break;
     case CMD_SETTINGS: {                  // [flags, theme, accent] (length-guarded)
-      // flags: bit0 24h, bit1 seconds, bit2 date. Older/short payloads leave the
-      // trailing fields unchanged, so this stays forward/backward compatible.
+      // flags: bit0 24h, bit1 seconds, bit2 date, bit3 day-of-week, bits4-5 date
+      // format (0..3). Older/short payloads leave the trailing fields unchanged,
+      // and older phones simply never set the new bits, so this stays
+      // forward/backward compatible.
       if (len >= 1) {
         disp24h     = data[0] & 0x01;
         dispSeconds = data[0] & 0x02;
         dispDate    = data[0] & 0x04;
+        dispDow     = data[0] & 0x08;
+        dispDateFmt = (data[0] >> 4) & 0x03;
       }
       if (len >= 2 && data[1] <= 1) dispTheme  = data[1];
       if (len >= 3 && data[2] <= 3) dispAccent = data[2];
@@ -771,6 +845,20 @@ void handleFrame(uint8_t *body, uint8_t n) {
     case CMD_TIMER_STOP: {                 // (no payload) cancel a running or finished timer
       stopTimer();
       sendAck(ACK_TIMER_STOP);
+      break;
+    }
+    case CMD_WEATHER: {                    // [tempInt8, condCode]  (condCode 0xFF => hide)
+      if (len >= 2) {
+        if (data[1] == 0xFF) {
+          haveWeather = false;             // app disabled weather; blank the corner
+        } else {
+          wxTemp = (int8_t)data[0];
+          wxCode = (data[1] <= 6) ? data[1] : 2; // clamp to a known bucket (2 = cloudy)
+          haveWeather = true;
+        }
+        scrMode = SCR_NONE;                // force a repaint so the corner updates cleanly
+      }
+      sendAck(ACK_WEATHER);
       break;
     }
     case CMD_RING_ACK:                     // app confirmed it saw the ring
@@ -1201,6 +1289,8 @@ void applyTheme() {
 
 const char *DOW_FULL[7] = {"SUNDAY","MONDAY","TUESDAY","WEDNESDAY",
                            "THURSDAY","FRIDAY","SATURDAY"};
+const char *MON_ABBR[12] = {"JAN","FEB","MAR","APR","MAY","JUN",
+                            "JUL","AUG","SEP","OCT","NOV","DEC"};
 
 bool linkUp() { return lastFrameMs != 0 && (millis() - lastFrameMs) < LINK_TIMEOUT_MS; }
 
@@ -1215,11 +1305,11 @@ bool linkUp() { return lastFrameMs != 0 && (millis() - lastFrameMs) < LINK_TIMEO
 // repainted by erasing that box (fill with the current panel colour) and drawing
 // the new string. Only changed slots touch the SPI bus per frame, so the
 // sync-starvation guard in renderTft still holds.
-TextSlot sTitle, sTime, sDate, sInfo;         // clock face
+TextSlot sTitle, sTime, sMeridiem, sDate, sInfo;   // clock face (sMeridiem = AM/PM)
 TextSlot sRingHead, sRingTime, sRingHint;     // ring
 TextSlot sTdHead, sTd2;                        // timer-done
 int8_t   pvLink = -1;                          // last link-dot state (-1 = unknown)
-uint16_t curPanel = DARK_PANEL;                // bg colour behind text this mode
+uint16_t curPanel = DARK_BG;                   // bg colour behind text this mode (full-bleed)
 
 // The panel is inset 8 px on every side (320x240 landscape -> 304x224 card).
 #define PANEL_X 8
@@ -1233,7 +1323,8 @@ void resetSlot(TextSlot &s) { s.prev[0] = '\x01'; s.prev[1] = '\0'; s.bh = 0; }
 // Invalidate every slot so the next render repaints in full (used right after a
 // mode change repaints the whole panel, which already erased the old text).
 void forceRedrawAll() {
-  resetSlot(sTitle); resetSlot(sTime); resetSlot(sDate); resetSlot(sInfo);
+  resetSlot(sTitle); resetSlot(sTime); resetSlot(sMeridiem);
+  resetSlot(sDate); resetSlot(sInfo);
   resetSlot(sRingHead); resetSlot(sRingTime); resetSlot(sRingHint);
   resetSlot(sTdHead); resetSlot(sTd2);
   pvLink = -1;
@@ -1325,11 +1416,40 @@ void buildHHMM(char *out) {
   }
 }
 
+// The calendar date only, in the user-chosen format (0..3). Kept ASCII-only so
+// it renders in the custom GFX fonts (which cover 0x20..0x7E).
+void buildDateOnly(char *out, LocalTime t) {
+  switch (dispDateFmt) {
+    case 1:  snprintf(out, 16, "%u %s", t.mday, MON_ABBR[t.month - 1]); break; // 8 JUL
+    case 2:  snprintf(out, 16, "%02u/%02u/%02u",
+                      t.month, t.mday, (unsigned)(t.year % 100));       break; // 07/08/26
+    case 3:  snprintf(out, 16, "%u-%02u-%02u", t.year, t.month, t.mday); break; // 2026-07-08
+    case 0:
+    default: snprintf(out, 16, "%s %u", MON_ABBR[t.month - 1], t.mday); break; // JUL 8
+  }
+}
+
+// The info line under the time: an optional day-of-week and/or calendar date,
+// each independently toggled by the app (0x06 flags bit3 / bit2). AM/PM no longer
+// lives here — it now rides beside the big time (see renderClock). When both are
+// on they're separated by a gap: "WEDNESDAY   JUL 8".
 void buildDateStr(char *out) {
-  if (!haveTime) { strcpy(out, "sync needed"); return; }
+  out[0] = '\0';
+  if (!haveTime) { if (dispDate || dispDow) strcpy(out, "sync needed"); return; }
   LocalTime t = localNow();
-  if (disp24h) snprintf(out, 15, "%s", DOW_FULL[t.dow]);
-  else snprintf(out, 15, "%s %s", DOW_FULL[t.dow], (t.hh < 12) ? "AM" : "PM");
+  if (dispDow) {
+    snprintf(out, 28, "%s", DOW_FULL[t.dow]);
+  }
+  if (dispDate) {
+    char db[16];
+    buildDateOnly(db, t);
+    if (dispDow) {
+      size_t n = strlen(out);
+      snprintf(out + n, 28 - n, "   %s", db);   // gap separates the two parts
+    } else {
+      snprintf(out, 28, "%s", db);
+    }
+  }
 }
 
 // Bottom status line: running countdown timer, else next alarm, else a hint or
@@ -1362,28 +1482,176 @@ void drawLinkDot() {
   int8_t up = linkUp() ? 1 : 0;
   if (up == pvLink) return;
   pvLink = up;
+  // Bottom-right corner: the top-right is now the weather corner. Small + quiet.
   uint16_t c = up ? COL_LINK_ON : COL_LINK_OFF;
-  tft.fillCircle(286, 34, 6, c);
-  tft.drawCircle(286, 34, 8, up ? COL_LINK_ON : gStroke);   // faint halo
+  tft.fillCircle(306, 228, 4, c);
+  tft.drawCircle(306, 228, 6, up ? COL_LINK_ON : gStroke);   // faint halo
+}
+
+// ---- Brand logo (drawn, not a bitmap) --------------------------------------
+// The sunrise-over-"W" WakeGuard mark, rendered from primitives so it costs no
+// flash (a full-colour bitmap would be kilobytes). Sun arc + rays in the accent
+// colour, the "W" horizon in the time colour. `cx` is the horizontal centre;
+// `topY` is the top of the rays. Compact (~52x38) for the clock-face corner.
+void drawLogo(int16_t cx, int16_t topY, uint16_t sunCol, uint16_t wCol) {
+  int16_t r      = 12;                 // sun radius
+  int16_t sunCy  = topY + 26;          // sun/horizon baseline
+  // Sun: a thick top semicircle (three stacked arcs = ~3 px stroke). Corner mask
+  // 0x1|0x2 = top-left + top-right quadrants.
+  for (int8_t k = 0; k < 3; k++) {
+    tft.drawCircleHelper(cx, sunCy, r - k, 0x1 | 0x2, sunCol);
+  }
+  // Rays: five short spokes around the top of the sun.
+  const int8_t rayDx[5] = { -13, -8, 0, 8, 13 };
+  const int8_t rayDy[5] = {  -2, -9, -12, -9, -2 };
+  for (int8_t i = 0; i < 5; i++) {
+    int16_t ax = cx + rayDx[i], ay = sunCy + rayDy[i] - r;   // inner end (just off the arc)
+    int16_t bx = cx + rayDx[i] + rayDx[i] / 3;
+    int16_t by = sunCy + (rayDy[i] - 5) - r;                 // outer end
+    tft.drawLine(ax, ay, bx, by, sunCol);
+    tft.drawLine(ax + 1, ay, bx + 1, by, sunCol);            // 2 px stroke
+  }
+  // "W" horizon under the sun: a 4-segment zigzag, 2 px stroke.
+  int16_t wy = sunCy + 4, wh = 12, ww = 22;
+  int16_t p0x = cx - ww, p0y = wy;
+  int16_t p1x = cx - ww / 2, p1y = wy + wh;
+  int16_t p2x = cx, p2y = wy + 2;
+  int16_t p3x = cx + ww / 2, p3y = wy + wh;
+  int16_t p4x = cx + ww, p4y = wy;
+  for (int8_t o = 0; o < 2; o++) {     // double-stroke for weight
+    tft.drawLine(p0x, p0y + o, p1x, p1y + o, wCol);
+    tft.drawLine(p1x, p1y + o, p2x, p2y + o, wCol);
+    tft.drawLine(p2x, p2y + o, p3x, p3y + o, wCol);
+    tft.drawLine(p3x, p3y + o, p4x, p4y + o, wCol);
+  }
+}
+
+// ---- Weather corner --------------------------------------------------------
+// A compact condition icon (~18 px) drawn from primitives. `code` buckets 0..6:
+// 0 clear, 1 partly cloudy, 2 cloudy, 3 rain, 4 snow, 5 thunder, 6 fog. The app
+// maps Open-Meteo's WMO codes down to these so the firmware stays tiny.
+void drawWeatherIcon(int16_t x, int16_t y, uint8_t code, uint16_t sunCol,
+                     uint16_t cloudCol, uint16_t accentCol) {
+  // Helper geometry: a small cloud is two lobes + a base bar.
+  // (x,y) is the icon's top-left; the 18x16 box grows down-right.
+  int16_t cx = x + 9, cy = y + 8;
+  switch (code) {
+    case 0: { // clear: sun with rays (integer offsets — no float/trig, saves flash)
+      tft.fillCircle(cx, cy, 5, sunCol);
+      static const int8_t ux[8] = { 8, 6, 0, -6, -8, -6, 0, 6 };  // outer ray ends
+      static const int8_t uy[8] = { 0, 6, 8, 6, 0, -6, -8, -6 };  // (x8 dirs, r≈8)
+      for (int8_t a = 0; a < 8; a++) {
+        tft.drawLine(cx + (ux[a] * 6) / 8, cy + (uy[a] * 6) / 8,   // inner ~r6
+                     cx + ux[a], cy + uy[a], sunCol);              // outer ~r8
+      }
+      break;
+    }
+    case 1: { // partly cloudy: small sun peeking behind a cloud
+      tft.fillCircle(x + 6, y + 6, 4, sunCol);
+      tft.fillCircle(x + 8,  y + 11, 4, cloudCol);
+      tft.fillCircle(x + 13, y + 10, 5, cloudCol);
+      tft.fillRoundRect(x + 6, y + 11, 11, 5, 2, cloudCol);
+      break;
+    }
+    case 3:   // rain
+    case 4:   // snow
+    case 5:   // thunder
+    case 6:   // fog (falls through to a plain cloud, then adds its accent below)
+    case 2: { // cloudy: a plain cloud
+      tft.fillCircle(x + 6,  y + 8, 4, cloudCol);
+      tft.fillCircle(x + 12, y + 7, 5, cloudCol);
+      tft.fillRoundRect(x + 4, y + 8, 12, 5, 2, cloudCol);
+      if (code == 3) {                             // rain streaks
+        for (int8_t i = 0; i < 3; i++)
+          tft.drawLine(x + 5 + i * 4, y + 14, x + 4 + i * 4, y + 17, accentCol);
+      } else if (code == 4) {                      // snow dots
+        for (int8_t i = 0; i < 3; i++)
+          tft.fillCircle(x + 6 + i * 4, y + 15, 1, accentCol);
+      } else if (code == 5) {                      // lightning bolt
+        tft.drawLine(x + 10, y + 13, x + 7,  y + 17, sunCol);
+        tft.drawLine(x + 7,  y + 17, x + 11, y + 16, sunCol);
+      } else if (code == 6) {                      // fog lines
+        for (int8_t i = 0; i < 3; i++)
+          tft.drawFastHLine(x + 3, y + 13 + i * 2, 13, accentCol);
+      }
+      break;
+    }
+    default: break;
+  }
+}
+
+TextSlot sWx;                                       // weather temperature text box
+int8_t   pvWxShown = -2;                            // last drawn code (-1 => "hidden")
+
+// Draw the weather corner top-right: [icon]  NN° . Right-anchored so the degree
+// mark hugs the edge. Redraws only when the temperature or condition changes.
+void drawWeather() {
+  int8_t codeNow = haveWeather ? (int8_t)wxCode : -1;
+  char buf[6];
+  if (haveWeather) snprintf(buf, sizeof(buf), "%d", (int)wxTemp);
+  else             buf[0] = '\0';
+  if (codeNow == pvWxShown && strcmp(buf, sWx.prev) == 0) return;
+
+  // Erase the whole corner (icon + old text box) before repainting.
+  tft.fillRect(224, 4, 96, 32, curPanel);
+  pvWxShown = codeNow;
+  strcpy(sWx.prev, buf);
+  if (!haveWeather) { sWx.bh = 0; return; }
+
+  // Temperature text, right-anchored to x=300 (leaving room for the ° mark).
+  tft.setFont(UI_FONT);
+  tft.setTextSize(SZ_TEXT);
+  tft.setTextColor(gText);
+  int16_t bx, by; uint16_t bw, bh;
+  tft.getTextBounds(buf, 0, 0, &bx, &by, &bw, &bh);
+  int16_t rightEdge = 300;
+  int16_t left = rightEdge - (int16_t)bw;
+  tft.setCursor(left - bx, 12 - by);
+  tft.print(buf);
+  // Degree mark: a small ring just past the number (the font has no '°' glyph).
+  tft.drawCircle(rightEdge + 6, 12, 2, gText);
+  // Condition icon to the left of the number.
+  drawWeatherIcon(left - 24, 6, wxCode, gAccent, gText, gAccent);
 }
 
 // ---- Per-mode renderers (each only repaints slots that changed) ------------
 void renderClock() {
   char buf[28];
 
-  drawSlot(sTitle, 24, 22, UI_FONT, SZ_TEXT, gAccent, "WakeGuard", false);
+  // The brand logo (top-left) and background are static chrome painted once by
+  // drawPanel() on the mode change, so they're not redrawn here every frame.
   drawLinkDot();
+  drawWeather();      // top-right: condition icon + temperature (diffs internally)
+
+  bool infoLine = dispDate || dispDow;   // day-of-week and/or date shown below
+  int16_t timeY = infoLine ? 86 : 100;   // nudge down when the line is hidden
 
   buildHHMM(buf);
-  // With the date hidden, nudge the time down so it stays visually centred.
-  drawSlot(sTime, 160, dispDate ? 86 : 100, UI_FONT, SZ_TIME, gTime, buf, true);
+  // Big, crisp time in the boldest style — the primary element of the face. The
+  // HH:MM digits stay centred on x=160; remember whether the box moved so the
+  // AM/PM tag can be re-anchored to the new right edge only when it actually
+  // shifts (a proportional digit changing width, or 9:59 -> 10:00).
+  int16_t oldBx = sTime.bx; uint16_t oldBw = sTime.bw;
+  drawSlot(sTime, 160, timeY, TIME_FONT, SZ_TIME, gTime, buf, true);
+  bool timeBoxMoved = (sTime.bx != oldBx) || (sTime.bw != oldBw);
 
-  // Show or hide the day/date line per the "show date" toggle; "" erases it.
-  if (dispDate) buildDateStr(buf); else buf[0] = '\0';
-  drawSlot(sDate, 160, 150, UI_FONT, SZ_TEXT, gText, buf, true);
+  // AM/PM: a smaller tag hugging the right of the centred time (12-hour only, so
+  // the time itself stays centred). Bottom-aligned to the big digits.
+  char mer[3];
+  if (!disp24h && haveTime) strcpy(mer, (localNow().hh < 12) ? "AM" : "PM");
+  else                      mer[0] = '\0';
+  if (timeBoxMoved) resetSlot(sMeridiem);          // right edge moved: force reflow
+  int16_t merX = sTime.bh ? (sTime.bx + (int16_t)sTime.bw + 6) : 200;
+  int16_t merY = sTime.bh ? (sTime.by + (int16_t)sTime.bh - 18) : timeY;
+  drawSlot(sMeridiem, merX, merY, UI_FONT, SZ_TEXT, gMuted, mer, false);
+
+  // Day-of-week and/or calendar date, each independently toggled; "" erases it.
+  // Muted + smaller than the time so the hierarchy reads clearly.
+  if (infoLine) buildDateStr(buf); else buf[0] = '\0';
+  drawSlot(sDate, 160, 152, UI_FONT, SZ_TEXT, gMuted, buf, true);
 
   buildInfoStr(buf);
-  drawSlot(sInfo, 20, 196, UI_FONT, SZ_TEXT, gAccent, buf, false);
+  drawSlot(sInfo, 20, 200, UI_FONT, SZ_TEXT, gAccent, buf, false);
 }
 
 void renderRing(uint32_t nowMs) {
@@ -1399,7 +1667,7 @@ void renderRing(uint32_t nowMs) {
     uint8_t h12 = ringHour % 12; if (h12 == 0) h12 = 12;
     snprintf(ts, 8, "%u:%02u%s", h12, ringMinute, (ringHour < 12) ? "a" : "p");
   }
-  drawSlot(sRingTime, 160, 104, UI_FONT, SZ_TIME, gTime, ts, true);
+  drawSlot(sRingTime, 160, 104, TIME_FONT, SZ_TIME, gTime, ts, true);
 
   drawSlot(sRingHint, 160, 176, UI_FONT, SZ_TEXT, gText,
            ringSecured ? "Dismiss in the app" : "Press button to stop", true);
@@ -1409,24 +1677,20 @@ void renderTimerDone(uint32_t nowMs) {
   bool on = ((nowMs / 500) % 2) == 0;
   drawSlot(sTdHead, 160, 62, UI_FONT, SZ_HEAD, gAccent, on ? "TIMER" : "",
            true);
-  drawSlot(sTd2, 160, 130, UI_FONT, SZ_TIME, gTime, "Time's up!", true);
+  // "Time's up!" is a phrase, not digits — keep it on the proportional UI font at
+  // headline size (the big TIME_FONT is tuned for the HH:MM glyphs).
+  drawSlot(sTd2, 160, 130, UI_FONT, SZ_HEAD, gTime, "Time's up!", true);
 }
 
-// Paint the full "glass" backdrop: near-black field, a raised rounded panel in
-// `panelCol`, a hairline border, and a short lighter specular edge along the top
-// so the panel reads as a translucent pane of glass. Drawn ONCE per mode change
-// (never per frame) so its ~250ms of SPI traffic can't starve the BLE RX — the
-// per-frame path only repaints changed text slots. `clockChrome` adds the amber
-// accent underline beneath the "WakeGuard" title on the clock face.
-void drawPanel(uint16_t panelCol, bool clockChrome) {
-  tft.fillScreen(gBg);
-  tft.fillRoundRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, PANEL_R, panelCol);
-  tft.drawRoundRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, PANEL_R, gStroke);
-  // Specular highlight: a soft light streak just inside the top edge.
-  tft.drawFastHLine(PANEL_X + 44, PANEL_Y + 3, PANEL_W - 88, gHilite);
-  tft.drawFastHLine(PANEL_X + 70, PANEL_Y + 4, PANEL_W - 140, gHilite);
+// Paint the full-bleed backdrop: the whole screen filled with `bgCol` (no floating
+// box/card any more — the face sits directly on the background). Drawn ONCE per
+// mode change (never per frame) so its ~150ms of SPI traffic can't starve the BLE
+// RX — the per-frame path only repaints changed text slots. `clockChrome` draws
+// the brand logo in the top-left of the clock face.
+void drawPanel(uint16_t bgCol, bool clockChrome) {
+  tft.fillScreen(bgCol);
   if (clockChrome) {
-    tft.fillRect(24, 47, 84, 3, gAccent);   // accent bar under the title
+    drawLogo(32, 12, gAccent, gTime);       // sunrise-W mark, top-left
   }
 }
 
@@ -1447,16 +1711,32 @@ void renderTft() {
   // instant it ends; serviceSyncFlush() force-ends a stuck sync after SYNC_MAX_MS.
   if (syncing) return;
 
+  // Display self-heal: periodically re-init + repaint the panel while it's just
+  // showing the clock, so a silently-corrupted (white/garbled) panel recovers on
+  // its own without a power cycle. Skipped during ring/timer so an alarm screen
+  // never blinks. See DISPLAY_HEAL_MS.
+  static uint32_t lastHealMs = 0;
+  if (lastHealMs == 0) lastHealMs = nowMs;
+  if (scrMode == SCR_CLOCK && (uint32_t)(nowMs - lastHealMs) >= DISPLAY_HEAL_MS) {
+    lastHealMs = nowMs;
+    tft.begin();                    // resend the ILI9341 init sequence
+    tft.setRotation(TFT_ROTATION);
+    scrMode = SCR_NONE;             // force the full repaint below
+  }
+
   ScreenMode want;
-  if (ringActive)     want = SCR_RING;           // ring/timer take the whole panel
+  if (ringActive)     want = SCR_RING;           // ring/timer take the whole screen
   else if (timerDone) want = SCR_TIMER_DONE;
   else                want = SCR_CLOCK;
 
-  if (want != scrMode) {          // mode change: repaint the panel, force redraw
+  if (want != scrMode) {          // mode change: repaint the screen, force redraw
     scrMode = want;
-    curPanel = (want == SCR_RING) ? gPanelAlt : gPanel;
+    // Full-bleed: the erase colour behind text is the background itself (ring mode
+    // floods the whole screen red so the alert reads without a box).
+    curPanel = (want == SCR_RING) ? gPanelAlt : gBg;
     drawPanel(curPanel, want == SCR_CLOCK);
     forceRedrawAll();
+    pvWxShown = -2;               // force the weather corner to redraw after a repaint
   }
 
   switch (scrMode) {
@@ -1540,6 +1820,11 @@ void bootSelfTestChime() {
 }
 
 void setup() {
+  // Clear any leftover watchdog state from a prior WDT reset before we re-arm it,
+  // so a genuine Uno never loops on the reset flag. (Harmless if WDT is disabled.)
+  MCUSR = 0;
+  wdt_disable();
+
   soundInit();          // configure D9 (OC1A) for PWM audio + build the decay curve
 #if ENABLE_SNOOZE_BUTTON
   pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -1561,16 +1846,12 @@ void setup() {
 
   lastMicros = micros();
 
-  // Splash: the same glass panel the clock face uses, with centred title text.
-  drawPanel(gPanel, false);
+  // Splash: full-bleed background with the brand logo centred + a small caption.
+  drawPanel(gBg, false);
+  drawLogo(160, 74, gAccent, gTime);           // centred, larger placement
   {
     int16_t bx, by; uint16_t bw, bh;
     tft.setFont(UI_FONT);
-    tft.setTextSize(SZ_TIME);
-    tft.setTextColor(gTime);
-    tft.getTextBounds("WakeGuard", 0, 0, &bx, &by, &bw, &bh);
-    tft.setCursor(160 - (int16_t)bw / 2 - bx, 96 - by);
-    tft.print("WakeGuard");
     tft.setTextSize(SZ_TEXT);
     tft.setTextColor(gMuted);
     tft.getTextBounds("clock ready", 0, 0, &bx, &by, &bw, &bh);
@@ -1580,9 +1861,19 @@ void setup() {
   scrMode = SCR_NONE;      // make the first renderTft() lay out a fresh screen
 
   bootSelfTestChime();  // audible proof the speaker + PWM path works at power-on
+
+#if ENABLE_WATCHDOG
+  // Arm the watchdog now that the slow one-time boot work (BLE rename, self-test
+  // chime) is done. loop() pets it every pass; if it ever wedges for ~8 s the AVR
+  // reboots and setup() re-inits the panel/BLE/clock.
+  wdt_enable(WDTO_8S);
+#endif
 }
 
 void loop() {
+#if ENABLE_WATCHDOG
+  wdt_reset();      // 0. pet the watchdog — loop is non-blocking, so this is frequent
+#endif
   pumpBle();        // 1. drain the HM-10 serial, decode + dispatch frames
   tickClock();      // 2. advance the software clock
   checkAlarms();    // 3. fire any alarm due this minute

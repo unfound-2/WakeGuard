@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Fetch weather (ipapi.co geolocation + Open-Meteo) to push to the clock -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Backup local-notification alarms (flutter_local_notifications) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />

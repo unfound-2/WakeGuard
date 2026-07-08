@@ -36,6 +36,8 @@ class DisplayTab extends StatelessWidget {
               int? accentIndex,
               bool? showSeconds,
               bool? showDate,
+              bool? showDayOfWeek,
+              int? dateFormat,
             }) {
               context.read<SettingsBloc>().add(
                 UpdateClockDisplayEvent(
@@ -43,6 +45,8 @@ class DisplayTab extends StatelessWidget {
                   accentIndex: accentIndex ?? settings.clockAccentIndex,
                   showSeconds: showSeconds ?? settings.clockShowSeconds,
                   showDate: showDate ?? settings.clockShowDate,
+                  showDayOfWeek: showDayOfWeek ?? settings.clockShowDayOfWeek,
+                  dateFormat: dateFormat ?? settings.clockDateFormat,
                 ),
               );
             }
@@ -72,6 +76,8 @@ class DisplayTab extends StatelessWidget {
                 _accentSection(context, settings, update),
                 const SizedBox(height: 24),
                 _optionsSection(context, settings, update),
+                const SizedBox(height: 24),
+                _weatherSection(context, settings),
               ],
             );
           },
@@ -128,6 +134,8 @@ class DisplayTab extends StatelessWidget {
       int? accentIndex,
       bool? showSeconds,
       bool? showDate,
+      bool? showDayOfWeek,
+      int? dateFormat,
     }) update,
   ) {
     return WakeSection(
@@ -217,6 +225,8 @@ class DisplayTab extends StatelessWidget {
       int? accentIndex,
       bool? showSeconds,
       bool? showDate,
+      bool? showDayOfWeek,
+      int? dateFormat,
     }) update,
   ) {
     return WakeSection(
@@ -306,6 +316,8 @@ class DisplayTab extends StatelessWidget {
       int? accentIndex,
       bool? showSeconds,
       bool? showDate,
+      bool? showDayOfWeek,
+      int? dateFormat,
     }) update,
   ) {
     return WakeSection(
@@ -338,17 +350,196 @@ class DisplayTab extends StatelessWidget {
             ),
             Divider(height: 1, color: Theme.of(context).dividerColor),
             WakeSettingsRow(
+              icon: Icons.today_rounded,
+              title: 'Show Day of Week',
+              subtitle: 'e.g. “Wednesday” under the time',
+              trailing: Switch(
+                value: settings.clockShowDayOfWeek,
+                onChanged: (v) => update(showDayOfWeek: v),
+              ),
+            ),
+            Divider(height: 1, color: Theme.of(context).dividerColor),
+            WakeSettingsRow(
               icon: Icons.calendar_today_rounded,
               title: 'Show Date',
-              subtitle: 'Display the day and date under the time',
+              subtitle: 'Display the calendar date under the time',
               trailing: Switch(
                 value: settings.clockShowDate,
                 onChanged: (v) => update(showDate: v),
               ),
             ),
+            if (settings.clockShowDate) ...[
+              Divider(height: 1, color: Theme.of(context).dividerColor),
+              _dateFormatPicker(context, settings, update),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  // Example labels MUST line up with the firmware's dispDateFmt / the app's
+  // clockDateFormat index (0..3). Kept as short samples so the choice is obvious.
+  static const List<String> _dateFormatSamples = [
+    'Jul 8', // 0  MMM D
+    '8 Jul', // 1  D MMM
+    '07/08/26', // 2  MM/DD/YY
+    '2026-07-08', // 3  YYYY-MM-DD
+  ];
+
+  Widget _dateFormatPicker(
+    BuildContext context,
+    SettingsState settings,
+    void Function({
+      bool? themeLight,
+      int? accentIndex,
+      bool? showSeconds,
+      bool? showDate,
+      bool? showDayOfWeek,
+      int? dateFormat,
+    }) update,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 12, 4, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Date format',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (int i = 0; i < _dateFormatSamples.length; i++)
+                _formatChip(
+                  context,
+                  label: _dateFormatSamples[i],
+                  selected: settings.clockDateFormat == i,
+                  onTap: () => update(dateFormat: i),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _formatChip(
+    BuildContext context, {
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: selected
+              ? scheme.primary.withValues(alpha: 0.16)
+              : Colors.transparent,
+          border: Border.all(
+            color: selected ? scheme.primary : scheme.outlineVariant,
+            width: 1.4,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            color: selected ? scheme.primary : scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _weatherSection(BuildContext context, SettingsState settings) {
+    final bloc = context.read<SettingsBloc>();
+    return WakeSection(
+      title: 'Weather',
+      subtitle:
+          'Your phone fetches local conditions and shows them top-right on the clock.',
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        shadows: wakeCardShadow(context),
+        child: Column(
+          children: [
+            WakeSettingsRow(
+              icon: Icons.wb_sunny_rounded,
+              title: 'Show Weather',
+              subtitle: 'Temperature + a condition icon on the clock face',
+              trailing: Switch(
+                value: settings.showWeather,
+                onChanged: (v) => bloc.add(ToggleShowWeatherEvent(v)),
+              ),
+            ),
+            if (settings.showWeather) ...[
+              Divider(height: 1, color: Theme.of(context).dividerColor),
+              WakeSettingsRow(
+                icon: Icons.thermostat_rounded,
+                title: 'Units',
+                subtitle: 'Temperature scale shown on the clock',
+                trailing: _unitToggle(context, settings),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _unitToggle(BuildContext context, SettingsState settings) {
+    final scheme = Theme.of(context).colorScheme;
+    final bloc = context.read<SettingsBloc>();
+    Widget pill(String label, bool selected, VoidCallback onTap) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: selected
+                ? scheme.primary.withValues(alpha: 0.16)
+                : Colors.transparent,
+            border: Border.all(
+              color: selected ? scheme.primary : scheme.outlineVariant,
+              width: 1.4,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: selected ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        pill('°C', !settings.weatherFahrenheit,
+            () => bloc.add(const ToggleWeatherUnitEvent(false))),
+        const SizedBox(width: 6),
+        pill('°F', settings.weatherFahrenheit,
+            () => bloc.add(const ToggleWeatherUnitEvent(true))),
+      ],
     );
   }
 }

@@ -112,24 +112,29 @@ void main() {
     });
 
     test('packs clock display settings into [flags, theme, accent]', () {
-      // flags bit0=24h, bit1=seconds, bit2=date. Here: 24h + date, no seconds
-      // => 0b101 = 5; dark theme (0); amber accent (0).
+      // flags bit0=24h, bit1=seconds, bit2=date, bit3=day-of-week, bits4-5=date
+      // format. Here: 24h + date, no seconds/dow, format 0 => 0b101 = 5; dark
+      // theme (0); amber accent (0).
       expect(
         BlePayloads.clockDisplaySettings(
           use24h: true,
           showSeconds: false,
           showDate: true,
+          showDayOfWeek: false,
+          dateFormat: 0,
           theme: 0,
           accent: 0,
         ),
         [5, 0, 0],
       );
-      // Everything on, light theme, violet accent.
+      // Everything on, light theme, violet accent (dow off, format 0).
       expect(
         BlePayloads.clockDisplaySettings(
           use24h: true,
           showSeconds: true,
           showDate: true,
+          showDayOfWeek: false,
+          dateFormat: 0,
           theme: 1,
           accent: 3,
         ),
@@ -141,11 +146,84 @@ void main() {
           use24h: false,
           showSeconds: false,
           showDate: false,
+          showDayOfWeek: false,
+          dateFormat: 0,
           theme: 0,
           accent: 1,
         ),
         [0, 0, 1],
       );
+    });
+
+    test('packs the day-of-week bit and date-format bits into flags', () {
+      // Day-of-week only (bit3 = 0x08), no date, format 0 => 0x08 = 8.
+      expect(
+        BlePayloads.clockDisplaySettings(
+          use24h: false,
+          showSeconds: false,
+          showDate: false,
+          showDayOfWeek: true,
+          dateFormat: 0,
+          theme: 0,
+          accent: 0,
+        ),
+        [8, 0, 0],
+      );
+      // Date on (0x04) with format 1 in bits4-5 (1 << 4 = 0x10) => 0x14 = 20.
+      expect(
+        BlePayloads.clockDisplaySettings(
+          use24h: false,
+          showSeconds: false,
+          showDate: true,
+          showDayOfWeek: false,
+          dateFormat: 1,
+          theme: 0,
+          accent: 0,
+        )[0],
+        20,
+      );
+      // Day-of-week (0x08) + ISO format 3 in bits4-5 (3 << 4 = 0x30) => 0x38 = 56.
+      expect(
+        BlePayloads.clockDisplaySettings(
+          use24h: false,
+          showSeconds: false,
+          showDate: false,
+          showDayOfWeek: true,
+          dateFormat: 3,
+          theme: 0,
+          accent: 0,
+        )[0],
+        56,
+      );
+      // Format is masked to two bits so a bad index can't corrupt the theme byte.
+      expect(
+        BlePayloads.clockDisplaySettings(
+          use24h: false,
+          showSeconds: false,
+          showDate: false,
+          showDayOfWeek: false,
+          dateFormat: 7, // masks to 3
+          theme: 0,
+          accent: 0,
+        )[0],
+        0x30,
+      );
+    });
+
+    test('packs weather into [temp, condition] with a signed temperature', () {
+      // Positive temperature travels as-is; condition is the compact bucket.
+      expect(BlePayloads.weather(temp: 22, conditionCode: 0), [22, 0]);
+      expect(BlePayloads.weather(temp: 72, conditionCode: 6), [72, 6]);
+      // Negatives use the two's-complement low byte so the firmware's int8_t cast
+      // reads them back correctly: -5 => 0xFB.
+      expect(BlePayloads.weather(temp: -5, conditionCode: 3), [0xFB, 3]);
+      // Extreme temperatures are clamped into the int8 range.
+      expect(BlePayloads.weather(temp: 200, conditionCode: 2)[0], 99);
+      expect(BlePayloads.weather(temp: -200, conditionCode: 2)[0], 256 - 99);
+    });
+
+    test('weatherHidden tells the clock to blank the corner', () {
+      expect(BlePayloads.weatherHidden(), [0, 0xFF]);
     });
   });
 }

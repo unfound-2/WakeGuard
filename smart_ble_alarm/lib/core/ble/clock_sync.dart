@@ -3,11 +3,41 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../data/datasources/weather_datasource.dart';
 import '../../domain/repositories/ble_repository.dart';
 import '../../presentation/blocs/alarm_bloc/alarm_bloc.dart';
 import '../../presentation/blocs/settings_bloc/settings_bloc.dart';
 import '../ui/app_snackbar.dart';
 import 'ble_payloads.dart';
+
+const WeatherDatasource _weatherSource = WeatherDatasource();
+
+/// Best-effort weather push (command 0x0C). The clock has no network, so the
+/// phone fetches the current conditions and forwards them. Never throws and never
+/// blocks a sync's result: callers fire it with `unawaited(...)`. When the user
+/// has weather turned off it sends the "hide" frame so the clock blanks the corner.
+Future<void> pushWeatherToClock(
+  BleRepository repo,
+  BluetoothDevice device,
+  SettingsState settings,
+) async {
+  try {
+    if (!settings.showWeather) {
+      await repo.sendCommand(device, 0x0C, BlePayloads.weatherHidden());
+      return;
+    }
+    final reading =
+        await _weatherSource.fetch(fahrenheit: settings.weatherFahrenheit);
+    if (reading == null) return; // offline / lookup failed — leave last value
+    await repo.sendCommand(
+      device,
+      0x0C,
+      BlePayloads.weather(temp: reading.temp, conditionCode: reading.code),
+    );
+  } catch (_) {
+    // Weather is non-critical; a failure must never affect the clock or app.
+  }
+}
 
 /// Wall-clock instant of the last successful full sync, surfaced on the Clock
 /// tab and Home dashboard. Loaded lazily from SharedPreferences and updated by
@@ -93,11 +123,17 @@ Future<bool> syncConnectedClock(
             use24h: settings.is24HourTime,
             showSeconds: settings.clockShowSeconds,
             showDate: settings.clockShowDate,
+            showDayOfWeek: settings.clockShowDayOfWeek,
+            dateFormat: settings.clockDateFormat,
             theme: settings.clockThemeLight ? 1 : 0,
             accent: settings.clockAccentIndex,
           ),
         );
         await repo.sendCommand(device, 0x05, const []);
+
+        // Weather rides along after the batch commits — best-effort and
+        // unawaited so its network fetch can't delay or fail the sync result.
+        unawaited(pushWeatherToClock(repo, device, settings));
 
         lastClockSync.value = DateTime.now();
         unawaited(

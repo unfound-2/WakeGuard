@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/theme/app_background.dart';
 
 // --- Events ---
 abstract class SettingsEvent extends Equatable {
@@ -68,14 +69,45 @@ class UpdateClockDisplayEvent extends SettingsEvent {
   final int accentIndex;
   final bool showSeconds;
   final bool showDate;
+  final bool showDayOfWeek;
+  final int dateFormat;
   const UpdateClockDisplayEvent({
     required this.themeLight,
     required this.accentIndex,
     required this.showSeconds,
     required this.showDate,
+    required this.showDayOfWeek,
+    required this.dateFormat,
   });
   @override
-  List<Object?> get props => [themeLight, accentIndex, showSeconds, showDate];
+  List<Object?> get props =>
+      [themeLight, accentIndex, showSeconds, showDate, showDayOfWeek, dateFormat];
+}
+
+/// Turns the clock's weather corner on/off. When off the app pushes a "hide"
+/// frame (0x0C `[0,0xFF]`) so the clock blanks it.
+class ToggleShowWeatherEvent extends SettingsEvent {
+  final bool enabled;
+  const ToggleShowWeatherEvent(this.enabled);
+  @override
+  List<Object?> get props => [enabled];
+}
+
+/// Chooses the unit the clock's weather is shown in. The app converts before
+/// sending; the clock is unit-agnostic (just prints the number + a degree ring).
+class ToggleWeatherUnitEvent extends SettingsEvent {
+  final bool fahrenheit;
+  const ToggleWeatherUnitEvent(this.fahrenheit);
+  @override
+  List<Object?> get props => [fahrenheit];
+}
+
+/// Chooses the app's ambient background style (see [AppBackgroundStyle]).
+class UpdateAppBackgroundEvent extends SettingsEvent {
+  final AppBackgroundStyle style;
+  const UpdateAppBackgroundEvent(this.style);
+  @override
+  List<Object?> get props => [style];
 }
 
 // --- State ---
@@ -92,7 +124,16 @@ class SettingsState extends Equatable {
   final bool clockThemeLight; // false = dark face, true = light face
   final int clockAccentIndex; // 0 amber, 1 blue, 2 green, 3 violet
   final bool clockShowSeconds;
-  final bool clockShowDate;
+  final bool clockShowDate; // calendar date on the info line
+  final bool clockShowDayOfWeek; // day-of-week on the info line
+  final int clockDateFormat; // 0 "MMM D", 1 "D MMM", 2 "MM/DD/YY", 3 "YYYY-MM-DD"
+
+  // Weather corner on the clock face (fetched by the phone, pushed over 0x0C).
+  final bool showWeather;
+  final bool weatherFahrenheit; // false = °C, true = °F
+
+  // App (phone) ambient background style.
+  final String appBackgroundKey;
 
   const SettingsState({
     this.is24HourTime = false, // false = 12h default
@@ -106,7 +147,15 @@ class SettingsState extends Equatable {
     this.clockAccentIndex = 0,
     this.clockShowSeconds = false,
     this.clockShowDate = true,
+    this.clockShowDayOfWeek = true,
+    this.clockDateFormat = 0,
+    this.showWeather = true,
+    this.weatherFahrenheit = false,
+    this.appBackgroundKey = 'minimal',
   });
+
+  AppBackgroundStyle get appBackground =>
+      appBackgroundStyleFromKey(appBackgroundKey);
 
   SettingsState copyWith({
     bool? is24HourTime,
@@ -120,6 +169,11 @@ class SettingsState extends Equatable {
     int? clockAccentIndex,
     bool? clockShowSeconds,
     bool? clockShowDate,
+    bool? clockShowDayOfWeek,
+    int? clockDateFormat,
+    bool? showWeather,
+    bool? weatherFahrenheit,
+    String? appBackgroundKey,
   }) {
     return SettingsState(
       is24HourTime: is24HourTime ?? this.is24HourTime,
@@ -134,6 +188,11 @@ class SettingsState extends Equatable {
       clockAccentIndex: clockAccentIndex ?? this.clockAccentIndex,
       clockShowSeconds: clockShowSeconds ?? this.clockShowSeconds,
       clockShowDate: clockShowDate ?? this.clockShowDate,
+      clockShowDayOfWeek: clockShowDayOfWeek ?? this.clockShowDayOfWeek,
+      clockDateFormat: clockDateFormat ?? this.clockDateFormat,
+      showWeather: showWeather ?? this.showWeather,
+      weatherFahrenheit: weatherFahrenheit ?? this.weatherFahrenheit,
+      appBackgroundKey: appBackgroundKey ?? this.appBackgroundKey,
     );
   }
 
@@ -150,6 +209,11 @@ class SettingsState extends Equatable {
     clockAccentIndex,
     clockShowSeconds,
     clockShowDate,
+    clockShowDayOfWeek,
+    clockDateFormat,
+    showWeather,
+    weatherFahrenheit,
+    appBackgroundKey,
   ];
 }
 
@@ -167,9 +231,16 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<ToggleAutoTimeSyncEvent>(_onToggleAutoTimeSync);
     on<ToggleBackupNotificationsEvent>(_onToggleBackupNotifications);
     on<UpdateClockDisplayEvent>(_onUpdateClockDisplay);
+    on<ToggleShowWeatherEvent>(_onToggleShowWeather);
+    on<ToggleWeatherUnitEvent>(_onToggleWeatherUnit);
+    on<UpdateAppBackgroundEvent>(_onUpdateAppBackground);
   }
 
   void _onLoadSettings(LoadSettingsEvent event, Emitter<SettingsState> emit) {
+    final bgKey = prefs.getString('appBackground') ?? 'minimal';
+    // Prime the global notifier so every GlassBackground paints the saved style
+    // from the first frame.
+    appBackgroundStyle.value = appBackgroundStyleFromKey(bgKey);
     emit(
       state.copyWith(
         is24HourTime: prefs.getBool('is24HourTime') ?? false,
@@ -184,6 +255,11 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
         clockAccentIndex: prefs.getInt('clockAccentIndex') ?? 0,
         clockShowSeconds: prefs.getBool('clockShowSeconds') ?? false,
         clockShowDate: prefs.getBool('clockShowDate') ?? true,
+        clockShowDayOfWeek: prefs.getBool('clockShowDayOfWeek') ?? true,
+        clockDateFormat: prefs.getInt('clockDateFormat') ?? 0,
+        showWeather: prefs.getBool('showWeather') ?? true,
+        weatherFahrenheit: prefs.getBool('weatherFahrenheit') ?? false,
+        appBackgroundKey: bgKey,
       ),
     );
   }
@@ -252,13 +328,43 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     await prefs.setInt('clockAccentIndex', event.accentIndex);
     await prefs.setBool('clockShowSeconds', event.showSeconds);
     await prefs.setBool('clockShowDate', event.showDate);
+    await prefs.setBool('clockShowDayOfWeek', event.showDayOfWeek);
+    await prefs.setInt('clockDateFormat', event.dateFormat);
     emit(
       state.copyWith(
         clockThemeLight: event.themeLight,
         clockAccentIndex: event.accentIndex,
         clockShowSeconds: event.showSeconds,
         clockShowDate: event.showDate,
+        clockShowDayOfWeek: event.showDayOfWeek,
+        clockDateFormat: event.dateFormat,
       ),
     );
+  }
+
+  void _onToggleShowWeather(
+    ToggleShowWeatherEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setBool('showWeather', event.enabled);
+    emit(state.copyWith(showWeather: event.enabled));
+  }
+
+  void _onToggleWeatherUnit(
+    ToggleWeatherUnitEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setBool('weatherFahrenheit', event.fahrenheit);
+    emit(state.copyWith(weatherFahrenheit: event.fahrenheit));
+  }
+
+  void _onUpdateAppBackground(
+    UpdateAppBackgroundEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setString('appBackground', event.style.storageKey);
+    // Drive the global notifier so every visible GlassBackground switches live.
+    appBackgroundStyle.value = event.style;
+    emit(state.copyWith(appBackgroundKey: event.style.storageKey));
   }
 }

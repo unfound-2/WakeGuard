@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'app_background.dart';
 import 'app_colors.dart';
 
 /// Theme-aware tokens for translucent "glass" surfaces. Attached to [ThemeData]
@@ -116,31 +117,48 @@ class GlassBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final glass = GlassTheme.of(context);
     final accent = Theme.of(context).colorScheme.primary;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: glass.backgroundGradient,
-        ),
-      ),
-      child: Stack(
-        children: [
-          if (showGlow) ...[
-            _Glow(
-              alignment: const Alignment(-1.1, -0.95),
-              color: accent.withValues(alpha: 0.10),
-              size: 360,
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    // The chosen background style is mirrored in a global notifier by SettingsBloc
+    // so switching it updates every screen live. `minimal` keeps the original
+    // static wash + soft glows; the flowy styles paint an animated layer instead.
+    return ValueListenableBuilder<AppBackgroundStyle>(
+      valueListenable: appBackgroundStyle,
+      builder: (context, style, _) {
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: glass.backgroundGradient,
             ),
-            _Glow(
-              alignment: const Alignment(1.2, 0.65),
-              color: accent.withValues(alpha: 0.06),
-              size: 320,
-            ),
-          ],
-          Positioned.fill(child: child),
-        ],
-      ),
+          ),
+          child: Stack(
+            children: [
+              if (showGlow && style == AppBackgroundStyle.minimal) ...[
+                _Glow(
+                  alignment: const Alignment(-1.1, -0.95),
+                  color: accent.withValues(alpha: 0.10),
+                  size: 360,
+                ),
+                _Glow(
+                  alignment: const Alignment(1.2, 0.65),
+                  color: accent.withValues(alpha: 0.06),
+                  size: 320,
+                ),
+              ],
+              if (showGlow && style != AppBackgroundStyle.minimal)
+                Positioned.fill(
+                  child: AnimatedAppBackground(
+                    style: style,
+                    accent: accent,
+                    animate: !reduceMotion,
+                  ),
+                ),
+              Positioned.fill(child: child),
+            ],
+          ),
+        );
+      },
     );
   }
 }

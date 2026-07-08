@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/theme/app_background.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/glass.dart';
 import '../../core/theme/wake_widgets.dart';
@@ -205,6 +206,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             Divider(height: 17, color: Theme.of(context).dividerColor),
+            Text(
+              'Background',
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 10),
+            _backgroundPicker(settings),
+            Divider(height: 17, color: Theme.of(context).dividerColor),
             WakeSettingsRow(
               icon: Icons.animation_rounded,
               title: 'Animated controls',
@@ -219,6 +227,102 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// A row of live preview tiles for the app's ambient background style. Tapping
+  /// one switches every screen's backdrop immediately (via the appBackgroundStyle
+  /// notifier that GlassBackground listens to).
+  Widget _backgroundPicker(SettingsState settings) {
+    final glass = GlassTheme.of(context);
+    final accent = Theme.of(context).colorScheme.primary;
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final styles = AppBackgroundStyle.values;
+    return Row(
+      children: [
+        for (int i = 0; i < styles.length; i++)
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(right: i == styles.length - 1 ? 0 : 10),
+              child: _backgroundTile(
+                style: styles[i],
+                selected: settings.appBackground == styles[i],
+                baseGradient: glass.backgroundGradient,
+                accent: accent,
+                animate: !reduceMotion,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _backgroundTile({
+    required AppBackgroundStyle style,
+    required bool selected,
+    required List<Color> baseGradient,
+    required Color accent,
+    required bool animate,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () =>
+          context.read<SettingsBloc>().add(UpdateAppBackgroundEvent(style)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AspectRatio(
+            aspectRatio: 0.8,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: selected ? accent : GlassTheme.of(context).stroke,
+                  width: selected ? 2 : 1,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: AppBackgroundPreview(
+                      style: style,
+                      baseGradient: baseGradient,
+                      accent: accent,
+                      animate: animate,
+                    ),
+                  ),
+                  if (selected)
+                    Positioned(
+                      top: 5,
+                      right: 5,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: accent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.check_rounded,
+                          size: 12,
+                          color: scheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            style.label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? accent : scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
