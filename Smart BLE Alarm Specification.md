@@ -1,6 +1,12 @@
 # **Technical Design Specification: Autonomous Smart Alarm Clock System**
 
-> Product direction update: this legacy technical specification documents the earlier QR-code dismissal concept. The current WakeGuard product direction is AI-powered object verification with a secure backup-code path. Bluetooth alarm synchronization and hardware autonomy remain valid, but QR-first dismissal requirements should be treated as legacy implementation notes rather than the primary user experience.
+> **Implementation status (2026-07-08).** This spec is current on the BLE protocol and firmware data model
+> (the 9-byte `0x02` alarm frame with snooze/volume/gradual-wake, `0x0B` timer stop, the framing, and the
+> EEPROM layout all match the shipping build). Two things are now legacy vs. the code: (1) the **primary**
+> dismissal is on-device **object-photo** verification (Google ML Kit), with a printed QR as the sanctioned
+> **backup** — not QR-first; (2) the dismissal token is a **single, static, app-wide** HMAC-SHA256 code (one
+> printed backup dismisses any alarm), **not** a per-alarm token with rotating daily salts (§4.2). See
+> `README.md` / `CLAUDE.md` for current behavior; treat conflicting details below as legacy notes.
 
 ## **1\. Executive Summary**
 
@@ -95,7 +101,7 @@ The system design prioritizes cooperative processing:
 ### **4.2. Usability and Security**
 
 * **Data Retention**: All alarms, configuration settings, and calibration values saved in the EEPROM must survive power outages for up to 10 years.  
-* **Cryptographic Security**: QR code tokens must use localized HMAC-SHA256 signatures with rotating daily salts, preventing unauthorized duplication or replication.  
+* **Cryptographic Security**: The dismissal token uses a localized HMAC-SHA256 signature. *(Implemented as a single, static, app-wide token so a printed backup code stays valid indefinitely — not the rotating-daily-salt scheme this line originally described; see the status banner at the top.)*  
 * **iOS Integration**: The application must remain fully compatible with iOS 26, using modern background execution APIs and system-level accessories permissions.
 
 ## **5\. Hardware Constraints and Kit Inventory Analysis**

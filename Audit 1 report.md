@@ -1,5 +1,12 @@
 # Project Audit Report 1
 
+> **Resolution status (2026-07-08): all findings below have been addressed.** This report is retained as a
+> historical record. Time sync now sends a 4-byte epoch (`0x01`); alarms persist to `SharedPreferences`
+> (versioned envelope) in `AlarmBloc`; QR/item dismissal dispatches the real `0x09` packet; the timer quick
+> action is implemented (`0x0A`/`0x0B`); the non-functional Developer settings section was removed; the
+> 5-byte `0x06` settings frame and the static (now app-wide) token were kept by design. See `README.md` /
+> `CLAUDE.md` for current behavior.
+
 ## Executive Summary
 An end-to-end audit of the Smart BLE Alarm project was conducted. The UI layer, state management, and Bluetooth abstraction have been well-architected. However, several critical integration gaps were found between the UI logic and the hardware communication protocol. Additionally, some data persistence requirements and UI placeholders remain unresolved.
 

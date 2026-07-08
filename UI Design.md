@@ -4,7 +4,9 @@ Implement the application's UI according to the following specification unless a
 
 The application should feel like a polished, premium Android application with smooth animations, clean spacing, rounded components, and a modern appearance.
 
-WakeGuard's primary dismissal experience is the AI-powered Wake Challenge: users choose a morning-routine object away from bed during onboarding or in Settings, then verify that object before a protected alarm can be dismissed. Secure printed codes may remain as a backup path while the AI verifier is being integrated, but QR should not be presented as the primary product experience.
+WakeGuard's primary dismissal experience is the **object-photo Wake Challenge**: when creating an alarm the user picks a morning-routine object away from bed, then photographs it when the alarm rings. Recognition runs **on-device** (Google ML Kit image labeling, no network). A **single app-wide printed backup code** (QR) is the sanctioned fallback and dismisses any protected alarm; for object alarms it unlocks only 3 minutes after the ring starts. An alarm may also require no challenge at all (plain Dismiss). QR is a backup, not the primary experience.
+
+> **Implementation note (2026-07-08):** this doc is the original UI spec. Sections below that describe per-alarm QR, a Settings "wake object" picker, or backup-code Generate/View/Regenerate have been superseded — see the inline updates and `README.md` / `CLAUDE.md` for current behavior.
 
 ## Global Design Requirements
 
@@ -135,10 +137,14 @@ Sections:
 
 ## Backup Code
 
-* Generate backup code
-* View backup code
-* Regenerate
-* Print Instructions
+*(Current implementation)* A **single app-wide backup code** — one printed QR that dismisses **any**
+protected alarm (static HMAC token). This section shows a short explanation and **one** action:
+
+* **Print Backup Code**
+
+There is no per-alarm code, no in-app "scan backup code" here (scanning happens on the ringing screen),
+and no Generate/View/Regenerate (the code is static and shared, so rotating it would invalidate every
+printed copy).
 
 This screen controls the physical device and should not contain application preferences.
 
@@ -161,10 +167,9 @@ Organize settings into categories.
 
 ## Wake Challenge
 
-* Wake object selection
-* Custom object entry
-* Verification method status
-* Default challenge requirement for new alarms
+*(Current implementation)* Settings holds only the **universal default** — whether new alarms require a
+challenge (`defaultQrRequired`). The actual wake-challenge choice (object photo vs QR) and the object to
+verify are configured **per alarm in the alarm editor**, not here — Settings stays universal-only.
 
 ## Notifications
 
