@@ -62,9 +62,10 @@ Flutter code is clean-architecture layered under `smart_ble_alarm/lib/`:
   | 0x09 | DISMISS | `[id, token×8]` — clock `memcmp`s vs stored token (0-token OK if `!ringSecured`) |
   | 0x0A / 0x0B | TIMER_SET / TIMER_STOP | timer control |
   | 0x0C | WEATHER | `[temp(int8), condCode]` — clock has no network, so the phone fetches (Open-Meteo via IP geolocation) + pushes. `temp` is a signed whole degree in the user's unit (app converts; clock is unit-agnostic, prints number + a drawn degree ring). `condCode` 0..6 = clear/partly/cloudy/rain/snow/thunder/fog (firmware `drawWeatherIcon`); `condCode==0xFF` ⇒ hide the corner. Pushed after each sync + every 15 min (`pushWeatherToClock` in clock_sync). Additive; RAM-only on the clock (not persisted). |
+  | 0x0D | DISPLAY_SLEEP | `[enabled, startHour, startMin, endHour, endMin]` — nightly window during which the clock **blanks its panel** (ILI9341 display-off opcode 0x28; 0x29 to wake) so a dark room stays dark. **The backlight is hardwired to 3.3V — it CANNOT be switched off**, so a faint glow remains (this is why the original auto-dim/sleep was removed; new feature blanks the *content*, not the LED). Window may wrap past midnight (start>end); firmware `inSleepWindow`. A ring/finished timer ALWAYS overrides sleep + wakes the screen. **RAM-only** on the clock (not persisted — re-pushed every sync, like 0x0C); app state `clockSleepEnabled`/`clockSleepStartMinutes`/`clockSleepEndMinutes` in SettingsBloc, UI in the Display tab. Pushed after 0x06 in `syncConnectedClock` + live on change (`main_screen`). Additive; no EEPROM bump. |
   | 0x88 | RING_ACK (app→clock) | app confirms it saw 0x08 (stops rebroadcast) |
   - **Clock→app**: `0x08` NOTIFY_RING `[alarmId]` (rebroadcast until 0x88); `0x89` ACK_DISMISS (ring stopped);
-    `0x81..0x87,0x8A,0x8B,0x8C` are ACKs echoing the matching command; `0xFF` CMD_ERROR `[errcode]`.
+    `0x81..0x87,0x8A,0x8B,0x8C,0x8D` are ACKs echoing the matching command; `0xFF` CMD_ERROR `[errcode]`.
 - **0x02 is a length-guarded positional frame.** Firmware reads trailing bytes only under `len >=` guards;
   older firmware ignores extra trailing bytes. **Extend ONLY by a coordinated app+firmware change** (both
   sides + `Alarm.syncHash` fold) — never one side alone. Byte order and `_byte()` validation live in

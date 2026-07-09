@@ -503,6 +503,43 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             }
           },
         ),
+        // Live-push the display-sleep schedule (0x0D) the moment it changes, so the
+        // clock adopts the new blank window immediately. Disconnected: kick a
+        // reconnect so the change flushes through the on-connect full sync.
+        BlocListener<SettingsBloc, SettingsState>(
+          listenWhen: (previous, current) =>
+              previous.clockSleepEnabled != current.clockSleepEnabled ||
+              previous.clockSleepStartMinutes !=
+                  current.clockSleepStartMinutes ||
+              previous.clockSleepEndMinutes != current.clockSleepEndMinutes,
+          listener: (context, state) async {
+            final bleState = context.read<BleConnectionBloc>().state;
+            if (bleState is! BleConnected) {
+              context.read<BleConnectionBloc>().add(ReconnectEvent());
+              return;
+            }
+            try {
+              await context.read<BleRepository>().sendCommand(
+                bleState.device,
+                0x0D,
+                BlePayloads.clockSleepSchedule(
+                  enabled: state.clockSleepEnabled,
+                  startHour: state.clockSleepStartMinutes ~/ 60,
+                  startMinute: state.clockSleepStartMinutes % 60,
+                  endHour: state.clockSleepEndMinutes ~/ 60,
+                  endMinute: state.clockSleepEndMinutes % 60,
+                ),
+              );
+            } catch (_) {
+              if (!context.mounted) return;
+              showAppSnackBar(
+                context,
+                'Sleep schedule saved, but the clock update failed.',
+                type: AppSnackType.error,
+              );
+            }
+          },
+        ),
         // Live-push weather the moment the user toggles it on/off or flips the
         // unit, so the clock's corner updates without waiting for the next sync.
         // Disconnected changes flush through the on-connect sync.

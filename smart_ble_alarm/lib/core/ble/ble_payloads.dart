@@ -103,4 +103,28 @@ class BlePayloads {
   /// Weather "hide" frame, command 0x0C → `[0, 0xFF]`. The 0xFF condition tells
   /// the clock to blank its weather corner (the user turned weather off).
   static List<int> weatherHidden() => [0, 0xFF];
+
+  /// Display-sleep schedule, command 0x0D → `[enabled, startHour, startMinute,
+  /// endHour, endMinute]`.
+  ///
+  /// During the nightly window the clock blanks its panel (the ILI9341
+  /// display-off opcode) so a dark room stays dark. The backlight LED is hardwired
+  /// to 3.3V, so it can't be switched — a faint glow remains and a ringing alarm
+  /// always re-lights the screen. The window may wrap past midnight (start later
+  /// than end, e.g. 22:00 → 07:00). RAM-only on the clock: re-pushed every sync.
+  static List<int> clockSleepSchedule({
+    required bool enabled,
+    required int startHour,
+    required int startMinute,
+    required int endHour,
+    required int endMinute,
+  }) {
+    return [
+      enabled ? 1 : 0,
+      startHour & 0xFF,
+      startMinute & 0xFF,
+      endHour & 0xFF,
+      endMinute & 0xFF,
+    ];
+  }
 }

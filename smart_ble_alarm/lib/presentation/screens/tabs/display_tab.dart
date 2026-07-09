@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/glass.dart';
 import '../../../core/theme/wake_widgets.dart';
+import '../../../core/utils/alarm_time_utils.dart';
 import '../../blocs/ble_bloc/ble_bloc.dart';
 import '../../blocs/ble_bloc/ble_state.dart';
 import '../../blocs/settings_bloc/settings_bloc.dart';
@@ -76,6 +77,8 @@ class DisplayTab extends StatelessWidget {
                 _accentSection(context, settings, update),
                 const SizedBox(height: 24),
                 _optionsSection(context, settings, update),
+                const SizedBox(height: 24),
+                _sleepSection(context, settings),
                 const SizedBox(height: 24),
                 _weatherSection(context, settings),
               ],
@@ -462,6 +465,140 @@ class DisplayTab extends StatelessWidget {
             color: selected ? scheme.primary : scheme.onSurfaceVariant,
           ),
         ),
+      ),
+    );
+  }
+
+  /// Scheduled display sleep: blank the clock's screen overnight. Dispatches
+  /// [UpdateClockSleepEvent] (command 0x0D). The backlight is hardwired-on, so the
+  /// face is hidden but a faint glow remains — [_sleepHint] says so honestly.
+  Widget _sleepSection(BuildContext context, SettingsState settings) {
+    final bloc = context.read<SettingsBloc>();
+    final enabled = settings.clockSleepEnabled;
+
+    void dispatch({bool? on, int? startMinutes, int? endMinutes}) {
+      bloc.add(
+        UpdateClockSleepEvent(
+          enabled: on ?? settings.clockSleepEnabled,
+          startMinutes: startMinutes ?? settings.clockSleepStartMinutes,
+          endMinutes: endMinutes ?? settings.clockSleepEndMinutes,
+        ),
+      );
+    }
+
+    return WakeSection(
+      title: 'Sleep',
+      subtitle: 'Blank the clock’s screen overnight so it doesn’t light the room.',
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        shadows: wakeCardShadow(context),
+        child: Column(
+          children: [
+            WakeSettingsRow(
+              icon: Icons.bedtime_rounded,
+              title: 'Sleep Schedule',
+              subtitle: 'Turn the screen dark during set hours',
+              trailing: Switch(
+                value: enabled,
+                onChanged: (v) => dispatch(on: v),
+              ),
+            ),
+            if (enabled) ...[
+              Divider(height: 1, color: Theme.of(context).dividerColor),
+              _sleepTimeRow(
+                context,
+                settings,
+                label: 'Sleep at',
+                icon: Icons.nightlight_round,
+                minutes: settings.clockSleepStartMinutes,
+                onPicked: (m) => dispatch(startMinutes: m),
+              ),
+              Divider(height: 1, color: Theme.of(context).dividerColor),
+              _sleepTimeRow(
+                context,
+                settings,
+                label: 'Wake at',
+                icon: Icons.wb_twilight_rounded,
+                minutes: settings.clockSleepEndMinutes,
+                onPicked: (m) => dispatch(endMinutes: m),
+              ),
+              _sleepHint(context),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sleepTimeRow(
+    BuildContext context,
+    SettingsState settings, {
+    required String label,
+    required IconData icon,
+    required int minutes,
+    required ValueChanged<int> onPicked,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final display = AlarmTimeUtils.formatTime(
+      minutes ~/ 60,
+      minutes % 60,
+      is24Hour: settings.is24HourTime,
+    );
+    return WakeSettingsRow(
+      icon: icon,
+      title: label,
+      subtitle: 'Tap to change',
+      trailing: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () async {
+          final picked = await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
+          );
+          if (picked != null) onPicked(picked.hour * 60 + picked.minute);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: scheme.primary.withValues(alpha: 0.16),
+            border: Border.all(color: scheme.primary, width: 1.4),
+          ),
+          child: Text(
+            display,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: scheme.primary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sleepHint(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded,
+              size: 15, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'The clock face is hidden during these hours. Its backlight is '
+              'always-on hardware, so a faint glow remains. An alarm still lights '
+              'the screen and rings.',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

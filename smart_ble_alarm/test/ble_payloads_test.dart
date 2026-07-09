@@ -225,5 +225,32 @@ void main() {
     test('weatherHidden tells the clock to blank the corner', () {
       expect(BlePayloads.weatherHidden(), [0, 0xFF]);
     });
+
+    test('packs the display-sleep schedule into [enabled, sH, sM, eH, eM]', () {
+      // Enabled window 22:00 -> 07:00 (wraps past midnight; the firmware handles
+      // the wrap, the wire just carries the raw hours/minutes).
+      expect(
+        BlePayloads.clockSleepSchedule(
+          enabled: true,
+          startHour: 22,
+          startMinute: 0,
+          endHour: 7,
+          endMinute: 0,
+        ),
+        [1, 22, 0, 7, 0],
+      );
+      // Disabled still carries the chosen times (byte0 = 0 turns the window off);
+      // minutes travel verbatim.
+      expect(
+        BlePayloads.clockSleepSchedule(
+          enabled: false,
+          startHour: 23,
+          startMinute: 30,
+          endHour: 6,
+          endMinute: 45,
+        ),
+        [0, 23, 30, 6, 45],
+      );
+    });
   });
 }

@@ -129,6 +129,19 @@ Future<bool> syncConnectedClock(
             accent: settings.clockAccentIndex,
           ),
         );
+        // Scheduled display-sleep window (0x0D). RAM-only on the clock, so it rides
+        // every sync alongside the display settings to survive a clock reboot.
+        await repo.sendCommand(
+          device,
+          0x0D,
+          BlePayloads.clockSleepSchedule(
+            enabled: settings.clockSleepEnabled,
+            startHour: settings.clockSleepStartMinutes ~/ 60,
+            startMinute: settings.clockSleepStartMinutes % 60,
+            endHour: settings.clockSleepEndMinutes ~/ 60,
+            endMinute: settings.clockSleepEndMinutes % 60,
+          ),
+        );
         await repo.sendCommand(device, 0x05, const []);
 
         // Weather rides along after the batch commits — best-effort and

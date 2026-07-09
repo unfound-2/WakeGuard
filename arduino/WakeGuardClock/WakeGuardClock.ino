@@ -238,6 +238,7 @@ static const uint8_t CMD_DISMISS     = 0x09;
 static const uint8_t CMD_TIMER_SET   = 0x0A;
 static const uint8_t CMD_TIMER_STOP  = 0x0B; // app -> clock: cancel/silence the countdown timer
 static const uint8_t CMD_WEATHER     = 0x0C; // app -> clock: [tempInt8, condCode] (condCode 0xFF => hide)
+static const uint8_t CMD_DISPLAY_SLEEP = 0x0D; // app -> clock: [enabled, startH, startM, endH, endM] nightly blank window
 
 // Clock -> App responses / notifications
 static const uint8_t ACK_TIME_SYNC   = 0x81;
@@ -252,6 +253,7 @@ static const uint8_t ACK_DISMISS     = 0x89; // clock -> app: buzzer silenced / 
 static const uint8_t ACK_TIMER_SET   = 0x8A;
 static const uint8_t ACK_TIMER_STOP  = 0x8B; // clock -> app: timer cancelled / silenced
 static const uint8_t ACK_WEATHER     = 0x8C; // clock -> app: weather received
+static const uint8_t ACK_DISPLAY_SLEEP = 0x8D; // clock -> app: sleep schedule received
 static const uint8_t CMD_ERROR       = 0xFF;
 
 // Error sub-codes (payload byte of a 0xFF frame)
@@ -301,6 +303,20 @@ bool     dispDow     = true;             // show the day-of-week on the info lin
 uint8_t  dispDateFmt = 0;                // date format 0..3 (see buildDateOnly)
 uint8_t  dispTheme   = 0;                // 0 = dark, 1 = light
 uint8_t  dispAccent  = 0;                // accent preset index (0..3)
+
+// Scheduled display sleep (command 0x0D). During the user's nightly window the
+// panel is blanked with the ILI9341 display-off opcode so it doesn't light a dark
+// room. The backlight LED is hardwired straight to 3.3V (no GPIO), so it can't be
+// switched off — a faint uniform glow remains. RAM-only: the phone re-pushes this
+// on every sync (like weather 0x0C), so it is deliberately NOT persisted in EEPROM.
+bool     sleepEnabled  = false;          // nightly display-off window active
+uint16_t sleepStartMin = 22 * 60;        // minutes-of-day the panel blanks (22:00)
+uint16_t sleepEndMin   = 7 * 60;         // minutes-of-day it wakes (07:00)
+bool     displayAsleep = false;          // true while the panel is currently blanked
+// ILI9341 display on/off opcodes — blank the panel without touching the (hardwired)
+// backlight. Named locally so we don't depend on the library's macro spelling.
+static const uint8_t TFT_CMD_DISPLAY_OFF = 0x28;
+static const uint8_t TFT_CMD_DISPLAY_ON  = 0x29;
 
 // Weather (from 0x0C WEATHER, pushed by the phone since the clock has no network).
 // RAM-only / not persisted: it's stale within an hour and the app re-pushes it on
@@ -859,6 +875,20 @@ void handleFrame(uint8_t *body, uint8_t n) {
         scrMode = SCR_NONE;                // force a repaint so the corner updates cleanly
       }
       sendAck(ACK_WEATHER);
+      break;
+    }
+    case CMD_DISPLAY_SLEEP: {              // [enabled, startH, startM, endH, endM]
+      // Nightly window during which the clock blanks its panel (see renderTft).
+      // Length-guarded so a short/old frame is ignored; each time byte is validated
+      // so a corrupt value can't produce an out-of-range minute-of-day.
+      if (len >= 5) {
+        sleepEnabled = data[0] != 0;
+        if (data[1] < 24 && data[2] < 60 && data[3] < 24 && data[4] < 60) {
+          sleepStartMin = (uint16_t)data[1] * 60 + data[2];
+          sleepEndMin   = (uint16_t)data[3] * 60 + data[4];
+        }
+      }
+      sendAck(ACK_DISPLAY_SLEEP);
       break;
     }
     case CMD_RING_ACK:                     // app confirmed it saw the ring
@@ -1697,6 +1727,18 @@ void drawPanel(uint16_t bgCol, bool clockChrome) {
 // Top-level display refresh. Picks a screen mode with the same priority the LCD
 // used, repaints the whole panel once on a mode change, then diff-updates that
 // mode's text fields. Throttled so bursts of small redraws can't hog the SPI bus.
+// True when local time [t] falls inside the nightly display-sleep window. Handles a
+// window that wraps past midnight (start later than end, e.g. 22:00 -> 07:00). A
+// zero-length window (start == end) means "never sleep".
+bool inSleepWindow(LocalTime t) {
+  if (sleepStartMin == sleepEndMin) return false;
+  uint16_t nowMin = (uint16_t)t.hh * 60 + t.mm;
+  if (sleepStartMin < sleepEndMin) {
+    return nowMin >= sleepStartMin && nowMin < sleepEndMin;
+  }
+  return nowMin >= sleepStartMin || nowMin < sleepEndMin;  // wraps past midnight
+}
+
 void renderTft() {
   static uint32_t lastRenderMs = 0;
   uint32_t nowMs = millis();
@@ -1710,6 +1752,24 @@ void renderTft() {
   // The screen holds its last frame for the ~1-2s the batch takes and repaints the
   // instant it ends; serviceSyncFlush() force-ends a stuck sync after SYNC_MAX_MS.
   if (syncing) return;
+
+  // Scheduled display sleep: inside the user's nightly window, blank the panel to
+  // black so it doesn't light a dark room. A ring or finished timer ALWAYS wins (an
+  // alarm must never be hidden) and wakes the screen instantly; the panel also wakes
+  // the moment the window ends. The hardwired backlight stays on, so a faint glow
+  // remains. While asleep we skip the self-heal + render entirely.
+  bool wantSleep = sleepEnabled && haveTime && !ringActive && !timerDone &&
+                   inSleepWindow(localNow());
+  if (wantSleep != displayAsleep) {
+    displayAsleep = wantSleep;
+    if (wantSleep) {
+      tft.sendCommand(TFT_CMD_DISPLAY_OFF);
+    } else {
+      tft.sendCommand(TFT_CMD_DISPLAY_ON);
+      scrMode = SCR_NONE;              // force a full repaint of the face on wake
+    }
+  }
+  if (displayAsleep) return;
 
   // Display self-heal: periodically re-init + repaint the panel while it's just
   // showing the clock, so a silently-corrupted (white/garbled) panel recovers on

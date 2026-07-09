@@ -84,6 +84,22 @@ class UpdateClockDisplayEvent extends SettingsEvent {
       [themeLight, accentIndex, showSeconds, showDate, showDayOfWeek, dateFormat];
 }
 
+/// Updates the clock's scheduled display-sleep window (command 0x0D). During the
+/// window the clock blanks its panel so a dark room stays dark. Times are
+/// minutes-of-day (0..1439); the window may wrap past midnight.
+class UpdateClockSleepEvent extends SettingsEvent {
+  final bool enabled;
+  final int startMinutes;
+  final int endMinutes;
+  const UpdateClockSleepEvent({
+    required this.enabled,
+    required this.startMinutes,
+    required this.endMinutes,
+  });
+  @override
+  List<Object?> get props => [enabled, startMinutes, endMinutes];
+}
+
 /// Turns the clock's weather corner on/off. When off the app pushes a "hide"
 /// frame (0x0C `[0,0xFF]`) so the clock blanks it.
 class ToggleShowWeatherEvent extends SettingsEvent {
@@ -128,6 +144,12 @@ class SettingsState extends Equatable {
   final bool clockShowDayOfWeek; // day-of-week on the info line
   final int clockDateFormat; // 0 "MMM D", 1 "D MMM", 2 "MM/DD/YY", 3 "YYYY-MM-DD"
 
+  // Scheduled display sleep (pushed to the clock over 0x0D). During the window the
+  // clock blanks its panel; times are minutes-of-day and may wrap past midnight.
+  final bool clockSleepEnabled;
+  final int clockSleepStartMinutes; // minutes-of-day the panel blanks
+  final int clockSleepEndMinutes; // minutes-of-day it wakes
+
   // Weather corner on the clock face (fetched by the phone, pushed over 0x0C).
   final bool showWeather;
   final bool weatherFahrenheit; // false = °C, true = °F
@@ -149,6 +171,9 @@ class SettingsState extends Equatable {
     this.clockShowDate = true,
     this.clockShowDayOfWeek = true,
     this.clockDateFormat = 0,
+    this.clockSleepEnabled = false,
+    this.clockSleepStartMinutes = 22 * 60, // 22:00
+    this.clockSleepEndMinutes = 7 * 60, // 07:00
     this.showWeather = true,
     this.weatherFahrenheit = false,
     this.appBackgroundKey = 'minimal',
@@ -171,6 +196,9 @@ class SettingsState extends Equatable {
     bool? clockShowDate,
     bool? clockShowDayOfWeek,
     int? clockDateFormat,
+    bool? clockSleepEnabled,
+    int? clockSleepStartMinutes,
+    int? clockSleepEndMinutes,
     bool? showWeather,
     bool? weatherFahrenheit,
     String? appBackgroundKey,
@@ -190,6 +218,10 @@ class SettingsState extends Equatable {
       clockShowDate: clockShowDate ?? this.clockShowDate,
       clockShowDayOfWeek: clockShowDayOfWeek ?? this.clockShowDayOfWeek,
       clockDateFormat: clockDateFormat ?? this.clockDateFormat,
+      clockSleepEnabled: clockSleepEnabled ?? this.clockSleepEnabled,
+      clockSleepStartMinutes:
+          clockSleepStartMinutes ?? this.clockSleepStartMinutes,
+      clockSleepEndMinutes: clockSleepEndMinutes ?? this.clockSleepEndMinutes,
       showWeather: showWeather ?? this.showWeather,
       weatherFahrenheit: weatherFahrenheit ?? this.weatherFahrenheit,
       appBackgroundKey: appBackgroundKey ?? this.appBackgroundKey,
@@ -211,6 +243,9 @@ class SettingsState extends Equatable {
     clockShowDate,
     clockShowDayOfWeek,
     clockDateFormat,
+    clockSleepEnabled,
+    clockSleepStartMinutes,
+    clockSleepEndMinutes,
     showWeather,
     weatherFahrenheit,
     appBackgroundKey,
@@ -231,6 +266,7 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<ToggleAutoTimeSyncEvent>(_onToggleAutoTimeSync);
     on<ToggleBackupNotificationsEvent>(_onToggleBackupNotifications);
     on<UpdateClockDisplayEvent>(_onUpdateClockDisplay);
+    on<UpdateClockSleepEvent>(_onUpdateClockSleep);
     on<ToggleShowWeatherEvent>(_onToggleShowWeather);
     on<ToggleWeatherUnitEvent>(_onToggleWeatherUnit);
     on<UpdateAppBackgroundEvent>(_onUpdateAppBackground);
@@ -257,6 +293,9 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
         clockShowDate: prefs.getBool('clockShowDate') ?? true,
         clockShowDayOfWeek: prefs.getBool('clockShowDayOfWeek') ?? true,
         clockDateFormat: prefs.getInt('clockDateFormat') ?? 0,
+        clockSleepEnabled: prefs.getBool('clockSleepEnabled') ?? false,
+        clockSleepStartMinutes: prefs.getInt('clockSleepStart') ?? (22 * 60),
+        clockSleepEndMinutes: prefs.getInt('clockSleepEnd') ?? (7 * 60),
         showWeather: prefs.getBool('showWeather') ?? true,
         weatherFahrenheit: prefs.getBool('weatherFahrenheit') ?? false,
         appBackgroundKey: bgKey,
@@ -338,6 +377,22 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
         clockShowDate: event.showDate,
         clockShowDayOfWeek: event.showDayOfWeek,
         clockDateFormat: event.dateFormat,
+      ),
+    );
+  }
+
+  void _onUpdateClockSleep(
+    UpdateClockSleepEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setBool('clockSleepEnabled', event.enabled);
+    await prefs.setInt('clockSleepStart', event.startMinutes);
+    await prefs.setInt('clockSleepEnd', event.endMinutes);
+    emit(
+      state.copyWith(
+        clockSleepEnabled: event.enabled,
+        clockSleepStartMinutes: event.startMinutes,
+        clockSleepEndMinutes: event.endMinutes,
       ),
     );
   }
