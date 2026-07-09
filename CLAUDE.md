@@ -167,6 +167,23 @@ Arduino: open the relevant `arduino/*/*.ino` in Arduino IDE, select the board, u
   reduced-motion. **White-screen fix**: periodic **display self-heal** (re-init+repaint every 5 min on the idle clock,
   `DISPLAY_HEAL_MS`) + an optional **watchdog** (`ENABLE_WATCHDOG`, set 0 if a clone bootloader loops on reset).
   ⚠️ Firmware not compiled locally — re-upload from the Arduino IDE and watch the flash line.
+- **Phone-as-alarm modes (Dart-only, app-verified; native ring engine staged for on-device work):** two related,
+  Beta, off-by-default modes so the app can ring without the hardware clock. (1) **Phone Alarm (companion)** —
+  Settings toggle (`phoneAlarmEnabled` + `phoneAlarmRequireCharging`); your *primary* phone as a backup ringer, no
+  clock face. (2) **Dedicated Clock** — turns a *spare* phone/tablet into a standby bedside clock that shows a clock
+  face and rings. `dedicatedClockEnabled` in SettingsBloc + a **highest-precedence route** in `main.dart` (boots
+  straight into `DedicatedClockScreen`, relaunches back into it) reached via `onSetupDedicatedClock` from onboarding
+  (new "Turn a spare phone into a clock" page + a "Set up this device as the clock" box), the pairing screen, and
+  Settings. The screen keeps the display awake (`wakelock_plus`, best-effort/try-caught — new dep), shows time/date/
+  next-alarm, and **rings in-app while foregrounded**: a 1s ticker detects the alarm minute and **plays a real
+  looping tone** (`audioplayers` — new dep — looping a runtime-synthesized WAV from `core/audio/alarm_sound.dart`, no
+  bundled asset; iOS `AVAudioSessionCategory.playback` so it rings through the silent switch, Android `usage=alarm`;
+  respects the alarm's volume + gradual-wake ramp) alongside haptics, then reuses `RingingDismissal` for the wake
+  challenge (no free dismiss) plus a **Snooze** button when the alarm allows it. All audio/wakelock calls are
+  try-caught so a missing platform impl can't crash. No Info.plist/manifest change is needed for this **foreground**
+  ring (screen stays awake). Reliable ringing when the app is force-closed / screen fully off (esp. iOS) remains the
+  staged phone-alarm **Phase 2** background engine (`alarm` package) — the hardware clock stays the tamper-proof
+  guarantee. See memory `phone-alarm-companion-mode`.
 - **Known hardware issue under investigation**: buzzer produced no sound after reflash + cleaning; firmware verified
   correct, so it points to hardware (active-vs-passive mismatch or wiring). Awaiting the 3 BuzzerTest results.
 

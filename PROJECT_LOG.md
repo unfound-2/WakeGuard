@@ -17,13 +17,14 @@ In short:
 
 ### Collaborator credit — Mekyle Alam
 
-Mekyle Alam (GitHub `unfound-2`) contributed a portion of the code that was merged into `main` via the
-`onboarding` branch — principally the **onboarding flow / onboarding screen and pairing-progress UI**, and
-the initial scaffolding for the **wake-challenge / on-device image-scanning setup**. This was a modest
-slice of the project: several of his changes overlapped work Aaron already had, and the bulk of the app —
-its architecture, BLE protocol, the wake-challenge and single-backup-code systems, alarms/timers/clock
-control, sync, and the Liquid Glass design system — was designed by Aaron and implemented under his
-direction. The onboarding and wake-challenge features have since been substantially reworked.
+Mekyle Alam (GitHub `unfound-2`) built the **onboarding software** (the onboarding flow / screens and
+pairing-progress UI, merged into `main` via the `onboarding` branch), and contributed **feature and idea
+generation** plus some **UI** work — helping brainstorm features and directions for the app, including
+around the **wake-challenge / on-device image-scanning** experience. This was a modest slice of the
+project: the bulk of the app — its architecture, BLE protocol, the wake-challenge and single-backup-code
+systems, alarms/timers/clock control, sync, and the Liquid Glass design system — was designed by Aaron and
+implemented under his direction. The onboarding and wake-challenge features have since been substantially
+reworked.
 
 ---
 
@@ -158,8 +159,8 @@ on-device ML, embedded C++, and an App Store release. Grouped by area, with the 
 
 ### Onboarding, pairing & app routing
 - First-run onboarding → pairing screen with **live BLE scan** and auto-connect to the first "WG Clock".
-  *(Initial onboarding flow + pairing-progress UI contributed by Mekyle Alam via the merged `onboarding`
-  branch; since reworked.)*
+  *(Onboarding flow + pairing-progress UI built by Mekyle Alam via the merged `onboarding` branch, with
+  additional feature/idea and UI input; since reworked.)*
 - **Skip-pairing** (persisted `setupSkipped`) so the app opens **fully offline** — alarms still save locally
   and fire via backup notifications — with **Settings → Advanced → Connect a Clock** as the reversible way
   back in.

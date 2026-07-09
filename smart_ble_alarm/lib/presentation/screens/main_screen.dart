@@ -36,11 +36,17 @@ class MainScreen extends StatefulWidget {
   /// `main.dart`.
   final VoidCallback? onConnectClock;
 
+  /// When non-null, Settings shows a "Use this phone as a dedicated clock (Beta)"
+  /// action that turns this device into a standby bedside clock. Wired in
+  /// `main.dart`.
+  final VoidCallback? onSetupDedicatedClock;
+
   const MainScreen({
     super.key,
     this.onExitDeveloperMode,
     this.onUnpairDevice,
     this.onConnectClock,
+    this.onSetupDedicatedClock,
   });
 
   @override
@@ -66,6 +72,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       onExitDeveloperMode: widget.onExitDeveloperMode,
       onUnpairDevice: widget.onUnpairDevice,
       onConnectClock: widget.onConnectClock,
+      onSetupDedicatedClock: widget.onSetupDedicatedClock,
     ),
   ];
 

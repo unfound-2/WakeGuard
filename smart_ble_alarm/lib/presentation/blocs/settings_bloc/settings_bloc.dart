@@ -118,6 +118,37 @@ class ToggleWeatherUnitEvent extends SettingsEvent {
   List<Object?> get props => [fahrenheit];
 }
 
+/// Turns the phone-alarm companion mode on/off. When on, the app itself can ring
+/// (best-effort on iOS, enforced on Android) so an alarm still fires without the
+/// hardware clock. See [SettingsState.phoneAlarmEnabled].
+class TogglePhoneAlarmEvent extends SettingsEvent {
+  final bool enabled;
+  const TogglePhoneAlarmEvent(this.enabled);
+  @override
+  List<Object?> get props => [enabled];
+}
+
+/// When on, the iOS keep-alive ring engine only runs while the phone is charging
+/// (it prevents overnight battery drain; off-charger falls back to notifications).
+class TogglePhoneAlarmChargingEvent extends SettingsEvent {
+  final bool requireCharging;
+  const TogglePhoneAlarmChargingEvent(this.requireCharging);
+  @override
+  List<Object?> get props => [requireCharging];
+}
+
+/// Turns "Dedicated Clock" mode on/off. When on, this device is treated as a
+/// standby bedside WakeGuard clock: the app boots straight into the full-screen
+/// clock face (see [SettingsState.dedicatedClockEnabled]) and rings in the
+/// morning while it stays open on a charger. Distinct from [phoneAlarmEnabled],
+/// which is a backup ringer for your *primary* phone and shows no clock face.
+class ToggleDedicatedClockEvent extends SettingsEvent {
+  final bool enabled;
+  const ToggleDedicatedClockEvent(this.enabled);
+  @override
+  List<Object?> get props => [enabled];
+}
+
 /// Chooses the app's ambient background style (see [AppBackgroundStyle]).
 class UpdateAppBackgroundEvent extends SettingsEvent {
   final AppBackgroundStyle style;
@@ -154,6 +185,15 @@ class SettingsState extends Equatable {
   final bool showWeather;
   final bool weatherFahrenheit; // false = °C, true = °F
 
+  // Phone-alarm companion mode: the app itself rings (best-effort on iOS,
+  // enforced on Android) so an alarm fires without the hardware clock.
+  final bool phoneAlarmEnabled;
+  final bool phoneAlarmRequireCharging; // gate the iOS keep-alive to charging
+
+  // Dedicated Clock mode: this device is a standby bedside clock. Drives the
+  // top-precedence route to DedicatedClockScreen in main.dart.
+  final bool dedicatedClockEnabled;
+
   // App (phone) ambient background style.
   final String appBackgroundKey;
 
@@ -176,6 +216,9 @@ class SettingsState extends Equatable {
     this.clockSleepEndMinutes = 7 * 60, // 07:00
     this.showWeather = true,
     this.weatherFahrenheit = false,
+    this.phoneAlarmEnabled = false,
+    this.phoneAlarmRequireCharging = true,
+    this.dedicatedClockEnabled = false,
     this.appBackgroundKey = 'minimal',
   });
 
@@ -201,6 +244,9 @@ class SettingsState extends Equatable {
     int? clockSleepEndMinutes,
     bool? showWeather,
     bool? weatherFahrenheit,
+    bool? phoneAlarmEnabled,
+    bool? phoneAlarmRequireCharging,
+    bool? dedicatedClockEnabled,
     String? appBackgroundKey,
   }) {
     return SettingsState(
@@ -224,6 +270,11 @@ class SettingsState extends Equatable {
       clockSleepEndMinutes: clockSleepEndMinutes ?? this.clockSleepEndMinutes,
       showWeather: showWeather ?? this.showWeather,
       weatherFahrenheit: weatherFahrenheit ?? this.weatherFahrenheit,
+      phoneAlarmEnabled: phoneAlarmEnabled ?? this.phoneAlarmEnabled,
+      phoneAlarmRequireCharging:
+          phoneAlarmRequireCharging ?? this.phoneAlarmRequireCharging,
+      dedicatedClockEnabled:
+          dedicatedClockEnabled ?? this.dedicatedClockEnabled,
       appBackgroundKey: appBackgroundKey ?? this.appBackgroundKey,
     );
   }
@@ -248,6 +299,9 @@ class SettingsState extends Equatable {
     clockSleepEndMinutes,
     showWeather,
     weatherFahrenheit,
+    phoneAlarmEnabled,
+    phoneAlarmRequireCharging,
+    dedicatedClockEnabled,
     appBackgroundKey,
   ];
 }
@@ -269,6 +323,9 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<UpdateClockSleepEvent>(_onUpdateClockSleep);
     on<ToggleShowWeatherEvent>(_onToggleShowWeather);
     on<ToggleWeatherUnitEvent>(_onToggleWeatherUnit);
+    on<TogglePhoneAlarmEvent>(_onTogglePhoneAlarm);
+    on<TogglePhoneAlarmChargingEvent>(_onTogglePhoneAlarmCharging);
+    on<ToggleDedicatedClockEvent>(_onToggleDedicatedClock);
     on<UpdateAppBackgroundEvent>(_onUpdateAppBackground);
   }
 
@@ -298,6 +355,11 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
         clockSleepEndMinutes: prefs.getInt('clockSleepEnd') ?? (7 * 60),
         showWeather: prefs.getBool('showWeather') ?? true,
         weatherFahrenheit: prefs.getBool('weatherFahrenheit') ?? false,
+        phoneAlarmEnabled: prefs.getBool('phoneAlarmEnabled') ?? false,
+        phoneAlarmRequireCharging:
+            prefs.getBool('phoneAlarmRequireCharging') ?? true,
+        dedicatedClockEnabled:
+            prefs.getBool('dedicatedClockEnabled') ?? false,
         appBackgroundKey: bgKey,
       ),
     );
@@ -411,6 +473,30 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
   ) async {
     await prefs.setBool('weatherFahrenheit', event.fahrenheit);
     emit(state.copyWith(weatherFahrenheit: event.fahrenheit));
+  }
+
+  void _onTogglePhoneAlarm(
+    TogglePhoneAlarmEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setBool('phoneAlarmEnabled', event.enabled);
+    emit(state.copyWith(phoneAlarmEnabled: event.enabled));
+  }
+
+  void _onTogglePhoneAlarmCharging(
+    TogglePhoneAlarmChargingEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setBool('phoneAlarmRequireCharging', event.requireCharging);
+    emit(state.copyWith(phoneAlarmRequireCharging: event.requireCharging));
+  }
+
+  void _onToggleDedicatedClock(
+    ToggleDedicatedClockEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setBool('dedicatedClockEnabled', event.enabled);
+    emit(state.copyWith(dedicatedClockEnabled: event.enabled));
   }
 
   void _onUpdateAppBackground(

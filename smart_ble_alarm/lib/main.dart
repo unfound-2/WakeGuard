@@ -18,6 +18,7 @@ import 'presentation/blocs/history_cubit/dismissal_history_cubit.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/screens/onboarding_screen.dart';
 import 'presentation/screens/setup_screen.dart';
+import 'presentation/screens/dedicated_clock_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,6 +79,13 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
   // relaunch does NOT force the pairing screen again — the app opens straight
   // into MainScreen (offline) until they pair via Settings → "Connect a Clock".
   late bool _setupSkipped = widget.prefs.getBool('setupSkipped') ?? false;
+  // True when this device has been set up as a standby "Dedicated Clock" (from
+  // onboarding or Settings). Highest routing precedence: the app boots straight
+  // into the full-screen clock face and relaunches back into it, until the user
+  // exits the mode. Source of truth for the route (SettingsBloc mirrors it for
+  // its own state/UI). Same persisted-flag pattern as [_setupSkipped].
+  late bool _dedicatedClockEnabled =
+      widget.prefs.getBool('dedicatedClockEnabled') ?? false;
   // Bumped to tear down and recreate the provider/bloc subtree so the new
   // BleConnectionBloc binds to the freshly-selected repository.
   int _backendGeneration = 0;
@@ -145,6 +153,26 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
     widget.prefs.remove('setupSkipped');
     setState(() {
       _setupSkipped = false;
+    });
+  }
+
+  /// Turn THIS device into a standby Dedicated Clock (from the onboarding action
+  /// box or Settings). Persist it so relaunches boot back into the clock face,
+  /// and flip the highest-precedence route immediately. Also keep the persisted
+  /// flag in sync so SettingsBloc reads the same value on its next load.
+  void _enableDedicatedClock() {
+    widget.prefs.setBool('dedicatedClockEnabled', true);
+    setState(() {
+      _dedicatedClockEnabled = true;
+    });
+  }
+
+  /// Reverse of [_enableDedicatedClock]: leave Dedicated Clock mode and return to
+  /// normal routing (paired / skipped / needs-setup, evaluated as usual).
+  void _disableDedicatedClock() {
+    widget.prefs.setBool('dedicatedClockEnabled', false);
+    setState(() {
+      _dedicatedClockEnabled = false;
     });
   }
 
@@ -242,7 +270,12 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                     child: child ?? const SizedBox.shrink(),
                   );
                 },
-                home: _rememberedDeviceId != null
+                // This device is a standby Dedicated Clock: highest precedence,
+                // so it boots straight into the full-screen clock face and
+                // relaunches back into it until the user exits the mode.
+                home: _dedicatedClockEnabled
+                    ? DedicatedClockScreen(onExit: _disableDedicatedClock)
+                    : _rememberedDeviceId != null
                     ? MainScreen(
                         // Offer the "leave the simulator" action only while the
                         // simulated backend is active; on a real clock it's null
@@ -258,12 +291,16 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                             _bleRepository is SimulatedBleRepositoryImpl
                             ? null
                             : _unpairDevice,
+                        onSetupDedicatedClock: _enableDedicatedClock,
                       )
                     // No paired clock: if the user skipped pairing, open the app
                     // offline (with a Settings → "Connect a Clock" way back in);
                     // otherwise show pairing (or first-run onboarding).
                     : _setupSkipped
-                    ? MainScreen(onConnectClock: _connectClock)
+                    ? MainScreen(
+                        onConnectClock: _connectClock,
+                        onSetupDedicatedClock: _enableDedicatedClock,
+                      )
                     : ((widget.prefs.getBool('hasSeenOnboarding') ?? false)
                           ? SetupScreen(
                               prefs: widget.prefs,
@@ -273,8 +310,12 @@ class _SmartAlarmAppState extends State<SmartAlarmApp> {
                               onEnterDeveloperMode:
                                   kDebugMode ? _enterDeveloperMode : null,
                               onSkip: _skipPairing,
+                              onSetupDedicatedClock: _enableDedicatedClock,
                             )
-                          : OnboardingScreen(prefs: widget.prefs)),
+                          : OnboardingScreen(
+                              prefs: widget.prefs,
+                              onSetupDedicatedClock: _enableDedicatedClock,
+                            )),
                 debugShowCheckedModeBanner: false,
               );
             },

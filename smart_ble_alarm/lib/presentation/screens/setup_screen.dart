@@ -24,11 +24,17 @@ class SetupScreen extends StatefulWidget {
   /// null.
   final VoidCallback? onSkip;
 
+  /// Turns THIS device into a standby Dedicated Clock (Beta). Surfaced here for
+  /// users who have no hardware clock to pair. Wired from `main.dart`; null hides
+  /// the affordance.
+  final VoidCallback? onSetupDedicatedClock;
+
   const SetupScreen({
     super.key,
     required this.prefs,
     this.onEnterDeveloperMode,
     this.onSkip,
+    this.onSetupDedicatedClock,
   });
 
   @override
@@ -148,6 +154,12 @@ class _SetupScreenState extends State<SetupScreen> {
                   _ActionCard(scanning: scanning, onSearch: _startScan),
                   const SizedBox(height: 22),
                   _NearbyClocksSection(scanning: scanning),
+                  if (widget.onSetupDedicatedClock != null) ...[
+                    const SizedBox(height: 22),
+                    _NoClockSection(
+                      onSetupDedicatedClock: widget.onSetupDedicatedClock!,
+                    ),
+                  ],
                 ],
               );
             },
@@ -365,6 +377,29 @@ class _NearbyClocksSection extends StatelessWidget {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Escape hatch for users with no hardware clock: turn this device into a
+/// standby Dedicated Clock (Beta) instead of pairing.
+class _NoClockSection extends StatelessWidget {
+  final VoidCallback onSetupDedicatedClock;
+
+  const _NoClockSection({required this.onSetupDedicatedClock});
+
+  @override
+  Widget build(BuildContext context) {
+    return WakeSection(
+      title: 'No clock to pair?',
+      subtitle:
+          'Use this phone (or a spare one) as a standby bedside clock instead. '
+          'Best-effort — the hardware clock is the tamper-proof one.',
+      child: WakeSecondaryButton(
+        label: 'Use this phone as a clock (Beta)',
+        icon: Icons.phonelink_ring_rounded,
+        onPressed: onSetupDedicatedClock,
+      ),
     );
   }
 }

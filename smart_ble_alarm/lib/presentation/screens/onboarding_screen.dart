@@ -7,7 +7,16 @@ import 'setup_screen.dart';
 class OnboardingScreen extends StatefulWidget {
   final SharedPreferences prefs;
 
-  const OnboardingScreen({super.key, required this.prefs});
+  /// Turns THIS device into a standby Dedicated Clock (Beta). Wired from
+  /// `main.dart`; drives the onboarding "Set up this device as the clock" box on
+  /// the final page. When null the box is hidden.
+  final VoidCallback? onSetupDedicatedClock;
+
+  const OnboardingScreen({
+    super.key,
+    required this.prefs,
+    this.onSetupDedicatedClock,
+  });
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -81,6 +90,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         'Clear loading states during setup',
       ],
     ),
+    _OnboardingPage(
+      eyebrow: 'No clock? · Beta',
+      title: 'Turn a spare phone into a clock.',
+      body:
+          'Have an old phone or tablet lying around? Install WakeGuard on it and set it up as a Dedicated Clock — a standby bedside clock that shows the time and rings your wake challenge, no hardware to build.',
+      icon: Icons.phonelink_ring,
+      bullets: [
+        'Install WakeGuard on the spare device',
+        'Keep it plugged in on your nightstand',
+        'Tap “Set up this device as the clock” below',
+      ],
+    ),
   ];
 
   bool get _isLastPage => _selectedPage == _pages.length - 1;
@@ -127,6 +148,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
+  /// The onboarding "Set up this device as the clock" box: mark onboarding seen
+  /// so it doesn't reappear if the user later exits the mode, then hand off to
+  /// `main.dart`, which persists Dedicated Clock mode and swaps `home:` to the
+  /// full-screen clock face (this widget is torn down by that rebuild).
+  Future<void> _setupDedicatedClock() async {
+    setState(() => _isPreparing = true);
+    await widget.prefs.setBool(_hasSeenOnboardingKey, true);
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+
+    if (!mounted) return;
+    widget.onSetupDedicatedClock?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -162,6 +196,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       isLastPage: _isLastPage,
                       onSkip: _skip,
                       onContinue: _continue,
+                      onSetupDedicatedClock: widget.onSetupDedicatedClock == null
+                          ? null
+                          : _setupDedicatedClock,
                     ),
                   ),
                 ],
@@ -355,12 +392,17 @@ class _OnboardingFooter extends StatelessWidget {
   final VoidCallback onSkip;
   final VoidCallback onContinue;
 
+  /// Optional "Set up this device as the clock" action, shown as a secondary box
+  /// beneath the primary CTA on the final page. Null hides it.
+  final VoidCallback? onSetupDedicatedClock;
+
   const _OnboardingFooter({
     required this.selectedPage,
     required this.pageCount,
     required this.isLastPage,
     required this.onSkip,
     required this.onContinue,
+    this.onSetupDedicatedClock,
   });
 
   @override
@@ -397,6 +439,15 @@ class _OnboardingFooter extends StatelessWidget {
               : Icons.arrow_right_alt_rounded,
           onPressed: onContinue,
         ),
+        if (isLastPage && onSetupDedicatedClock != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: WakeSecondaryButton(
+              label: 'Set up this device as the clock',
+              icon: Icons.phonelink_ring_rounded,
+              onPressed: onSetupDedicatedClock,
+            ),
+          ),
         if (!isLastPage)
           Padding(
             padding: const EdgeInsets.only(top: 6),

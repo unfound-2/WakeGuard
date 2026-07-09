@@ -38,12 +38,18 @@ class SettingsScreen extends StatefulWidget {
   /// screen via the app-level callback in `main.dart`.
   final VoidCallback? onConnectClock;
 
+  /// When provided (from `main.dart`), the Phone Alarm section shows a "Use this
+  /// phone as a dedicated clock (Beta)" action that turns this device into a
+  /// standby bedside clock. Null hides the row.
+  final VoidCallback? onSetupDedicatedClock;
+
   const SettingsScreen({
     super.key,
     this.isTab = false,
     this.onExitDeveloperMode,
     this.onUnpairDevice,
     this.onConnectClock,
+    this.onSetupDedicatedClock,
   });
 
   @override
@@ -93,6 +99,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _buildChallengeSection(settings),
                 const SizedBox(height: 24),
                 _buildNotificationsSection(settings),
+                const SizedBox(height: 24),
+                _buildPhoneAlarmSection(settings),
                 const SizedBox(height: 24),
                 _buildDataSection(),
                 const SizedBox(height: 24),
@@ -496,6 +504,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             _footnote('Changes apply from the next alarm update.'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Phone Alarm (companion mode) ---------------------------------------
+
+  /// Companion mode: the app itself rings so an alarm still fires without the
+  /// hardware clock. Enforced on Android (full-screen alarm over the lock
+  /// screen); best-effort on iOS. The copy is deliberately honest about the iOS
+  /// ceiling so the mode never over-promises the clock's tamper-proof guarantee.
+  Widget _buildPhoneAlarmSection(SettingsState settings) {
+    final bloc = context.read<SettingsBloc>();
+    final enabled = settings.phoneAlarmEnabled;
+    return WakeSection(
+      title: 'Phone Alarm (Beta)',
+      subtitle: 'Let this phone ring on its own, without the clock.',
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
+        shadows: wakeCardShadow(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            WakeSettingsRow(
+              icon: Icons.phonelink_ring_rounded,
+              title: 'Ring on this phone',
+              subtitle: 'A backup ringer for travel or a lost clock connection',
+              trailing: Switch(
+                value: enabled,
+                onChanged: (val) => bloc.add(TogglePhoneAlarmEvent(val)),
+              ),
+            ),
+            if (enabled) ...[
+              Divider(height: 20, color: Theme.of(context).dividerColor),
+              WakeSettingsRow(
+                icon: Icons.battery_charging_full_rounded,
+                title: 'Only while charging',
+                subtitle: 'Saves battery — the reliable ringer needs power',
+                trailing: Switch(
+                  value: settings.phoneAlarmRequireCharging,
+                  onChanged: (val) =>
+                      bloc.add(TogglePhoneAlarmChargingEvent(val)),
+                ),
+              ),
+              _footnote(
+                'On Android this rings full-screen and can only be silenced by '
+                'your wake challenge. On iPhone it is best-effort: keep WakeGuard '
+                'open and charging overnight. If the app is closed, the alarm may '
+                'only buzz as notifications you can swipe away — the clock is the '
+                'only tamper-proof alarm.',
+                icon: Icons.info_outline_rounded,
+              ),
+            ],
+            if (widget.onSetupDedicatedClock != null) ...[
+              Divider(height: 20, color: Theme.of(context).dividerColor),
+              WakeSettingsRow(
+                icon: Icons.phonelink_ring_rounded,
+                title: 'Use this phone as a dedicated clock',
+                subtitle:
+                    'Beta · make this device a standby bedside clock face',
+                onTap: widget.onSetupDedicatedClock,
+              ),
+            ],
           ],
         ),
       ),
