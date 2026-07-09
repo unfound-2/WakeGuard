@@ -34,9 +34,12 @@ class NotificationService {
       final info = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(info.identifier));
     } catch (_) {
-      // Fall back to the default location (UTC). Alarms still schedule; the
-      // wall-clock time is only correct once the real zone is resolved, so we
-      // deliberately don't hard-fail startup on this.
+      // The IANA lookup failed. Don't leave tz.local at its UTC default — every
+      // backup alarm would then be scheduled at UTC wall-clock, which is hours
+      // off for most users (the backup layer exists precisely to cover a dead
+      // clock, so firing it at the wrong time defeats the purpose). Fall back to
+      // a fixed zone matching the phone's current UTC offset instead.
+      _setFallbackLocalLocation();
     }
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -62,6 +65,28 @@ class NotificationService {
     await androidImpl?.requestExactAlarmsPermission();
 
     _ready = true;
+  }
+
+  /// Best-effort local timezone for when the IANA lookup (via flutter_timezone)
+  /// fails. Maps a whole-hour UTC offset to its fixed `Etc/GMT±N` zone — these
+  /// are always present in the embedded tz database, so this is a pure lookup
+  /// that can't construct a bad zone. Note POSIX inverts the sign: UTC+8 is
+  /// `Etc/GMT-8`. A fractional-offset region (India, Newfoundland, …) whose
+  /// IANA name *also* failed to resolve is left at UTC — a rare double failure,
+  /// and never worse than the previous unconditional-UTC behaviour.
+  void _setFallbackLocalLocation() {
+    try {
+      final offset = DateTime.now().timeZoneOffset;
+      if (offset.inMinutes % 60 == 0) {
+        final hours = offset.inHours;
+        final name = hours == 0
+            ? 'Etc/UTC'
+            : 'Etc/GMT${hours > 0 ? '-' : '+'}${hours.abs()}';
+        tz.setLocalLocation(tz.getLocation(name));
+      }
+    } catch (_) {
+      // Leave tz.local at UTC — matches the prior fallback behaviour.
+    }
   }
 
   /// Cancel the previous backup set and schedule fresh notifications for the

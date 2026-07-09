@@ -1,2 +1,9 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+
+// ML Kit's MLImage.framework ships only x86_64-simulator + arm64-device slices
+// (no arm64-simulator), so on Apple Silicon the simulator must build x86_64 under
+// Rosetta or linking the device slice fails. This overrides Generated.xcconfig
+// (regenerated each build; it excludes only i386). Simulator-scoped: device
+// builds keep arm64 and are unaffected.
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = arm64 i386

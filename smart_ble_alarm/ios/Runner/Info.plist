@@ -76,5 +76,7 @@
 	<string>Bluetooth scanning may require location permission to discover nearby alarm clocks.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Bluetooth scanning may require location permission to discover nearby alarm clocks.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

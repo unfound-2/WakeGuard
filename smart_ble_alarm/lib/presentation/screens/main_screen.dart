@@ -152,72 +152,69 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   ///    all — [adapterState] was exposed by the repository but never consumed);
   ///  - a reconnect is actively in progress;
   ///  - disconnected, now with a one-tap Retry instead of a dead end.
-  Widget _buildConnectivityBanner() {
-    return BlocBuilder<BleConnectionBloc, BleState>(
-      builder: (context, bleState) {
-        return StreamBuilder<BluetoothAdapterState>(
-          stream: context.read<BleRepository>().adapterState,
-          builder: (context, snapshot) {
-            final theme = Theme.of(context);
-            final adapter = snapshot.data;
-            final radioUnavailable =
-                adapter == BluetoothAdapterState.off ||
-                adapter == BluetoothAdapterState.unauthorized ||
-                adapter == BluetoothAdapterState.unavailable;
+  /// Builds the connectivity banner for the current state, or `null` when there
+  /// is nothing to surface. Returning a nullable widget (instead of a
+  /// SizedBox.shrink) lets the caller tell whether the banner is occupying
+  /// layout space: a semi-permanent banner reserves height and pushes the tab
+  /// content down rather than floating over — and hiding — the menu beneath it.
+  Widget? _connectivityBanner(
+    BuildContext context,
+    BleState bleState,
+    BluetoothAdapterState? adapter,
+  ) {
+    final theme = Theme.of(context);
+    final radioUnavailable =
+        adapter == BluetoothAdapterState.off ||
+        adapter == BluetoothAdapterState.unauthorized ||
+        adapter == BluetoothAdapterState.unavailable;
 
-            if (radioUnavailable) {
-              final unauthorized =
-                  adapter == BluetoothAdapterState.unauthorized;
-              return _statusBanner(
-                context,
-                color: theme.colorScheme.error,
-                icon: Icons.bluetooth_disabled_rounded,
-                message: unauthorized
-                    ? 'Bluetooth access is off — enable it in Settings to reach your clock.'
-                    : 'Bluetooth is off — turn it on to reach your clock.',
-              );
-            }
+    if (radioUnavailable) {
+      final unauthorized = adapter == BluetoothAdapterState.unauthorized;
+      return _statusBanner(
+        context,
+        color: theme.colorScheme.error,
+        icon: Icons.bluetooth_disabled_rounded,
+        message: unauthorized
+            ? 'Bluetooth access is off — enable it in Settings to reach your clock.'
+            : 'Bluetooth is off — turn it on to reach your clock.',
+      );
+    }
 
-            if (bleState is BleConnecting || bleState is BleScanning) {
-              return _statusBanner(
-                context,
-                color: theme.colorScheme.primary,
-                icon: Icons.bluetooth_searching_rounded,
-                message: 'Reconnecting to your clock…',
-              );
-            }
+    if (bleState is BleConnecting || bleState is BleScanning) {
+      return _statusBanner(
+        context,
+        color: theme.colorScheme.primary,
+        icon: Icons.bluetooth_searching_rounded,
+        message: 'Reconnecting to your clock…',
+      );
+    }
 
-            if (bleState is BleDisconnected) {
-              return _statusBanner(
-                context,
-                color: theme.colorScheme.error,
-                icon: Icons.cloud_off_rounded,
-                message:
-                    'Disconnected — changes save locally and sync when the clock reconnects.',
-                action: TextButton(
-                  onPressed: () => context.read<BleConnectionBloc>().add(
-                    ReconnectEvent(),
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: theme.colorScheme.error,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    // Keep a ≥44px hit area for accessibility rather than the
-                    // previous shrink-wrapped (sub-44px) target.
-                    minimumSize: const Size(48, 44),
-                  ),
-                  child: const Text(
-                    'Retry',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              );
-            }
+    if (bleState is BleDisconnected) {
+      return _statusBanner(
+        context,
+        color: theme.colorScheme.error,
+        icon: Icons.cloud_off_rounded,
+        message:
+            'Disconnected — changes save locally and sync when the clock reconnects.',
+        action: TextButton(
+          onPressed: () =>
+              context.read<BleConnectionBloc>().add(ReconnectEvent()),
+          style: TextButton.styleFrom(
+            foregroundColor: theme.colorScheme.error,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            // Keep a ≥44px hit area for accessibility rather than the
+            // previous shrink-wrapped (sub-44px) target.
+            minimumSize: const Size(48, 44),
+          ),
+          child: const Text(
+            'Retry',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+    }
 
-            return const SizedBox.shrink();
-          },
-        );
-      },
-    );
+    return null;
   }
 
   Widget _statusBanner(
@@ -229,12 +226,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }) {
     return Container(
       width: double.infinity,
-      // No status-bar inset here: the parent SafeArea already positions the
-      // overlay below the status bar.
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       decoration: BoxDecoration(
-        // Opaque (blended over the surface) so the banner reads cleanly while
-        // floating OVER content, rather than letting content bleed through.
+        // Opaque (blended over the surface) so the banner reads cleanly.
         color: Color.alphaBlend(
           color.withValues(alpha: 0.16),
           Theme.of(context).colorScheme.surface,
@@ -243,24 +236,33 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           bottom: BorderSide(color: color.withValues(alpha: 0.35), width: 1),
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              message,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+      // The banner is part of the layout now (not an overlay), so it carries
+      // the status-bar inset itself: the tint fills up behind the status bar
+      // while SafeArea keeps the row below the system clock/battery.
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               ),
-              textAlign: TextAlign.center,
-            ),
+              if (action != null) ...[const SizedBox(width: 4), action],
+            ],
           ),
-          if (action != null) ...[const SizedBox(width: 4), action],
-        ],
+        ),
       ),
     );
   }
@@ -583,38 +585,64 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       ],
       child: Scaffold(
         extendBody: true,
-        body: Stack(
-          children: [
-            // Content fills the whole screen; each tab applies its own top
-            // SafeArea. IndexedStack keeps every tab mounted so scroll position
-            // and in-tab state (e.g. live timer tickers) survive tab switches.
-            Positioned.fill(
-              child: IndexedStack(
-                index: _currentIndex,
-                children: _buildTabs(),
-              ),
-            ),
-            // Banners are an OVERLAY, not part of the layout: they float over
-            // the content instead of reserving height (which pushed content
-            // down and double-counted the status-bar inset). SafeArea(top) pins
-            // them just below the status bar so the system clock/battery stay
-            // legible on the app background.
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+        body: BlocBuilder<BleConnectionBloc, BleState>(
+          builder: (context, bleState) {
+            return StreamBuilder<BluetoothAdapterState>(
+              stream: context.read<BleRepository>().adapterState,
+              builder: (context, snapshot) {
+                // The connectivity banner is SEMI-PERMANENT: when it's showing it
+                // lives in the layout flow and PUSHES the tab content down, so it
+                // never sits on top of (and hides) the menu beneath it. Only
+                // transient popups — the ringing banner below — are allowed to
+                // float over content.
+                final connectivityBanner = _connectivityBanner(
+                  context,
+                  bleState,
+                  snapshot.data,
+                );
+                return Stack(
                   children: [
-                    _buildRingingBanner(),
-                    _buildConnectivityBanner(),
+                    Positioned.fill(
+                      child: Column(
+                        children: [
+                          ?connectivityBanner,
+                          // IndexedStack keeps every tab mounted so scroll
+                          // position and in-tab state (live timer tickers)
+                          // survive tab switches. The banner above already
+                          // carries the status-bar inset, so strip it here to
+                          // stop each tab's own SafeArea(top) from double-
+                          // counting it; with no banner the tabs inset for the
+                          // status bar as usual.
+                          Expanded(
+                            child: MediaQuery.removePadding(
+                              context: context,
+                              removeTop: connectivityBanner != null,
+                              child: IndexedStack(
+                                index: _currentIndex,
+                                children: _buildTabs(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // The ringing banner is a TRANSIENT popup, so it stays an
+                    // overlay that floats over content. SafeArea(top) pins it
+                    // just below the status bar.
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        bottom: false,
+                        child: _buildRingingBanner(),
+                      ),
+                    ),
                   ],
-                ),
-              ),
-            ),
-          ],
+                );
+              },
+            );
+          },
         ),
         // Floating Liquid Glass tab bar; content scrolls underneath thanks to
         // extendBody, so each tab pads its scrollable bottom edge.

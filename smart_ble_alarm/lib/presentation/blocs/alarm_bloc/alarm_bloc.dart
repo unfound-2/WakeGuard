@@ -311,7 +311,7 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     );
   }
 
-  void _onAddOrUpdateAlarm(
+  Future<void> _onAddOrUpdateAlarm(
     AddOrUpdateAlarmEvent event,
     Emitter<AlarmState> emit,
   ) async {
@@ -390,7 +390,10 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     }
   }
 
-  void _onDeleteAlarm(DeleteAlarmEvent event, Emitter<AlarmState> emit) async {
+  Future<void> _onDeleteAlarm(
+    DeleteAlarmEvent event,
+    Emitter<AlarmState> emit,
+  ) async {
     final updatedAlarms = state.alarms
         .where((a) => a.id != event.alarmId)
         .toList();
