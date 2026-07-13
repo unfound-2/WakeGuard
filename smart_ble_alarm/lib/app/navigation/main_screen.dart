@@ -15,6 +15,7 @@ import 'package:smart_ble_alarm/domain/entities/alarm.dart';
 import 'package:smart_ble_alarm/core/utils/alarm_time_utils.dart';
 import 'package:smart_ble_alarm/shared/widgets/liquid_glass_tab_bar.dart';
 import 'package:smart_ble_alarm/features/alarms/presentation/widgets/ringing_dismissal.dart';
+import 'package:smart_ble_alarm/features/alarms/presentation/widgets/phone_alarm_ringer.dart';
 import 'package:smart_ble_alarm/features/alarms/presentation/tabs/alarms_tab.dart';
 import 'package:smart_ble_alarm/features/display/presentation/tabs/display_tab.dart';
 import 'package:smart_ble_alarm/features/home/presentation/tabs/home_tab.dart';
@@ -619,6 +620,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 );
                 return Stack(
                   children: [
+                    // Invisible foreground ring engine: makes this phone ring
+                    // itself when an alarm's time arrives ("Ring on this phone").
+                    // Zero-size + positioned so it never drives the Stack's size
+                    // (a non-positioned child would) or intercepts taps.
+                    const Positioned(
+                      left: 0,
+                      top: 0,
+                      width: 0,
+                      height: 0,
+                      child: PhoneAlarmRinger(),
+                    ),
                     Positioned.fill(
                       child: Column(
                         children: [

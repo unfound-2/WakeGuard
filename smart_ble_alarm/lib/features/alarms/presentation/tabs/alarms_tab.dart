@@ -171,7 +171,11 @@ class _AlarmsTabState extends State<AlarmsTab> {
     required bool selected,
     required Color onSurface,
   }) {
-    final color = selected ? Colors.white : onSurface;
+    final primary = Theme.of(context).colorScheme.primary;
+    final onAccent = ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+    final color = selected ? onAccent : onSurface;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -321,6 +325,11 @@ class _AlarmsTabState extends State<AlarmsTab> {
         : (active ? scheme.onSurface : scheme.onSurfaceVariant);
     final summary = _alarmSummary(alarm, syncStatus);
     final repeatLabel = AlarmTimeUtils.formatDays(alarm.dayMask);
+    final timeLabel = AlarmTimeUtils.formatTime(
+      alarm.hour,
+      alarm.minute,
+      is24Hour: is24Hour,
+    );
 
     return Dismissible(
       key: ValueKey('alarm-${alarm.id}'),
@@ -335,9 +344,12 @@ class _AlarmsTabState extends State<AlarmsTab> {
         ),
         child: const Icon(Icons.delete_rounded, color: Colors.white, size: 26),
       ),
-      child: GestureDetector(
-        onTap: () => _openEditor(context, alarm),
-        child: GlassCard(
+      child: Semantics(
+        button: true,
+        label: 'Edit alarm, $timeLabel, ${alarm.displayName}',
+        child: GestureDetector(
+          onTap: () => _openEditor(context, alarm),
+          child: GlassCard(
           padding: const EdgeInsets.all(16),
           tintColor: isRinging ? scheme.error : null,
           borderColor: isRinging
@@ -493,6 +505,7 @@ class _AlarmsTabState extends State<AlarmsTab> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

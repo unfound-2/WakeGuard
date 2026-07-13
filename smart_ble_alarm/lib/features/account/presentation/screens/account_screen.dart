@@ -57,13 +57,7 @@ class _AccountScreenState extends State<AccountScreen> {
                   else if (!state.firebaseReady)
                     _firebaseUnavailableCard(context, state)
                   else if (state.isSignedIn)
-                    AccountProfileEditor(
-                      state: state,
-                      secondaryActionLabel: 'Sign Out',
-                      secondaryActionIcon: Icons.logout_rounded,
-                      onSecondaryAction: () =>
-                          context.read<AccountCubit>().signOut(),
-                    )
+                    _signedInContent(context, state)
                   else
                     _authCard(context, state),
                 ],
@@ -71,6 +65,78 @@ class _AccountScreenState extends State<AccountScreen> {
             },
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _signedInContent(BuildContext context, AccountState state) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AccountProfileEditor(
+          state: state,
+          secondaryActionLabel: 'Sign Out',
+          secondaryActionIcon: Icons.logout_rounded,
+          onSecondaryAction: () => context.read<AccountCubit>().signOut(),
+        ),
+        const SizedBox(height: 14),
+        _deleteAccountCard(context, state),
+      ],
+    );
+  }
+
+  Widget _deleteAccountCard(BuildContext context, AccountState state) {
+    final scheme = Theme.of(context).colorScheme;
+    return GlassCard(
+      padding: const EdgeInsets.all(18),
+      shadows: wakeCardShadow(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.delete_forever_rounded, color: scheme.error),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Delete account',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Remove your cloud profile, profile photo, and alarm backups. '
+            'Local alarms on this phone stay until you reset them.',
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: 13.5,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: Text(state.isBusy ? 'Please Wait...' : 'Delete Account'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: scheme.error,
+                side: BorderSide(color: scheme.error.withValues(alpha: 0.55)),
+                minimumSize: const Size.fromHeight(46),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              onPressed: state.isBusy ? null : () => _confirmDeleteAccount(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -282,6 +348,38 @@ class _AccountScreenState extends State<AccountScreen> {
     } else {
       cubit.signIn(email: email, password: password);
     }
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete account?'),
+        content: const Text(
+          'This removes your WakeGuard cloud profile, profile photo, and '
+          'alarm backups. You can keep using WakeGuard locally on this phone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              'Delete Account',
+              style: TextStyle(
+                color: Theme.of(dialogContext).colorScheme.error,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    await context.read<AccountCubit>().deleteAccount();
   }
 }
 

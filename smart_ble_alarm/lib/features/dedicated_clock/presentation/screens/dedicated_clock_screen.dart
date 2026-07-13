@@ -1,13 +1,12 @@
 import 'dart:async';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 // Best-effort keep-screen-awake. Wrapped in try/catch everywhere so a missing
 // platform implementation (e.g. in widget tests) can never crash the clock.
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import 'package:smart_ble_alarm/core/audio/alarm_sound.dart';
+import 'package:smart_ble_alarm/core/audio/alarm_tone_player.dart';
 import 'package:smart_ble_alarm/core/theme/app_colors.dart';
 import 'package:smart_ble_alarm/core/theme/glass.dart';
 import 'package:smart_ble_alarm/core/theme/wake_widgets.dart';
@@ -44,10 +43,10 @@ class _DedicatedClockScreenState extends State<DedicatedClockScreen> {
   Timer? _ringHaptic;
   DateTime _now = DateTime.now();
 
-  /// Loops the synthesized alarm tone while ringing. Lazily created; all calls
-  /// are best-effort so a missing audio platform impl never crashes the clock.
-  AudioPlayer? _player;
-  Timer? _volumeRamp; // drives the gradual-wake fade-in
+  /// Loops the synthesized alarm tone while ringing (shared engine, so the
+  /// loudness/fade match the "Ring on this phone" path). Best-effort: a missing
+  /// audio platform impl never crashes the clock.
+  final AlarmTonePlayer _tone = AlarmTonePlayer();
   Timer? _snoozeTimer; // re-arms the ring after a snooze
   int _snoozesUsed = 0; // reset each fresh ring; gates the snooze button
 
@@ -57,9 +56,15 @@ class _DedicatedClockScreenState extends State<DedicatedClockScreen> {
   Alarm? _ringing;
   DateTime? _ringingSince;
 
-  /// Guards against re-firing the same alarm every tick within its minute. Keyed
-  /// by alarm id + calendar minute so each occurrence rings exactly once.
-  String? _lastFiredKey;
+  /// Guards against re-firing the same alarm every tick within its minute.
+  /// [_firedMinuteToken] is the calendar minute the ids below belong to; when
+  /// the minute changes the set is cleared so each new occurrence rings once.
+  /// Tracking the fired ids per-minute (rather than a single last-fired key)
+  /// lets several alarms that share the same minute each be recognized as "not
+  /// yet fired" — so a second coincident alarm is never lost when the first is
+  /// dismissed after the calendar minute has already rolled over.
+  String? _firedMinuteToken;
+  final Set<int> _firedAlarmIds = <int>{};
 
   @override
   void initState() {
@@ -72,11 +77,8 @@ class _DedicatedClockScreenState extends State<DedicatedClockScreen> {
   void dispose() {
     _ticker?.cancel();
     _ringHaptic?.cancel();
-    _volumeRamp?.cancel();
     _snoozeTimer?.cancel();
-    try {
-      _player?.dispose();
-    } catch (_) {}
+    _tone.dispose();
     _disableWakelock();
     super.dispose();
   }
@@ -106,24 +108,40 @@ class _DedicatedClockScreenState extends State<DedicatedClockScreen> {
 
   /// If an enabled alarm falls on this exact minute (and today), start ringing.
   void _maybeFire(DateTime now) {
+    final token = _minuteToken(now);
+    if (_firedMinuteToken != token) {
+      // New minute — forget the previous minute's fired ids.
+      _firedMinuteToken = token;
+      _firedAlarmIds.clear();
+    }
+    final alarm = _matchingUnfiredAlarm(now.hour, now.minute, now);
+    if (alarm == null) return;
+    _firedAlarmIds.add(alarm.id);
+    _startRing(alarm);
+  }
+
+  /// The first active alarm scheduled for [hour]:[minute] on [dayRef]'s weekday
+  /// that has not already fired this minute, or null if none remain. Shared by
+  /// [_maybeFire] and [_ringNextCoincidentOrClear] so both apply the same
+  /// active/repeat-day/already-fired rules.
+  Alarm? _matchingUnfiredAlarm(int hour, int minute, DateTime dayRef) {
     final alarms = context.read<AlarmBloc>().state.alarms;
     for (final alarm in alarms) {
       if (!alarm.isActive) continue;
-      if (alarm.hour != now.hour || alarm.minute != now.minute) continue;
+      if (alarm.hour != hour || alarm.minute != minute) continue;
       // Repeat alarms fire only on their configured weekdays; a one-time alarm
       // (no repeat bits) fires at its time each day it stays enabled.
-      if (_hasRepeatDays(alarm) && !alarm.isDayActive(now.weekday % 7)) {
+      if (_hasRepeatDays(alarm) && !alarm.isDayActive(dayRef.weekday % 7)) {
         continue;
       }
-      final key =
-          '${alarm.id}-${now.year}-${now.month}-${now.day}'
-          '-${now.hour}-${now.minute}';
-      if (_lastFiredKey == key) continue;
-      _lastFiredKey = key;
-      _startRing(alarm);
-      return;
+      if (_firedAlarmIds.contains(alarm.id)) continue;
+      return alarm;
     }
+    return null;
   }
+
+  String _minuteToken(DateTime t) =>
+      '${t.year}-${t.month}-${t.day}-${t.hour}-${t.minute}';
 
   bool _hasRepeatDays(Alarm alarm) => (alarm.dayMask & 0x7F) != 0;
 
@@ -142,72 +160,12 @@ class _DedicatedClockScreenState extends State<DedicatedClockScreen> {
       const Duration(milliseconds: 1400),
       (_) => WakeHaptics.heavyImpact(),
     );
-    _startAudio(alarm);
-  }
-
-  /// Loop the synthesized alarm tone at the alarm's configured volume, ramping
-  /// up over the gradual-wake window when set. All best-effort.
-  Future<void> _startAudio(Alarm alarm) async {
-    try {
-      final player = _player ??= AudioPlayer();
-      await player.setReleaseMode(ReleaseMode.loop);
-      // Ring through the iOS silent switch and route to the alarm stream on
-      // Android. Guarded independently — an unsupported option must not stop the
-      // tone from playing at all.
-      try {
-        await player.setAudioContext(
-          AudioContext(
-            iOS: AudioContextIOS(
-              category: AVAudioSessionCategory.playback,
-              options: const {AVAudioSessionOptions.duckOthers},
-            ),
-            android: const AudioContextAndroid(
-              isSpeakerphoneOn: false,
-              stayAwake: true,
-              contentType: AndroidContentType.sonification,
-              usageType: AndroidUsageType.alarm,
-              audioFocus: AndroidAudioFocus.gain,
-            ),
-          ),
-        );
-      } catch (_) {}
-      final target = (alarm.volumePercent.clamp(1, 100)) / 100.0;
-      if (alarm.gradualWakeSeconds > 0) {
-        final start = (target * 0.15).clamp(0.05, target);
-        await player.setVolume(start);
-        _rampVolume(start, target, alarm.gradualWakeSeconds);
-      } else {
-        await player.setVolume(target);
-      }
-      await player.play(BytesSource(buildAlarmToneWav()));
-    } catch (_) {
-      // Audio unavailable (e.g. tests/desktop) — the visual ring + haptics stand.
-    }
-  }
-
-  void _rampVolume(double start, double target, int seconds) {
-    _volumeRamp?.cancel();
-    const stepMs = 500;
-    final steps = (seconds * 1000 / stepMs).ceil().clamp(1, 600);
-    var step = 0;
-    _volumeRamp = Timer.periodic(const Duration(milliseconds: stepMs), (
-      t,
-    ) async {
-      step++;
-      final frac = (step / steps).clamp(0.0, 1.0);
-      try {
-        await _player?.setVolume(start + (target - start) * frac);
-      } catch (_) {}
-      if (frac >= 1.0) t.cancel();
-    });
+    unawaited(_tone.play(alarm));
   }
 
   Future<void> _stopRing() async {
     _ringHaptic?.cancel();
-    _volumeRamp?.cancel();
-    try {
-      await _player?.stop();
-    } catch (_) {}
+    await _tone.stop();
   }
 
   Future<void> _handleDismiss(Alarm alarm) async {
@@ -227,6 +185,25 @@ class _DedicatedClockScreenState extends State<DedicatedClockScreen> {
     await _stopRing();
     if (!mounted) return;
     _disableOneTimeIfNeeded(alarm);
+    _ringNextCoincidentOrClear(alarm);
+  }
+
+  /// After the current ring ends (dismissed or snoozed), ring any OTHER active
+  /// alarm scheduled for this same minute that has not yet fired — so coincident
+  /// alarms are never lost, even once the calendar minute has rolled past and
+  /// [_maybeFire]'s minute check would no longer match. If none remain, drop
+  /// back to the idle clock face and resume normal ticking.
+  void _ringNextCoincidentOrClear(Alarm current) {
+    final next = _matchingUnfiredAlarm(
+      current.hour,
+      current.minute,
+      DateTime.now(),
+    );
+    if (next != null) {
+      _firedAlarmIds.add(next.id);
+      _startRing(next);
+      return;
+    }
     setState(() {
       _ringing = null;
       _ringingSince = null;
@@ -249,12 +226,14 @@ class _DedicatedClockScreenState extends State<DedicatedClockScreen> {
     await _stopRing();
     _snoozesUsed++;
     if (!mounted) return;
-    setState(() => _ringing = null);
     _snoozeTimer?.cancel();
     _snoozeTimer = Timer(
       Duration(minutes: alarm.snoozeDurationMinutes),
       () => _startRing(alarm, fromSnooze: true),
     );
+    // Surface any coincident, not-yet-fired alarm now rather than letting it be
+    // lost while this one is snoozed; otherwise fall back to the idle face.
+    _ringNextCoincidentOrClear(alarm);
   }
 
   bool _canSnooze(Alarm alarm) =>

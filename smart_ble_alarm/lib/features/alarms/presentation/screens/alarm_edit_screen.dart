@@ -818,39 +818,44 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
     VoidCallback onTap,
   ) {
     final primary = Theme.of(context).colorScheme.primary;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: selected
-              ? primary.withValues(alpha: 0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? primary : Theme.of(context).dividerColor,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: selected
-                  ? primary
-                  : Theme.of(context).colorScheme.onSurface,
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: selected
+                ? primary.withValues(alpha: 0.15)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? primary : Theme.of(context).dividerColor,
+              width: selected ? 2 : 1,
             ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: TextStyle(
+          ),
+          child: Column(
+            children: [
+              Icon(
+                icon,
                 color: selected
                     ? primary
                     : Theme.of(context).colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
               ),
-            ),
-          ],
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected
+                      ? primary
+                      : Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1225,23 +1230,33 @@ class _TimeWheelPickerState extends State<_TimeWheelPicker> {
     required double height,
     required Color onSurface,
   }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        if (_isPm == isPm) return;
-        setState(() => _isPm = isPm);
-        _haptic();
-        _emit();
-      },
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: Center(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: selected ? Colors.white : onSurface,
+    final primary = Theme.of(context).colorScheme.primary;
+    final onAccent =
+        ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: text,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (_isPm == isPm) return;
+          setState(() => _isPm = isPm);
+          _haptic();
+          _emit();
+        },
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: Center(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: selected ? onAccent : onSurface,
+              ),
             ),
           ),
         ),

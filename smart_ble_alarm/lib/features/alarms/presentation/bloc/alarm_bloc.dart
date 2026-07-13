@@ -296,7 +296,41 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     SyncAlarmBackupsEvent event,
     Emitter<AlarmState> emit,
   ) async {
-    await alarmCloudSyncService.syncAlarms(state.alarms);
+    // On sign-in we MERGE cloud backups into local before pushing. Reading
+    // first (and bailing if the read fails) is what stops a fresh device with
+    // an empty local list from wiping every cloud backup: syncAlarms deletes
+    // any cloud doc not in the pushed set, so we must only ever push a superset
+    // of what's already in the cloud.
+    List<Alarm> cloud;
+    try {
+      cloud = await alarmCloudSyncService.restoreBackups();
+    } catch (_) {
+      // Cloud is unreadable — never push, or we'd delete backups we merely
+      // failed to read.
+      unawaited(
+        AppAnalytics.instance.alarmSyncFailed(source: 'signin_backup_read'),
+      );
+      return;
+    }
+
+    // Cloud first, then local, so a local edit wins on id conflict.
+    final byId = <int, Alarm>{
+      for (final alarm in cloud) alarm.id: alarm,
+      for (final alarm in state.alarms) alarm.id: alarm,
+    };
+    final merged = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+
+    if (merged.length != state.alarms.length ||
+        !merged.every((a) => state.alarms.contains(a))) {
+      emit(state.copyWith(alarms: merged));
+      await _saveAlarms(merged);
+      _rescheduleBackupAlarms(merged);
+    }
+
+    // Fire-and-forget push (never an awaited syncAlarms) so an offline commit
+    // can't hang this handler. `merged` is a superset of cloud, so the
+    // delete-missing pass in syncAlarms can't remove anything here.
+    _syncCloudBackups(merged);
   }
 
   Future<void> _onRestoreAlarmBackups(
@@ -320,7 +354,22 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
       final restoredAlarms = byId.values.toList()
         ..sort((a, b) => a.id.compareTo(b.id));
 
-      emit(state.copyWith(alarms: restoredAlarms, clearSyncError: true));
+      // The clock only stores [maxHardwareAlarms] slots. Keep every restored
+      // alarm locally (and as a backup notification), but tell the user the
+      // extras won't live on the hardware rather than silently dropping them.
+      if (restoredAlarms.length > maxHardwareAlarms) {
+        emit(
+          state.copyWith(
+            alarms: restoredAlarms,
+            syncError:
+                'Restored ${restoredAlarms.length} alarms. The clock stores '
+                'only $maxHardwareAlarms; extra alarms stay on this phone and '
+                'as backup notifications.',
+          ),
+        );
+      } else {
+        emit(state.copyWith(alarms: restoredAlarms, clearSyncError: true));
+      }
       await _saveAlarms(restoredAlarms);
       _rescheduleBackupAlarms(restoredAlarms);
       _syncCloudBackups(restoredAlarms);
@@ -535,6 +584,11 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
       var pendingDeletes = Set<int>.from(state.pendingDeleteIds);
       emit(state.copyWith(clearSyncError: true));
 
+      // Collect failures instead of aborting on the first one: a single bad
+      // delete/upsert must not stop the rest of the sync from being attempted.
+      var hadDeleteFailure = false;
+      var hadUpsertFailure = false;
+
       for (final alarmId in state.pendingDeleteIds) {
         try {
           await bleRepository.sendCommand(event.connectedDevice, 0x03, [
@@ -545,13 +599,8 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
           unawaited(
             AppAnalytics.instance.alarmSyncFailed(source: 'full_sync_delete'),
           );
-          // Don't surface a card here: this handler only runs inside the full
-          // sync driven by syncConnectedClock, which owns the single
-          // (retry-gated) failure message. Just report the failure upward.
-          const message =
-              'Some deleted alarms could not be removed from the clock.';
-          _completeSync(event.completer, error: Exception(message));
-          return;
+          // Keep this id in pendingDeletes (retried next sync) and carry on.
+          hadDeleteFailure = true;
         }
       }
 
@@ -575,31 +624,33 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
           unawaited(
             AppAnalytics.instance.alarmSyncFailed(source: 'full_sync_alarm'),
           );
+          // Keep the per-alarm "not synced" chip (syncFailedIds) and keep going
+          // so a later alarm still gets a chance to sync.
           syncFailedIds.add(alarm.id);
-          const message = 'Some alarms could not be synced to the clock.';
-          await _saveSyncedHashes(syncedHashes);
-          // Keep the per-alarm "not synced" chip (syncFailedIds) but DON'T set
-          // syncError: the enclosing syncConnectedClock shows the one card. The
-          // completer error still propagates so it can retry / report.
-          emit(
-            state.copyWith(
-              syncedHashes: syncedHashes,
-              syncFailedIds: syncFailedIds,
-            ),
-          );
-          _completeSync(event.completer, error: Exception(message));
-          return;
+          hadUpsertFailure = true;
         }
       }
 
       await _saveSyncedHashes(syncedHashes);
+      // DON'T set syncError here: the enclosing syncConnectedClock shows the
+      // single (retry-gated) card. The per-alarm chips live in syncFailedIds.
       emit(
         state.copyWith(
           syncedHashes: syncedHashes,
           syncFailedIds: syncFailedIds,
         ),
       );
-      _completeSync(event.completer);
+
+      // Report a partial failure only after attempting everything, so the
+      // completer error still propagates for retry/reporting upward.
+      if (hadDeleteFailure || hadUpsertFailure) {
+        final message = hadUpsertFailure
+            ? 'Some alarms could not be synced to the clock.'
+            : 'Some deleted alarms could not be removed from the clock.';
+        _completeSync(event.completer, error: Exception(message));
+      } else {
+        _completeSync(event.completer);
+      }
     } catch (e) {
       // A failure here (e.g. emit after the bloc is closed mid-sync) must still
       // complete the completer, otherwise callers awaiting it hang forever.
@@ -647,8 +698,17 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     } else {
       rawAlarms = const [];
     }
+    // Parse each entry independently so one malformed record is skipped rather
+    // than throwing and wiping the whole list.
     return rawAlarms
-        .map((e) => Alarm.fromJson(e as Map<String, dynamic>))
+        .map((e) {
+          try {
+            return Alarm.fromJson(e as Map<String, dynamic>);
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<Alarm>()
         .toList();
   }
 

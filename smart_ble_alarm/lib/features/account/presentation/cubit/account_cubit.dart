@@ -414,6 +414,141 @@ class AccountCubit extends Cubit<AccountState> {
     }
   }
 
+  Future<void> deleteAccount() async {
+    if (!_canUseAuth) return;
+    final user = _auth!.currentUser;
+    if (user == null) {
+      emit(state.copyWith(message: 'Sign in before deleting your account.'));
+      return;
+    }
+
+    emit(state.copyWith(isBusy: true, clearMessage: true));
+    try {
+      // Delete the auth user FIRST. A stale session throws
+      // `requires-recent-login` here, so we must not have destroyed any cloud
+      // data before this succeeds — otherwise a failed delete leaves an
+      // orphaned auth account with its data already gone (also an Apple
+      // 5.1.1(v) incomplete-deletion risk).
+      try {
+        await user.delete();
+      } on FirebaseAuthException catch (error) {
+        if (error.code != 'requires-recent-login') rethrow;
+        // Re-authenticate the same way the user originally signed in, then
+        // retry. If re-auth fails or is cancelled, abort WITHOUT touching any
+        // cloud data.
+        final reauthenticated = await _reauthenticateForDeletion(user);
+        if (!reauthenticated) {
+          emit(
+            state.copyWith(
+              isBusy: false,
+              message:
+                  'For security, please sign in again, then delete your account.',
+            ),
+          );
+          return;
+        }
+        await user.delete();
+      }
+
+      // The auth account is now gone. Cloud cleanup is best-effort: if it fails
+      // there is no auth user left behind, so we log and still report success.
+      try {
+        await _deleteCloudAccountData(user.uid);
+      } catch (error, stackTrace) {
+        await CrashReportingService.recordError(
+          error,
+          stackTrace,
+          reason: 'Cloud data cleanup after account deletion failed',
+        );
+      }
+
+      await _trySignOutGoogle();
+      await AppAnalytics.instance.setUserId(null);
+      await CrashReportingService.setUserId(null);
+      emit(
+        const AccountState(
+          isInitializing: false,
+          firebaseReady: true,
+          message: 'Account deleted. WakeGuard is now in local mode.',
+        ),
+      );
+    } on FirebaseAuthException catch (error) {
+      emit(state.copyWith(isBusy: false, message: _authMessage(error)));
+    } on FirebaseException catch (error) {
+      emit(state.copyWith(isBusy: false, message: _deleteMessage(error)));
+    } catch (error) {
+      emit(state.copyWith(isBusy: false, message: 'Delete failed: $error'));
+    }
+  }
+
+  /// Re-authenticates [user] using the same provider they signed in with so a
+  /// stale session can complete `user.delete()`. Returns true when the session
+  /// is freshly re-authenticated, false when re-auth is cancelled, fails, or
+  /// the provider cannot be re-authenticated non-interactively (e.g.
+  /// email/password, where we have no stored password to build a credential).
+  Future<bool> _reauthenticateForDeletion(User user) async {
+    final providerIds = user.providerData
+        .map((info) => info.providerId)
+        .toList();
+    try {
+      if (providerIds.contains('google.com')) {
+        final credential = await _buildGoogleReauthCredential();
+        if (credential == null) return false;
+        await user.reauthenticateWithCredential(credential);
+        return true;
+      }
+      if (providerIds.contains('apple.com')) {
+        final credential = await _buildAppleReauthCredential();
+        if (credential == null) return false;
+        await user.reauthenticateWithCredential(credential);
+        return true;
+      }
+      // Email/password (and any other provider) cannot be re-authenticated here
+      // without prompting for the password again, so we abort and ask the user
+      // to sign in again before deleting.
+      return false;
+    } catch (_) {
+      // Any failure or cancellation (GoogleSignInException,
+      // SignInWithAppleAuthorizationException, FirebaseAuthException, etc.)
+      // means the session was not re-authenticated. Abort so cloud data is
+      // left untouched.
+      return false;
+    }
+  }
+
+  /// Builds a fresh Google credential using the same flow as
+  /// [signInWithGoogle]. Returns null when Google sign-in is unavailable or no
+  /// ID token is returned.
+  Future<AuthCredential?> _buildGoogleReauthCredential() async {
+    await _ensureGoogleSignInInitialized();
+    if (!GoogleSignIn.instance.supportsAuthenticate()) return null;
+    final googleUser = await GoogleSignIn.instance.authenticate();
+    final idToken = googleUser.authentication.idToken;
+    if (idToken == null) return null;
+    return GoogleAuthProvider.credential(idToken: idToken);
+  }
+
+  /// Builds a fresh Apple credential using the same nonce flow as
+  /// [signInWithApple]. Returns null when Apple sign-in is unavailable or no
+  /// identity token is returned.
+  Future<AuthCredential?> _buildAppleReauthCredential() async {
+    final isAvailable = await SignInWithApple.isAvailable();
+    if (!isAvailable) return null;
+    final rawNonce = _generateNonce();
+    final appleCredential = await SignInWithApple.getAppleIDCredential(
+      scopes: const [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName,
+      ],
+      nonce: _sha256(rawNonce),
+    );
+    final idToken = appleCredential.identityToken;
+    if (idToken == null) return null;
+    return OAuthProvider(
+      'apple.com',
+    ).credential(idToken: idToken, rawNonce: rawNonce);
+  }
+
   bool get _canUseAuth {
     if (_auth != null && state.firebaseReady) return true;
     emit(
@@ -429,6 +564,7 @@ class AccountCubit extends Cubit<AccountState> {
   Future<void> _onAuthChanged(User? user) async {
     if (user == null) {
       await AppAnalytics.instance.setUserId(null);
+      await CrashReportingService.setUserId(null);
       emit(
         state.copyWith(
           isInitializing: false,
@@ -487,13 +623,47 @@ class AccountCubit extends Cubit<AccountState> {
         .set(profile, SetOptions(merge: true));
   }
 
+  Future<void> _deleteCloudAccountData(String uid) async {
+    final storage = _storage;
+    if (storage != null) {
+      final profileFolder = storage.ref('users/$uid/profile');
+      try {
+        final listing = await profileFolder.listAll();
+        await Future.wait(listing.items.map((item) => item.delete()));
+      } on FirebaseException catch (error) {
+        if (error.code != 'object-not-found' &&
+            error.code != 'bucket-not-found') {
+          rethrow;
+        }
+      }
+    }
+
+    final firestore = _firestore;
+    if (firestore != null) {
+      final userRef = firestore.collection('users').doc(uid);
+      final backupSnapshot = await userRef.collection('alarmBackups').get();
+      final batch = firestore.batch();
+      for (final doc in backupSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      batch.delete(userRef);
+      await batch.commit();
+    }
+  }
+
   Future<void> _ensureGoogleSignInInitialized() {
     final existing = _googleSignInInitialization;
     if (existing != null) return existing;
     final options = DefaultFirebaseOptions.currentPlatform;
+    // Only pass a serverClientId when a correct web/server OAuth client id is
+    // available. The Android client id is NOT a server id — passing it (and it
+    // is null on iOS anyway) breaks Google ID-token issuance.
+    // TODO: wire a dedicated web/server OAuth client id here if server-side
+    // auth codes are ever needed. This path must be device-tested on both iOS
+    // and Android.
     final initialization = GoogleSignIn.instance.initialize(
       clientId: options.iosClientId,
-      serverClientId: options.androidClientId,
+      serverClientId: null,
     );
     _googleSignInInitialization = initialization;
     return initialization;
@@ -592,6 +762,10 @@ class AccountCubit extends Cubit<AccountState> {
         return 'Network error. Check your connection and try again.';
       case 'operation-not-allowed':
         return 'This sign-in provider is not enabled in Firebase yet.';
+      case 'requires-recent-login':
+        return 'For security, sign in again before deleting your account.';
+      case 'user-token-expired':
+        return 'Your session expired. Sign in again and retry.';
       default:
         return error.message ?? 'Authentication failed.';
     }
@@ -620,6 +794,17 @@ class AccountCubit extends Cubit<AccountState> {
         return 'Sign in again before uploading a profile photo.';
       default:
         return error.message ?? 'Profile update failed.';
+    }
+  }
+
+  String _deleteMessage(FirebaseException error) {
+    switch (error.code) {
+      case 'permission-denied':
+        return 'Firebase rules need to allow deleting your cloud profile.';
+      case 'unavailable':
+        return 'Cloud deletion is temporarily unavailable. Try again soon.';
+      default:
+        return error.message ?? 'Account deletion failed.';
     }
   }
 

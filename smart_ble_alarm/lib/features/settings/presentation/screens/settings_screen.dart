@@ -830,11 +830,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required bool animate,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: () =>
-          context.read<SettingsBloc>().add(UpdateAppBackgroundEvent(style)),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${style.label} background',
+      child: GestureDetector(
+        onTap: () =>
+            context.read<SettingsBloc>().add(UpdateAppBackgroundEvent(style)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
         children: [
           AspectRatio(
             aspectRatio: 0.8,
@@ -887,6 +891,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -895,11 +900,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final color = AppColors.accentFromString(name);
     return Tooltip(
       message: name,
-      child: GestureDetector(
-        onTap: () =>
-            context.read<SettingsBloc>().add(UpdateAccentColorEvent(name)),
-        child: Container(
-          width: 40,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: '$name accent color',
+        child: GestureDetector(
+          onTap: () =>
+              context.read<SettingsBloc>().add(UpdateAccentColorEvent(name)),
+          child: Container(
+            width: 40,
           height: 40,
           padding: const EdgeInsets.all(3),
           decoration: BoxDecoration(
@@ -931,6 +940,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   )
                 : null,
           ),
+        ),
         ),
       ),
     );
@@ -1078,18 +1088,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ---- Phone Alarm (companion mode) ---------------------------------------
+  // ---- Ring on this phone -------------------------------------------------
 
-  /// Companion mode: the app itself rings so an alarm still fires without the
-  /// hardware clock. Enforced on Android (full-screen alarm over the lock
-  /// screen); best-effort on iOS. The copy is deliberately honest about the iOS
-  /// ceiling so the mode never over-promises the clock's tamper-proof guarantee.
+  /// Phone-side ringing: the "Ring on this phone" foreground engine (this
+  /// primary phone rings itself when an alarm's time arrives, running the wake
+  /// challenge to dismiss) plus the Dedicated Clock mode that turns a spare
+  /// phone into a standby bedside clock face.
   Widget _buildPhoneAlarmSection(SettingsState settings) {
-    final bloc = context.read<SettingsBloc>();
-    final enabled = settings.phoneAlarmEnabled;
+    final divider = Divider(height: 20, color: Theme.of(context).dividerColor);
     return WakeSection(
-      title: 'Phone Alarm (Beta)',
-      subtitle: 'Let this phone ring on its own, without the clock.',
+      title: 'Ring on this phone (Beta)',
+      subtitle: 'Let this phone ring alarms itself, without the clock.',
       child: GlassCard(
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 16),
         shadows: wakeCardShadow(context),
@@ -1097,45 +1106,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             WakeSettingsRow(
-              icon: Icons.phonelink_ring_rounded,
+              icon: Icons.phone_iphone_rounded,
               title: 'Ring on this phone',
-              subtitle: 'A backup ringer for travel or a lost clock connection',
+              subtitle:
+                  'Beta · rings and runs the wake challenge while the app is open',
               trailing: Switch(
-                value: enabled,
-                onChanged: (val) => bloc.add(TogglePhoneAlarmEvent(val)),
-              ),
-            ),
-            if (enabled) ...[
-              Divider(height: 20, color: Theme.of(context).dividerColor),
-              WakeSettingsRow(
-                icon: Icons.battery_charging_full_rounded,
-                title: 'Only while charging',
-                subtitle: 'Saves battery — the reliable ringer needs power',
-                trailing: Switch(
-                  value: settings.phoneAlarmRequireCharging,
-                  onChanged: (val) =>
-                      bloc.add(TogglePhoneAlarmChargingEvent(val)),
+                value: settings.phoneAlarmEnabled,
+                onChanged: (val) => context.read<SettingsBloc>().add(
+                  TogglePhoneAlarmEvent(val),
                 ),
               ),
-              _footnote(
-                'On Android this rings full-screen and can only be silenced by '
-                'your wake challenge. On iPhone it is best-effort: keep WakeGuard '
-                'open and charging overnight. If the app is closed, the alarm may '
-                'only buzz as notifications you can swipe away — the clock is the '
-                'only tamper-proof alarm.',
-                icon: Icons.info_outline_rounded,
-              ),
-            ],
+            ),
             if (widget.onSetupDedicatedClock != null) ...[
-              Divider(height: 20, color: Theme.of(context).dividerColor),
+              divider,
               WakeSettingsRow(
                 icon: Icons.phonelink_ring_rounded,
                 title: 'Use this phone as a dedicated clock',
                 subtitle:
-                    'Beta · make this device a standby bedside clock face',
+                    'Beta · make a spare device a standby bedside clock face',
                 onTap: widget.onSetupDedicatedClock,
               ),
             ],
+            _footnote(
+              'Ringing here is best-effort: it works while WakeGuard is open, '
+              'and the "Backup notifications" above cover it when the app is '
+              'closed. For a guaranteed, tamper-proof alarm, use the WakeGuard '
+              'hardware clock.',
+              icon: Icons.info_outline_rounded,
+            ),
           ],
         ),
       ),
@@ -1268,8 +1266,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Divider(height: 1, color: Theme.of(context).dividerColor),
             WakeSettingsRow(
               icon: Icons.privacy_tip_rounded,
-              title: 'Privacy',
-              subtitle: 'Camera verification and Bluetooth stay on this device',
+              title: 'Privacy Policy',
+              subtitle: 'Accounts, backups, diagnostics, and device data',
               onTap: _showPrivacyDialog,
             ),
             Divider(height: 1, color: Theme.of(context).dividerColor),
@@ -1315,11 +1313,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text(
                 'WakeGuard pairs with a Bluetooth alarm clock and requires a '
                 'personalized object wake challenge before protected alarms '
-                'can be dismissed.',
+                'can be dismissed. WakeGuard is a routine-support tool, not a '
+                'medical device, and it does not diagnose, treat, or prevent '
+                'any medical condition.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
                   height: 1.4,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Credits',
+                style: Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Aaron Hua, Mekyle Alam, Victor Kong, & Navin John',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.35,
                   color: scheme.onSurfaceVariant,
                 ),
               ),
@@ -1340,12 +1358,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Privacy'),
-        content: const Text(
-          'Wake-challenge photos are analyzed on this phone and never leave '
-          'it. Bluetooth communication happens directly between your phone '
-          'and the clock. If you sign in, Firebase stores your account '
-          'profile so WakeGuard can back up and restore your setup.',
+        title: const Text('Privacy Policy'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Wake-challenge camera images are processed on this phone for QR '
+            'and object checks. They are not saved by WakeGuard.\n\n'
+            'Bluetooth communication happens directly between your phone and '
+            'your WakeGuard clock.\n\n'
+            'If you enable weather on the clock, WakeGuard sends your phone\'s '
+            'IP address to ipapi.co to estimate your approximate location, then '
+            'requests the local forecast from Open-Meteo. No precise GPS '
+            'location is used, and weather can be turned off in the Display '
+            'settings.\n\n'
+            'If you sign in, Firebase stores your email, name, optional '
+            'profile photo, and cloud alarm backups so WakeGuard can restore '
+            'your setup. Firebase Analytics records onboarding and sync '
+            'events, and Firebase Crashlytics records crash diagnostics. '
+            'WakeGuard does not sell personal data or track you across apps.\n\n'
+            'Delete Account removes your WakeGuard cloud profile and alarm '
+            'backups. Local alarms on this phone stay until you reset local '
+            'data or delete the app.\n\n'
+            'WakeGuard is not a medical device and should not replace medical '
+            'advice. For narcolepsy, sleep disorders, medication routines, or '
+            'other health decisions, talk with a qualified clinician.',
+          ),
         ),
         actions: [
           TextButton(

@@ -35,7 +35,7 @@ The phone is never required for an alarm to fire; it is required only to configu
 run the wake challenge.
 
 **Release state:** first beta, marketing version `0.1.0`, build `1` (`smart_ble_alarm/pubspec.yaml:21`).
-Bundle id `com.aaronhua.wakeguard`, team `HX7S7KAF9X`, iOS deployment target 15.5. A prior integration
+Bundle id `com.mekylealam.wakeguardalarm.a74sa4d686b`, team `HX7S7KAF9X`, iOS deployment target 15.5. A prior integration
 audit ("Audit 1", `agent reference/Audit 1 report.md`) is fully resolved.
 
 **Highest-value audit surfaces** (detailed in §9 and §14):
@@ -77,7 +77,7 @@ target that is present but not the submission surface.
 | Architecture | Clean architecture (core / data / domain / presentation) + `flutter_bloc` |
 | State mgmt | `flutter_bloc` (BLoCs + Cubits) + a few module-level `ValueNotifier`s |
 | Persistence | `shared_preferences` (alarms/settings/history/timers/flags) + `flutter_secure_storage` (one backup-code key) |
-| App Store target | iOS (bundle `com.aaronhua.wakeguard`, team `HX7S7KAF9X`, iOS 15.5+) |
+| App Store target | iOS (bundle `com.mekylealam.wakeguardalarm.a74sa4d686b`, team `HX7S7KAF9X`, iOS 15.5+) |
 
 ### Existing in-repo documentation (source-of-truth ranking)
 - `agent reference/CLAUDE.md` (18 KB) — **current** engineering brief; architecture, protocol, alarm model, conventions, iOS/TestFlight, "do not change" list. **Most authoritative.**
@@ -497,7 +497,7 @@ App Store target. Files under `smart_ble_alarm/ios/`.
 | `Flutter/Debug.xcconfig` / `Release.xcconfig` | Build config | Include Pods + Generated xcconfig. |
 | `Podfile` | CocoaPods | `platform :ios, '15.5'`, `use_frameworks!`, post_install forces deployment target 15.5. |
 | `Podfile.lock` | Pod lock | CocoaPods 1.16.2; 11 plugin pods. **`audioplayers`/`wakelock_plus` NOT in the pod list** — project also uses a Flutter SwiftPM package `FlutterGeneratedPluginSwiftPackage` (SPM + CocoaPods hybrid). |
-| `Runner.xcodeproj/project.pbxproj` | Xcode project | Bundle id `com.aaronhua.wakeguard`; `DEVELOPMENT_TEAM = HX7S7KAF9X`; `CODE_SIGN_IDENTITY = "iPhone Developer"`; **no explicit `CODE_SIGN_STYLE` on Runner**; deployment target 15.5; device family 1,2; bitcode off; version from `$(FLUTTER_BUILD_NAME/NUMBER)`. |
+| `Runner.xcodeproj/project.pbxproj` | Xcode project | Bundle id `com.mekylealam.wakeguardalarm.a74sa4d686b`; `DEVELOPMENT_TEAM = HX7S7KAF9X`; `CODE_SIGN_IDENTITY = "iPhone Developer"`; **no explicit `CODE_SIGN_STYLE` on Runner**; deployment target 15.5; device family 1,2; bitcode off; version from `$(FLUTTER_BUILD_NAME/NUMBER)`. |
 | `Runner.xcodeproj/.../Runner.xcscheme` | Scheme | Test→RunnerTests(Debug), Archive→Release, Profile→Profile. |
 | `RunnerTests/RunnerTests.swift` | Unit test target | Empty placeholder `testExample()` (no assertions). |
 
@@ -729,7 +729,7 @@ Items that cannot be determined from repository inspection alone (no guessing):
 8. **Beta feature scope for this release** — are Phone Alarm and Dedicated Clock intended to be shipped/enabled in this build, or hidden Beta? Their reliability caveats (foreground-only, no iOS background audio mode) matter only if user-visible.
 9. **Buzzer hardware** — is the shipped clock using an active or passive buzzer? Firmware `BUZZER_IS_ACTIVE=1` makes per-alarm volume/gradual-wake no-ops; is that the intended production config?
 10. **Weather network egress acceptability** — are outbound calls to `ipapi.co` and `api.open-meteo.com` (with truncated lat/lon) acceptable for the privacy label and any regional requirements?
-11. **Version-source truth for Android** — Android `applicationId` is the template default `com.smartblealarm.smart_ble_alarm` while iOS is `com.aaronhua.wakeguard`; is the divergence intentional?
+11. **Version-source truth for Android** — Android `applicationId` is the template default `com.smartblealarm.smart_ble_alarm` while iOS is `com.mekylealam.wakeguardalarm.a74sa4d686b`; is the divergence intentional?
 12. **Reference-device pairing name** — the app matches `"WG Clock"` / service `FFE0`; is the production hardware advertising that exact name?
 
 ---
@@ -804,7 +804,7 @@ Recorded observations only — **not investigated, not judged, no fixes implied*
 - `ios/RunnerTests/RunnerTests.swift:7` — placeholder test, no assertions.
 - `pubspec.yaml:56,59` — `wakelock_plus`/`audioplayers` declared `^1.2.8`/`^6.1.0` but resolved to 1.6.1/6.8.1.
 - `android/app/build.gradle.kts:32-38` — release build type signs with debug keys (TODO); no release signing config.
-- `android/app/build.gradle.kts:23` — `applicationId` is template default `com.smartblealarm.smart_ble_alarm` vs iOS `com.aaronhua.wakeguard` (cross-platform identity mismatch).
+- `android/app/build.gradle.kts:23` — `applicationId` is template default `com.smartblealarm.smart_ble_alarm` vs iOS `com.mekylealam.wakeguardalarm.a74sa4d686b` (cross-platform identity mismatch).
 - `build/ios/SourcePackages/workspace-state.json` — a build artifact tracked in git despite the root `.gitignore` `/build/` rule.
 
 ### Firmware

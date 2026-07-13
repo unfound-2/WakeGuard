@@ -372,6 +372,11 @@ class _HomeTabState extends State<HomeTab> {
   }) {
     final glass = GlassTheme.of(context);
     final scheme = Theme.of(context).colorScheme;
+    // Light theme: the raw semantic `color` on caption text falls well below
+    // 4.5:1 (icon + wash keep the saturated color). Use the on-surface color
+    // for the caption text in light theme; dark theme already passes.
+    final dark = glass.brightness == Brightness.dark;
+    final captionColor = dark ? color : scheme.onSurface;
     return GlassCard(
       borderRadius: 22,
       padding: const EdgeInsets.all(14),
@@ -438,7 +443,7 @@ class _HomeTabState extends State<HomeTab> {
               caption,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11.5, color: color),
+              style: TextStyle(fontSize: 11.5, color: captionColor),
             ),
           ],
         ),
@@ -890,14 +895,18 @@ class _HomeTabState extends State<HomeTab> {
       ],
       child: Column(
         children: [
-          Text(
-            'ALARM RINGING',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: error,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 2,
-              fontSize: 15,
+          Semantics(
+            liveRegion: true,
+            label: 'Alarm ringing, $timeStr, ${alarm.displayName}',
+            child: Text(
+              'ALARM RINGING',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: error,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+                fontSize: 15,
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -1048,18 +1057,21 @@ class _HomeTabState extends State<HomeTab> {
     );
     final date = AlarmTimeUtils.formatNextOccurrence(occurrence, now);
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        WakeHaptics.lightImpact();
-        _openEditor(context, alarm: alarm);
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 86,
+    return Semantics(
+      button: true,
+      label: 'Edit alarm, $time, ${alarm.displayName}',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          WakeHaptics.lightImpact();
+          _openEditor(context, alarm: alarm);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 86,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
@@ -1108,6 +1120,7 @@ class _HomeTabState extends State<HomeTab> {
             Icon(_dismissalIcon(alarm), color: scheme.primary, size: 20),
           ],
         ),
+      ),
       ),
     );
   }

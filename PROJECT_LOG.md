@@ -4,7 +4,7 @@
 
 **WakeGuard was created and primarily built by Aaron Hua (GitHub `cowfollowdog`), with significant
 app-side contributions from Mekyle Alam (GitHub `unfound-2`).** Aaron originated the product and authored
-the majority of the codebase (36 of the 46 commits across all branches) and its entire hardware and
+the majority of the codebase (38 of the 49 commits across all branches) and its entire hardware and
 firmware half. Mekyle contributed the onboarding/pairing experience and the AI wake-challenge UI, and
 later added the account/Firebase/analytics layer and a UI redesign pass over Aaron's existing screens. AI
 assistants (Claude Code, Codex) were used by both as coding, auditing, refactoring, and execution tools —
@@ -20,6 +20,9 @@ In short:
   (merged via the `onboarding` branch); the AI image-scan wake-challenge UI; the account / profile /
   Firebase / analytics / crash-reporting subsystem; a modern UI redesign restructuring the app into
   `lib/features`; and current TestFlight/release work under the `com.mekylealam.wakeguardalarm` identity.
+- **Victor Kong & Navin John** — physical build support: the housing/enclosure for the project's physical
+  alarm clock, and the app's logo (AI-assisted). Hardware and branding only — not part of the app-store app,
+  which ships without the physical clock.
 - **AI assistants** — generated, refactored, audited, and documented code; implemented contributor-directed
   changes; wrote tests; and surfaced bugs and trade-offs for the humans to decide.
 
@@ -27,11 +30,11 @@ In short:
 
 Recorded from what the commit history actually shows, so credit stays accurate across future edits:
 
-- **Aaron Hua** authored **36 of 46 commits** and every core-engineering file — the Arduino firmware
+- **Aaron Hua** authored **38 of 49 commits** and every core-engineering file — the Arduino firmware
   (`WakeGuardClock.ino`), the BLE protocol (`ble_payloads.dart`), and the sync engine (`clock_sync.dart`) —
   plus on-demand BLE, timers, the real `0x09` dismissal path, and the production hardening. He wrote the
   first version of this log on 2026-07-08.
-- **Mekyle Alam** authored **9 commits**, including the largest app-side changesets: the 2026-07-02
+- **Mekyle Alam** authored **10 commits**, including the largest app-side changesets: the 2026-07-02
   onboarding + AI image-scanning work, and the 2026-07-13 "Polish" commit that added the
   account/Firebase/analytics subsystem and restructured the presentation layer into `lib/features`
   (a mix of ~33 net-new files and a redesign of ~64 existing files). The net-new account/Firebase/analytics
@@ -80,7 +83,7 @@ Recorded from what the commit history actually shows, so credit stays accurate a
   configuration, CocoaPods/iOS deployment target issues, scrolling/layout assertions, startup delays,
   non-working buttons, pairing confusion, display-tab problems, and auth/profile issues.
 - **TestFlight and release ownership**: handled current TestFlight/release work and corrected the app's
-  bundle identifier to `com.mekylealam.wakeguardalarm`.
+  bundle identifier to `com.mekylealam.wakeguardalarm.a74sa4d686b`.
 - **AI-assisted implementation management**: directed Codex/AI implementation work, reviewed results,
   requested revisions, and pushed the app through repeated analyze/test/fix cycles.
 
@@ -251,7 +254,7 @@ on-device ML, embedded C++, and an App Store release. Grouped by area, with the 
 
 ### iOS / App Store (TestFlight)
 - Current TestFlight/release work is handled by **Mekyle Alam**, with the app using bundle identifier
-  `com.mekylealam.wakeguardalarm`, versioned `0.1.0+N` with the build-number-bump discipline App Store
+  `com.mekylealam.wakeguardalarm.a74sa4d686b`, versioned `0.1.0+N` with the build-number-bump discipline App Store
   Connect requires.
 - Resolved a real **App Store rejection (ITMS-90683)** by adding the missing
   `NSLocationAlwaysAndWhenInUseUsageDescription` purpose string, and correctly answered **export compliance**

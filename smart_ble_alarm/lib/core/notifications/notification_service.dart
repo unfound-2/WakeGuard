@@ -4,6 +4,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:smart_ble_alarm/core/observability/crash_reporting_service.dart';
 import 'package:smart_ble_alarm/domain/entities/alarm.dart';
 
 /// Phone-scheduled *backup* alarms.
@@ -22,6 +23,13 @@ class NotificationService {
   bool _ready = false;
   bool _initializing = false;
   List<Alarm>? _pendingAlarms;
+  bool? _notificationsAuthorized;
+
+  /// Whether the Android notifications permission was granted at [init] time
+  /// (`true`/`false`), or `null` if not yet requested or not applicable (e.g.
+  /// iOS, where permissions are handled by the Darwin init settings). Exposed
+  /// so the UI can later reflect a denied state; not used for scheduling gating.
+  bool? get notificationsAuthorized => _notificationsAuthorized;
 
   static const String _channelId = 'wakeguard_backup_alarms';
   static const String _channelName = 'Backup alarms';
@@ -69,7 +77,13 @@ class NotificationService {
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
           >();
-      await androidImpl?.requestNotificationsPermission();
+      // Capture the grant result so the UI can later reflect a denied state.
+      // `null` (iOS / no Android impl) leaves _notificationsAuthorized unset.
+      final notificationsGranted = await androidImpl
+          ?.requestNotificationsPermission();
+      if (notificationsGranted != null) {
+        _notificationsAuthorized = notificationsGranted;
+      }
       await androidImpl?.requestExactAlarmsPermission();
 
       _ready = true;
@@ -80,14 +94,26 @@ class NotificationService {
       } else {
         await _syncEveningReminderFromPrefs();
       }
+    } catch (error, stackTrace) {
+      // The backup layer failing must never break launch — swallow the error
+      // (the BLE path and local save remain the source of truth) but surface it
+      // in Crashlytics so an init/permission failure isn't invisible.
+      debugPrint('NotificationService.init failed: $error\n$stackTrace');
+      await CrashReportingService.recordError(
+        error,
+        stackTrace,
+        reason: 'NotificationService init failed',
+      );
     } finally {
       _initializing = false;
     }
   }
 
-  /// Best-effort local timezone for when the IANA lookup fails. Maps a
-  /// whole-hour UTC offset to an embedded fixed `Etc/GMT` zone. Fractional
-  /// offsets fall back to UTC only if the real IANA lookup also failed.
+  /// Best-effort local timezone for when the IANA lookup fails. Whole-hour UTC
+  /// offsets map to an embedded fixed `Etc/GMT` zone; fractional (30/45-min)
+  /// offsets — India +5:30, Nepal +5:45, Newfoundland −3:30, parts of
+  /// Australia — build a fixed-offset zone that honours the exact minute
+  /// offset so backup alarms don't fire hours off.
   void _setFallbackLocalLocation() {
     try {
       final offset = DateTime.now().timeZoneOffset;
@@ -97,6 +123,25 @@ class NotificationService {
             ? 'Etc/UTC'
             : 'Etc/GMT${hours > 0 ? '-' : '+'}${hours.abs()}';
         tz.setLocalLocation(tz.getLocation(name));
+      } else {
+        // No named Etc/GMT zone exists for fractional offsets, so construct a
+        // single-zone fixed-offset location honouring the full Duration. A
+        // location with no transitions resolves to its only zone for every
+        // instant. tz.TimeZone.offset is "east of UTC", matching
+        // DateTime.timeZoneOffset's sign directly — no POSIX inversion here,
+        // unlike the Etc/GMT names above (whose embedded offset still ends up
+        // east-of-UTC once resolved).
+        final abs = offset.abs();
+        final name =
+            'WG/UTC${offset.isNegative ? '-' : '+'}'
+            '${abs.inHours.toString().padLeft(2, '0')}:'
+            '${(abs.inMinutes % 60).toString().padLeft(2, '0')}';
+        final fixedZone = tz.TimeZone(offset, isDst: false, abbreviation: name);
+        tz.setLocalLocation(
+          tz.Location(name, const <int>[], const <int>[], <tz.TimeZone>[
+            fixedZone,
+          ]),
+        );
       }
     } catch (_) {
       // Leave tz.local at UTC.

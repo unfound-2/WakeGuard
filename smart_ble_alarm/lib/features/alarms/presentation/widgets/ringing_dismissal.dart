@@ -54,6 +54,15 @@ class RingingDismissal {
     bool localOnly = false,
     DateTime? ringingSince,
   }) async {
+    // With no clock connected there is no 0x09 to send, so dismissal must
+    // resolve locally — this is what makes a phone-originated ring ("Ring on
+    // this phone") dismissible offline instead of dead-ending on "clock not
+    // connected". The wake challenge (QR/photo) is still fully enforced; only
+    // the redundant attempt to message an absent clock is skipped. When a clock
+    // IS connected the behaviour is unchanged (dismissal is sent to it).
+    final effectiveLocalOnly =
+        localOnly ||
+        context.read<BleConnectionBloc>().state is! BleConnected;
     if (alarm.qrRequired) {
       final dismissed = await Navigator.push<bool>(
         context,
@@ -61,15 +70,18 @@ class RingingDismissal {
           builder: (_) => alarm.usesItemScan
               ? ItemScanScreen(
                   alarm: alarm,
-                  dismissLocally: localOnly,
+                  dismissLocally: effectiveLocalOnly,
                   ringingSinceOverride: ringingSince,
                 )
-              : ScannerScreen(alarmId: alarm.id, dismissLocally: localOnly),
+              : ScannerScreen(
+                  alarmId: alarm.id,
+                  dismissLocally: effectiveLocalOnly,
+                ),
         ),
       );
       return dismissed == true;
     }
-    return _dismissNoTask(context, alarm, localOnly: localOnly);
+    return _dismissNoTask(context, alarm, localOnly: effectiveLocalOnly);
   }
 
   static Future<bool> _dismissNoTask(
@@ -108,8 +120,20 @@ class RingingDismissal {
           0,
         ]);
       } catch (_) {
-        // Fall through: still clear the local ringing state so the UI recovers
-        // even if the write failed (the clock also self-silences on its button).
+        // The clock has no buzzer auto-timeout, so a failed write means it is
+        // still ringing. Do NOT clear the ringing state or record a dismissal
+        // (that would falsely claim success and drop the in-app dismissal UI);
+        // surface an error and let the user retry or press the clock's button.
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Couldn't confirm dismissal with the clock. Try again, or "
+              "press the clock's button.",
+            ),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return false;
       }
     }
     alarmBloc.add(const SetRingingAlarmEvent(null));

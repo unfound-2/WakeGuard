@@ -330,6 +330,11 @@ class WakeStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = GlassTheme.of(context).brightness == Brightness.dark;
+    // Light theme: the raw semantic color on a 12%-alpha wash falls well
+    // below 4.5:1 for text (icon + wash stay saturated). Use the theme's
+    // high-contrast on-surface color for the label instead; dark theme
+    // already clears contrast with the saturated color, so leave it be.
+    final textColor = dark ? color : Theme.of(context).colorScheme.onSurface;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -348,117 +353,11 @@ class WakeStatusPill extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: color,
+                color: textColor,
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Dashboard metric tile: icon, value, muted caption. r22, elevated fill.
-class WakeMetricTile extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-
-  const WakeMetricTile({
-    super.key,
-    required this.title,
-    required this.value,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final glass = GlassTheme.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    final dark = glass.brightness == Brightness.dark;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 112),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: glass.elevated.withValues(alpha: dark ? 0.62 : 1),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: glass.stroke),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Icon(icon, size: 22, color: scheme.primary),
-          const SizedBox(height: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                title,
-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Home-screen quick action: icon + headline on a glass tile, minHeight 118.
-class WakeQuickAction extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const WakeQuickAction({
-    super.key,
-    required this.title,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return GlassCard(
-      borderRadius: 24,
-      onTap: () {
-        WakeHaptics.lightImpact();
-        onTap();
-      },
-      padding: const EdgeInsets.all(16),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 86),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Icon(icon, size: 26, color: scheme.primary),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -15,13 +15,19 @@ class CrashReportingService {
   }
 
   static Future<void> initialize() async {
-    final crashlytics = _client;
-    if (crashlytics == null) return;
+    // Register the global error handlers unconditionally at startup. Firebase
+    // readiness is evaluated at error time (not registration time) so that
+    // sessions running in local mode still surface uncaught errors, and errors
+    // are routed to Crashlytics once Firebase becomes ready.
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
-      unawaited(crashlytics.recordFlutterFatalError(details));
+      final crashlytics = _client;
+      if (crashlytics != null) {
+        unawaited(crashlytics.recordFlutterFatalError(details));
+      }
     };
     PlatformDispatcher.instance.onError = (error, stackTrace) {
+      // recordError no-ops to debugPrint when the client is null.
       unawaited(recordError(error, stackTrace, fatal: true));
       return true;
     };
@@ -29,9 +35,9 @@ class CrashReportingService {
 
   static Future<void> setUserId(String? userId) async {
     final crashlytics = _client;
-    if (crashlytics == null || userId == null || userId.isEmpty) return;
+    if (crashlytics == null) return;
     try {
-      await crashlytics.setUserIdentifier(userId);
+      await crashlytics.setUserIdentifier(userId ?? '');
     } catch (error, stackTrace) {
       debugPrint('Crashlytics setUserId failed: $error\n$stackTrace');
     }

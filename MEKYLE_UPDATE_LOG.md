@@ -6,17 +6,24 @@ Last updated: 2026-07-13
 
 This file records the WakeGuard updates, product direction, QA work, release work, and implementation
 management contributed by Mekyle Alam. It is intended to complement `PROJECT_LOG.md` with a focused record
-of Mekyle's work and the app-side changes he directed.
+of Mekyle's app-side work and the changes he directed.
 
-The updates recorded here include work Mekyle personally built, product and design decisions he made,
-issues he discovered through testing, release/account setup he handled, and implementation work he directed
-through Codex/AI-assisted development sessions.
+> Scope note: the entries below are Mekyle's app-side product direction, UI/UX requests, and QA, plus the
+> subsystems he added (notably account/Firebase/analytics). The core product concept, hardware, firmware,
+> BLE protocol, and sync engine were originated and authored by Aaron Hua. For the full picture see
+> `AARON_UPDATE_LOG.md` and `CONTRIBUTORS.md`.
 
-## Project Origin And Direction
+The updates recorded here include work Mekyle personally directed or built, product and design decisions he
+made, issues he discovered through testing, release/account setup he handled, and implementation work he
+directed through Codex/AI-assisted development sessions.
 
-- Originated and pushed the WakeGuard app/project idea forward as a real product, not just a small demo.
-- Defined the need for WakeGuard to help people who struggle with waking up, including users dealing with narcolepsy, sleep inertia, and alarms that are too easy to dismiss, based on a summer project at UT Austin
-- Directed the product toward a stronger wake-challenge experience instead of a normal phone alarm.
+## Product Direction (App Side)
+
+- Helped push the app side of WakeGuard forward as a polished product rather than a small demo.
+- Supported the product goal of helping people who struggle to wake up — narcolepsy, sleep inertia, and
+  alarms that are too easy to dismiss. (The core concept and the UT Austin summer project were originated by
+  Aaron Hua.)
+- Directed the app experience toward a stronger wake-challenge flow instead of a normal phone alarm.
 - Repeatedly clarified that the app should support standalone and dedicated-clock use cases while being
   honest about iOS background and locked-screen limitations.
 - Helped shape the app into a polished consumer experience with onboarding, account setup, cloud sync,
@@ -103,6 +110,8 @@ through Codex/AI-assisted development sessions.
 - Requested analytics for onboarding drop-off and failed syncs.
 - Requested crash/error reporting.
 
+*(This account/Firebase/analytics subsystem is genuinely net-new work added in Mekyle's 2026-07-13 commit.)*
+
 ## Launch, Branding, And Performance Updates
 
 - Requested the initial loading screen be fixed to match the WakeGuard logo colors.
@@ -146,33 +155,38 @@ through Codex/AI-assisted development sessions.
 - Reported CocoaPods and iOS deployment target issues.
 - Verified fixes through follow-up simulator testing and additional screenshots.
 
-## Architecture And Engineering Direction
+## Architecture And Engineering Direction (App Side)
 
-- Requested a more professional folder structure.
+- Requested a more professional folder structure (the `lib/features` restructure).
 - Asked for performance fixes and reduced unnecessary rebuilds.
 - Asked for better state-management decisions.
 - Requested production-quality Flutter patterns instead of fragile app structure.
-- Directed BLE sync logic into a dedicated service layer so UI screens stay lighter.
+- Requested that the existing BLE/sync logic (authored by Aaron) be reorganized into a dedicated service
+  layer so UI screens stay lighter — a restructuring of Aaron's code, not new BLE engineering.
 - Requested integration tests for onboarding, alarm creation, sync, and dismissal.
 - Asked for broader bug/error review across the codebase and directed fixes when issues were found.
 
 ## Documentation And Attribution Updates
 
-- Requested attribution review after discovering one-sided project-log wording.
-- Directed the project log to recognize Mekyle as an equal contributor.
-- Requested that the log include work done through direct implementation, testing, release setup, and
-  Codex/AI-assisted implementation management.
+- Requested an attribution review of the project log.
+- Requested that the log recognize his app-side contributions (onboarding, UI/UX, Firebase/account, QA, and
+  release), rather than only "some UI".
 - Added the corrected bundle identifier and current TestFlight/release ownership details.
-- Requested a dedicated update log to preserve a focused record of Mekyle's work and updates.
+- Requested a dedicated update log to preserve a focused record of his work.
+
+> Note: an earlier revision of this section described these contributions as making Mekyle an "equal
+> contributor," and the project log was rewritten accordingly in the 2026-07-13 commit. That framing was
+> later reconciled against the git history (Aaron authored 38 of 49 commits and all core engineering,
+> hardware, firmware, BLE protocol, and sync). See `PROJECT_LOG.md` and `CONTRIBUTORS.md` for the corrected
+> record.
 
 ## Summary
 
-Mekyle Alam's contributions to WakeGuard include project/product direction, onboarding, UI/UX direction,
-Firebase/account direction, profile and cloud-sync direction, alarm/display/settings/home improvements,
-dedicated-clock planning, iOS/TestFlight/release work, build troubleshooting, simulator QA, bug discovery,
-and repeated implementation management through Codex/AI-assisted development.
+Mekyle Alam's contributions to WakeGuard include app-side product direction, onboarding, UI/UX direction,
+the net-new Firebase/account subsystem, profile and cloud-sync direction, alarm/display/settings/home
+improvements, dedicated-clock planning, iOS/TestFlight/release work, build troubleshooting, simulator QA,
+bug discovery, and repeated implementation management through Codex/AI-assisted development.
 
-This was substantial product, design, QA, release, and engineering-direction work that should be preserved
-as part of WakeGuard's project record.
-
-میرا لینڈ پا چار پنچوت
+This was substantial app-side product, design, QA, and release-direction work that should be preserved as
+part of WakeGuard's project record. It sits alongside — and did not author — the core engineering, hardware,
+firmware, BLE protocol, and sync engine, which were Aaron Hua's (see `AARON_UPDATE_LOG.md`).

@@ -228,13 +228,16 @@ class _AvatarButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Material(
-      color: Colors.transparent,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onPressed,
-        child: Stack(
+    return Semantics(
+      button: true,
+      label: 'Change profile photo',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onPressed,
+          child: Stack(
           clipBehavior: Clip.none,
           children: [
             Container(
@@ -268,6 +271,7 @@ class _AvatarButton extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

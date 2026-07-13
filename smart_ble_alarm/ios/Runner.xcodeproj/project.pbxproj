@@ -72,7 +72,6 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		981A04712DE10F31005F2A61 /* WakeGuard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WakeGuard.entitlements; sourceTree = "<group>"; };
-		FADE100000000000000000A1 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		995D2C9AEBC28DAE4B8F9236 /* Pods-WakeGuardTests.release-wakeguard.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WakeGuardTests.release-wakeguard.xcconfig"; path = "Target Support Files/Pods-WakeGuardTests/Pods-WakeGuardTests.release-wakeguard.xcconfig"; sourceTree = "<group>"; };
 		A350E873270C74C0F277F6A9 /* Pods-WakeGuardTests.debug-wakeguard.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WakeGuardTests.debug-wakeguard.xcconfig"; path = "Target Support Files/Pods-WakeGuardTests/Pods-WakeGuardTests.debug-wakeguard.xcconfig"; sourceTree = "<group>"; };
 		A5456142767CA64E0F011F81 /* Pods-WakeGuardTests.profile-wakeguard.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WakeGuardTests.profile-wakeguard.xcconfig"; path = "Target Support Files/Pods-WakeGuardTests/Pods-WakeGuardTests.profile-wakeguard.xcconfig"; sourceTree = "<group>"; };
@@ -81,6 +80,7 @@
 		D815EF0E93B8F3BFCD8FF84E /* Pods-WakeGuardTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WakeGuardTests.release.xcconfig"; path = "Target Support Files/Pods-WakeGuardTests/Pods-WakeGuardTests.release.xcconfig"; sourceTree = "<group>"; };
 		EE29566D0C217FA0148DAA26 /* Pods-WakeGuard.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WakeGuard.debug.xcconfig"; path = "Target Support Files/Pods-WakeGuard/Pods-WakeGuard.debug.xcconfig"; sourceTree = "<group>"; };
 		F47713403E3390029B171787 /* Pods-WakeGuard.profile-wakeguard.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WakeGuard.profile-wakeguard.xcconfig"; path = "Target Support Files/Pods-WakeGuard/Pods-WakeGuard.profile-wakeguard.xcconfig"; sourceTree = "<group>"; };
+		FADE100000000000000000A1 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FC21D9CF3F91B68C4519B8D9 /* Pods-WakeGuardTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WakeGuardTests.profile.xcconfig"; path = "Target Support Files/Pods-WakeGuardTests/Pods-WakeGuardTests.profile.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -236,8 +236,6 @@
 			dependencies = (
 			);
 			name = WakeGuard;
-			packageProductDependencies = (
-			);
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* WakeGuard.app */;
 			productType = "com.apple.product-type.application";
@@ -271,8 +269,6 @@
 				Base,
 			);
 			mainGroup = 97C146E51CF9000F007C117D;
-			packageReferences = (
-			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -527,14 +523,14 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/WakeGuard.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 74SA4D686B;
+				DEVELOPMENT_TEAM = HX7S7KAF9X;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -551,7 +547,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.WakeGuardTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b.WakeGuardTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -569,7 +565,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.WakeGuardTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b.WakeGuardTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WakeGuard.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WakeGuard";
@@ -585,7 +581,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.WakeGuardTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b.WakeGuardTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WakeGuard.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WakeGuard";
@@ -664,14 +660,14 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/WakeGuard.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 74SA4D686B;
+				DEVELOPMENT_TEAM = HX7S7KAF9X;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -688,14 +684,14 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/WakeGuard.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 74SA4D686B;
+				DEVELOPMENT_TEAM = HX7S7KAF9X;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -711,14 +707,14 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/WakeGuard.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 74SA4D686B;
+				DEVELOPMENT_TEAM = HX7S7KAF9X;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -735,7 +731,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.WakeGuardTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b.WakeGuardTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -753,7 +749,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.WakeGuardTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b.WakeGuardTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WakeGuard.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WakeGuard";
@@ -769,7 +765,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.WakeGuardTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b.WakeGuardTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WakeGuard.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WakeGuard";
@@ -895,14 +891,14 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/WakeGuard.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 74SA4D686B;
+				DEVELOPMENT_TEAM = HX7S7KAF9X;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -919,14 +915,14 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/WakeGuard.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 74SA4D686B;
+				DEVELOPMENT_TEAM = HX7S7KAF9X;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mekylealam.wakeguardalarm.a74sa4d686b;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -977,7 +973,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 	};
 	rootObject = 97C146E61CF9000F007C117D /* Project object */;
 }

@@ -131,9 +131,10 @@ class ToggleWeatherUnitEvent extends SettingsEvent {
   List<Object?> get props => [fahrenheit];
 }
 
-/// Turns the phone-alarm companion mode on/off. When on, the app itself can ring
-/// (best-effort on iOS, enforced on Android) so an alarm still fires without the
-/// hardware clock. See [SettingsState.phoneAlarmEnabled].
+/// Turns the "Ring on this phone" engine on/off. When on, this phone rings the
+/// alarm itself (foreground, best-effort) and runs the wake challenge to
+/// dismiss, so an alarm still fires without the hardware clock. See
+/// [SettingsState.phoneAlarmEnabled] and `PhoneAlarmRinger`.
 class TogglePhoneAlarmEvent extends SettingsEvent {
   final bool enabled;
   const TogglePhoneAlarmEvent(this.enabled);
@@ -200,10 +201,13 @@ class SettingsState extends Equatable {
   final bool showWeather;
   final bool weatherFahrenheit; // false = °C, true = °F
 
-  // Phone-alarm companion mode: the app itself rings (best-effort on iOS,
-  // enforced on Android) so an alarm fires without the hardware clock.
+  // "Ring on this phone": the app rings the alarm itself (foreground,
+  // best-effort) so an alarm fires without the hardware clock. See
+  // `PhoneAlarmRinger`.
   final bool phoneAlarmEnabled;
-  final bool phoneAlarmRequireCharging; // gate the iOS keep-alive to charging
+  // Retained for back-compat with persisted prefs; not surfaced in the UI (the
+  // foreground engine has no keep-alive to gate on charging).
+  final bool phoneAlarmRequireCharging;
 
   // Dedicated Clock mode: this device is a standby bedside clock. Drives the
   // top-precedence route to DedicatedClockScreen in main.dart.

@@ -124,7 +124,7 @@ snoozeMaxCount, snoozeDurationMinutes, volumePercent(1–100), gradualWakeSecond
 - Snackbars: use `core/ui/app_snackbar.dart` `showAppSnackBar` (clears the queue first — no stacking/queue lag).
 
 ## 8. iOS / TestFlight
-- Bundle ID **`com.mekylealam.wakeguardalarm`** (RunnerTests `.WakeGuardTests`); `DEVELOPMENT_TEAM = 74SA4D686B`.
+- Bundle ID **`com.mekylealam.wakeguardalarm.a74sa4d686b`** (RunnerTests `.WakeGuardTests`); `DEVELOPMENT_TEAM = 74SA4D686B`.
 - Current TestFlight/release work is handled by **Mekyle Alam**.
 - Version in `pubspec.yaml` `version: 0.1.0+N` → `$(FLUTTER_BUILD_NAME)`/`$(FLUTTER_BUILD_NUMBER)`.
   **Bump the build number (+2, +3…) on every TestFlight upload** — App Store Connect rejects a reused build number.
