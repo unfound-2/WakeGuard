@@ -49,7 +49,7 @@ Mekyle's contribution areas include:
 - **Build, TestFlight, release, and QA work**: repeatedly surfaced simulator screenshots, build failures,
   CocoaPods/iOS platform issues, Firebase/Google sign-in errors, display scrolling/layout assertions,
   startup slowness, and button interaction problems; handled current TestFlight/release work under the
-  `com.mekylealam.wakeguardalarm` bundle identity; directed fixes and verified behavior through follow-up
+  `com.mekylealam.wakeguardalarm.a74sa4d686b` bundle identity; directed fixes and verified behavior through follow-up
   testing.
 
 This contribution record should be read as shared project credit. It should not minimize Mekyle's role as
@@ -93,7 +93,7 @@ implementation decisions.
   configuration, CocoaPods/iOS deployment target issues, scrolling/layout assertions, startup delays,
   non-working buttons, pairing confusion, display-tab problems, and auth/profile issues.
 - **TestFlight and release ownership**: handled current TestFlight/release work and corrected the app's
-  bundle identifier to `com.mekylealam.wakeguardalarm`.
+  bundle identifier to `com.mekylealam.wakeguardalarm.a74sa4d686b`.
 - **AI-assisted implementation management**: directed Codex/AI implementation work, reviewed results,
   requested revisions, and pushed the app through repeated analyze/test/fix cycles.
 
@@ -264,7 +264,7 @@ on-device ML, embedded C++, and an App Store release. Grouped by area, with the 
 
 ### iOS / App Store (TestFlight)
 - Current TestFlight/release work is handled by **Mekyle Alam**, with the app using bundle identifier
-  `com.mekylealam.wakeguardalarm`, versioned `0.1.0+N` with the build-number-bump discipline App Store
+  `com.mekylealam.wakeguardalarm.a74sa4d686b`, versioned `0.1.0+N` with the build-number-bump discipline App Store
   Connect requires.
 - Resolved a real **App Store rejection (ITMS-90683)** by adding the missing
   `NSLocationAlwaysAndWhenInUseUsageDescription` purpose string, and correctly answered **export compliance**

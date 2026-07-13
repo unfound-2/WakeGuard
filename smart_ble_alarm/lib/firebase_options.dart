@@ -67,6 +67,6 @@ class DefaultFirebaseOptions {
     storageBucket: 'wakegaurd.firebasestorage.app',
     iosClientId:
         '445120481576-afrmeccejlokq2g2f2dj261hu0bg7at2.apps.googleusercontent.com',
-    iosBundleId: 'com.mekylealam.wakeguardalarm',
+    iosBundleId: 'com.mekylealam.wakeguardalarm.a74sa4d686b',
   );
 }

@@ -1,105 +1,83 @@
-# WakeGuard — Privacy Policy
+# WakeGuard Privacy Policy
 
-**Last updated: 9 July 2026**
+**Last updated: July 13, 2026**
 
-WakeGuard ("the app," "we," "our") is a smart alarm clock app. This policy explains
-what the app does and does not do with your information. In short: **we do not
-collect, store, sell, or share your personal data.** WakeGuard has no user accounts,
-no analytics, and no advertising or tracking.
+WakeGuard is a smart alarm clock companion app. This policy explains what data
+the app uses, when data leaves your device, and how users can delete account
+data.
 
----
+WakeGuard does not sell personal data and does not track users across apps or
+websites.
 
-## 1. Data we collect
+## 1. Account and cloud data
 
-**None.** We do not operate any server that receives or stores your data. We do not
-require an account, we do not profile you, and we do not track you across apps or
-websites. Your alarms, settings, and preferences stay on your device.
+Creating a WakeGuard account is optional. The app still works locally without
+sign-in.
 
-Apple's privacy manifest for this app declares **no tracking** and **no collected
-data types**.
+If you sign in, WakeGuard uses Firebase to store:
 
----
+- Your account identifier, email address, display name, and optional profile
+  photo.
+- Cloud alarm backups used to restore your setup on another device.
+- Basic sync metadata, such as when alarms were last backed up.
 
-## 2. Information that stays on your device
+Users can delete their account inside the app from Account > Delete Account.
+That deletes the WakeGuard cloud profile, profile photo, and cloud alarm
+backups. Local alarms and settings on the phone remain until the user resets
+local data or deletes the app.
 
-Everything you create in WakeGuard is stored **locally on your device** and is not
-transmitted to us:
+## 2. Analytics and crash reporting
 
-- **Alarms, timers, snooze and volume settings, and app preferences** — saved in your
-  device's local storage.
-- **Wake-challenge configuration** (QR codes and object/photo challenges) and your
-  global backup dismissal code.
+WakeGuard uses Firebase Analytics to understand onboarding progress and failed
+sync events, and Firebase Crashlytics to diagnose crashes. These services may
+receive app interaction events, crash diagnostics, device/app version details,
+and a signed-in user's Firebase user identifier.
 
-If you delete the app, this local data is removed with it.
+These events are used for app quality, reliability, and sync troubleshooting.
+They are not used for advertising or cross-app tracking.
 
----
+## 3. Data that stays on the device
 
-## 3. Device permissions and how they are used
+The following data is stored locally unless the user signs in for cloud backup:
 
-WakeGuard requests the following permissions. Each is used only for the stated
-purpose, and none of the data leaves your device to us:
+- Alarms, timers, display settings, app preferences, and dismissal history.
+- Wake-challenge configuration.
+- Backup dismissal code material stored through the device's secure storage.
 
-- **Camera** — used on your device to scan QR codes and verify wake objects when you
-  dismiss an alarm. Camera frames are processed live on the device and are **not
-  recorded, saved, or transmitted**.
-- **Bluetooth** — used to connect directly to your companion WakeGuard clock over
-  Bluetooth Low Energy to sync the time, alarms, timers, and display settings. This
-  is a direct device-to-device connection; it does not pass through any server we run.
-- **Location** — iOS may require location permission in order to perform Bluetooth
-  scanning to discover nearby clocks. WakeGuard uses this **only** to enable Bluetooth
-  discovery. We do not log, store, or transmit your location to ourselves.
-- **Notifications** — used to schedule local backup alarm notifications on your device
-  so an alarm still fires even if the app is not in the foreground. These notifications
-  are generated on-device.
+Wake-challenge camera images are processed on the phone for QR or object
+verification and are not saved by WakeGuard.
 
----
+## 4. Device permissions
 
-## 4. Optional weather feature (third-party services)
+WakeGuard requests these permissions only when needed:
 
-If the weather display is used, the app fetches current conditions to show on your
-clock. Because the companion clock has no internet connection, your **phone** performs
-this lookup and pushes the result to the clock. This involves two third-party services:
+- **Camera**: scans QR codes and verifies wake objects.
+- **Bluetooth**: connects directly to a WakeGuard clock to sync alarms, timers,
+  time, and display settings.
+- **Location**: may be required by the operating system for nearby Bluetooth
+  scanning.
+- **Photo library**: lets the user choose an optional profile picture.
+- **Notifications**: schedules local backup alarm notifications and reminders.
 
-- **ipapi.co** — used to approximate your location from your device's IP address so the
-  correct local forecast can be shown.
-- **Open-Meteo** — used to retrieve the weather forecast for that location.
+## 5. Optional weather lookup
 
-When this feature runs, your device's IP address is visible to these services as part
-of the normal request, and the approximate location is used to request weather. **We do
-not receive, store, or retain any of this** — the weather result is held only in memory
-to draw the display and is discarded. These services are operated independently of us
-and have their own privacy practices:
+If weather display features are used, the phone may request approximate weather
+information from third-party services such as ipapi.co and Open-Meteo, then send
+the result to the WakeGuard clock. WakeGuard does not retain this weather lookup
+data.
 
-- ipapi.co: https://ipapi.co/privacy/
-- Open-Meteo: https://open-meteo.com/en/terms
+## 6. Medical disclaimer
 
----
+WakeGuard is a routine-support tool and is not a medical device. It does not
+diagnose, treat, cure, or prevent narcolepsy, sleep disorders, or any other
+medical condition. Users should talk with a qualified clinician before making
+medical decisions.
 
-## 5. Children's privacy
+## 7. Changes
 
-WakeGuard does not knowingly collect any personal information from anyone, including
-children. Because we collect no data at all, there is nothing to collect from a child.
-
----
-
-## 6. Data security
-
-Because your data never leaves your device (except for the optional weather lookup
-described above, which we do not retain), there is no server-side database of your
-information for anyone to breach. Your on-device data is protected by your device's
-own security and operating-system protections.
-
----
-
-## 7. Changes to this policy
-
-If the app's behavior changes in a way that affects your privacy, we will update this
-policy and change the "Last updated" date above.
-
----
+If WakeGuard's data behavior changes, this policy should be updated before the
+next App Store submission.
 
 ## 8. Contact
 
-If you have questions about this policy, contact:
-
-**aaron.huayanqing@gmail.com**
+Use the support contact listed for WakeGuard in App Store Connect.

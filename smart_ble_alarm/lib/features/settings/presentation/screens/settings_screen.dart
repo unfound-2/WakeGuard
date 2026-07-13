@@ -1268,8 +1268,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Divider(height: 1, color: Theme.of(context).dividerColor),
             WakeSettingsRow(
               icon: Icons.privacy_tip_rounded,
-              title: 'Privacy',
-              subtitle: 'Camera verification and Bluetooth stay on this device',
+              title: 'Privacy Policy',
+              subtitle: 'Accounts, backups, diagnostics, and device data',
               onTap: _showPrivacyDialog,
             ),
             Divider(height: 1, color: Theme.of(context).dividerColor),
@@ -1315,11 +1315,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text(
                 'WakeGuard pairs with a Bluetooth alarm clock and requires a '
                 'personalized object wake challenge before protected alarms '
-                'can be dismissed.',
+                'can be dismissed. WakeGuard is a routine-support tool, not a '
+                'medical device, and it does not diagnose, treat, or prevent '
+                'any medical condition.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
                   height: 1.4,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Credits',
+                style: Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Mekyle Alam, Aaron Hua, Victor Kong, & Navin John',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.35,
                   color: scheme.onSurfaceVariant,
                 ),
               ),
@@ -1340,12 +1360,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Privacy'),
-        content: const Text(
-          'Wake-challenge photos are analyzed on this phone and never leave '
-          'it. Bluetooth communication happens directly between your phone '
-          'and the clock. If you sign in, Firebase stores your account '
-          'profile so WakeGuard can back up and restore your setup.',
+        title: const Text('Privacy Policy'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Wake-challenge camera images are processed on this phone for QR '
+            'and object checks. They are not saved by WakeGuard.\n\n'
+            'Bluetooth communication happens directly between your phone and '
+            'your WakeGuard clock.\n\n'
+            'If you sign in, Firebase stores your email, name, optional '
+            'profile photo, and cloud alarm backups so WakeGuard can restore '
+            'your setup. Firebase Analytics records onboarding and sync '
+            'events, and Firebase Crashlytics records crash diagnostics. '
+            'WakeGuard does not sell personal data or track you across apps.\n\n'
+            'Delete Account removes your WakeGuard cloud profile and alarm '
+            'backups. Local alarms on this phone stay until you reset local '
+            'data or delete the app.\n\n'
+            'WakeGuard is not a medical device and should not replace medical '
+            'advice. For narcolepsy, sleep disorders, medication routines, or '
+            'other health decisions, talk with a qualified clinician.',
+          ),
         ),
         actions: [
           TextButton(

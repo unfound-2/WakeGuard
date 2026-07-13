@@ -29,9 +29,9 @@ class CrashReportingService {
 
   static Future<void> setUserId(String? userId) async {
     final crashlytics = _client;
-    if (crashlytics == null || userId == null || userId.isEmpty) return;
+    if (crashlytics == null) return;
     try {
-      await crashlytics.setUserIdentifier(userId);
+      await crashlytics.setUserIdentifier(userId ?? '');
     } catch (error, stackTrace) {
       debugPrint('Crashlytics setUserId failed: $error\n$stackTrace');
     }

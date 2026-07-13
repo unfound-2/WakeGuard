@@ -414,6 +414,37 @@ class AccountCubit extends Cubit<AccountState> {
     }
   }
 
+  Future<void> deleteAccount() async {
+    if (!_canUseAuth) return;
+    final user = _auth!.currentUser;
+    if (user == null) {
+      emit(state.copyWith(message: 'Sign in before deleting your account.'));
+      return;
+    }
+
+    emit(state.copyWith(isBusy: true, clearMessage: true));
+    try {
+      await _deleteCloudAccountData(user.uid);
+      await user.delete();
+      await _trySignOutGoogle();
+      await AppAnalytics.instance.setUserId(null);
+      await CrashReportingService.setUserId(null);
+      emit(
+        const AccountState(
+          isInitializing: false,
+          firebaseReady: true,
+          message: 'Account deleted. WakeGuard is now in local mode.',
+        ),
+      );
+    } on FirebaseAuthException catch (error) {
+      emit(state.copyWith(isBusy: false, message: _authMessage(error)));
+    } on FirebaseException catch (error) {
+      emit(state.copyWith(isBusy: false, message: _deleteMessage(error)));
+    } catch (error) {
+      emit(state.copyWith(isBusy: false, message: 'Delete failed: $error'));
+    }
+  }
+
   bool get _canUseAuth {
     if (_auth != null && state.firebaseReady) return true;
     emit(
@@ -429,6 +460,7 @@ class AccountCubit extends Cubit<AccountState> {
   Future<void> _onAuthChanged(User? user) async {
     if (user == null) {
       await AppAnalytics.instance.setUserId(null);
+      await CrashReportingService.setUserId(null);
       emit(
         state.copyWith(
           isInitializing: false,
@@ -485,6 +517,34 @@ class AccountCubit extends Cubit<AccountState> {
         .collection('users')
         .doc(user.uid)
         .set(profile, SetOptions(merge: true));
+  }
+
+  Future<void> _deleteCloudAccountData(String uid) async {
+    final storage = _storage;
+    if (storage != null) {
+      final profileFolder = storage.ref('users/$uid/profile');
+      try {
+        final listing = await profileFolder.listAll();
+        await Future.wait(listing.items.map((item) => item.delete()));
+      } on FirebaseException catch (error) {
+        if (error.code != 'object-not-found' &&
+            error.code != 'bucket-not-found') {
+          rethrow;
+        }
+      }
+    }
+
+    final firestore = _firestore;
+    if (firestore != null) {
+      final userRef = firestore.collection('users').doc(uid);
+      final backupSnapshot = await userRef.collection('alarmBackups').get();
+      final batch = firestore.batch();
+      for (final doc in backupSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      batch.delete(userRef);
+      await batch.commit();
+    }
   }
 
   Future<void> _ensureGoogleSignInInitialized() {
@@ -592,6 +652,10 @@ class AccountCubit extends Cubit<AccountState> {
         return 'Network error. Check your connection and try again.';
       case 'operation-not-allowed':
         return 'This sign-in provider is not enabled in Firebase yet.';
+      case 'requires-recent-login':
+        return 'For security, sign in again before deleting your account.';
+      case 'user-token-expired':
+        return 'Your session expired. Sign in again and retry.';
       default:
         return error.message ?? 'Authentication failed.';
     }
@@ -620,6 +684,17 @@ class AccountCubit extends Cubit<AccountState> {
         return 'Sign in again before uploading a profile photo.';
       default:
         return error.message ?? 'Profile update failed.';
+    }
+  }
+
+  String _deleteMessage(FirebaseException error) {
+    switch (error.code) {
+      case 'permission-denied':
+        return 'Firebase rules need to allow deleting your cloud profile.';
+      case 'unavailable':
+        return 'Cloud deletion is temporarily unavailable. Try again soon.';
+      default:
+        return error.message ?? 'Account deletion failed.';
     }
   }
 

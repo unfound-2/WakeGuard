@@ -46,14 +46,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _OnboardingPage(
       analyticsName: 'welcome',
       eyebrow: 'WakeGuard',
-      title: 'Built for mornings that normal alarms do not solve.',
+      title: 'Built for harder mornings, not medical decisions.',
       body:
-          'WakeGuard was made for people who sleep through alarms, dismiss them on autopilot, or wake with heavy sleep inertia. That can happen with narcolepsy, demanding schedules, medication routines, and other hard mornings.',
+          'WakeGuard was made for people who sleep through alarms, dismiss them on autopilot, or wake with heavy sleep inertia. Some users may live with narcolepsy or other sleep conditions, but WakeGuard is a routine-support tool, not a medical device.',
       icon: Icons.wb_sunny_rounded,
       bullets: [
-        'Designed for difficult wake-ups',
+        'Routine support for difficult wake-ups',
         'Clear protection status',
-        'Not a medical device',
+        'Talk with a clinician for medical advice',
       ],
     ),
     _OnboardingPage(

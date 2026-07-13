@@ -128,7 +128,7 @@ through Codex/AI-assisted development sessions.
 - Reported iOS build errors where Firebase packages required iOS 15 while the target supported iOS 13.
 - Requested CocoaPods updates when the sandbox was out of sync with `Podfile.lock`.
 - Reported repeated Xcode and simulator errors with screenshots.
-- Corrected the actual bundle identifier to `com.mekylealam.wakeguardalarm`.
+- Corrected the actual bundle identifier to `com.mekylealam.wakeguardalarm.a74sa4d686b`.
 - Stated and handled current TestFlight and release work.
 - Directed iOS/TestFlight readiness work, including build number discipline and release-account details.
 - Helped identify generated build artifacts versus real source files when old bundle IDs appeared in output.
