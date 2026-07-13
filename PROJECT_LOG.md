@@ -2,59 +2,46 @@
 
 ## Attribution
 
-**WakeGuard is the shared work of Aaron Hua and Mekyle Alam.** Both contributors shaped the product,
-experience, and implementation direction. The project should be credited as a collaborative build, not as
-the work of one person alone. AI assistants were used as **coding, auditing, refactoring, and execution
-tools** — they generated, revised, tested, and documented code based on contributor direction, feedback,
-design decisions, screenshots, build issues, and acceptance criteria. AI assistance does not replace the
-human contribution: the product decisions, QA feedback, feature direction, and final judgment came from the
-people directing the work.
+**WakeGuard was created and primarily built by Aaron Hua (GitHub `cowfollowdog`), with significant
+app-side contributions from Mekyle Alam (GitHub `unfound-2`).** Aaron originated the product and authored
+the majority of the codebase (36 of the 46 commits across all branches) and its entire hardware and
+firmware half. Mekyle contributed the onboarding/pairing experience and the AI wake-challenge UI, and
+later added the account/Firebase/analytics layer and a UI redesign pass over Aaron's existing screens. AI
+assistants (Claude Code, Codex) were used by both as coding, auditing, refactoring, and execution tools —
+generating, revising, testing, and documenting code under each contributor's direction. The product
+decisions, QA, and final judgment came from the people directing the work.
 
 In short:
-- **Aaron Hua** — equal contributor: hardware build and wiring, clock/firmware direction, BLE and alarm
-  validation, and product/technical decisions.
-- **Mekyle Alam** — equal contributor: app feature direction, onboarding and pairing experience, modern UI
-  direction, account/profile/Firebase direction, alarms/display/settings/home workflow improvements,
-  dedicated-clock and standalone-phone direction, TestFlight/release work, QA feedback from simulator/build
-  testing, and AI-assisted implementation management.
+- **Aaron Hua** — originator and primary author: the physical clock build and wiring; the autonomous
+  Arduino/HM-10 firmware; the hand-rolled framed BLE protocol proven byte-for-byte in Dart and C++; the
+  sync/connectivity engine; the wake-challenge and single-backup-code security design; the initial app
+  outline and Liquid Glass foundation; the production audit/hardening; and the original project log.
+- **Mekyle Alam** — significant app-side contributor: the original onboarding flow and pairing-progress UI
+  (merged via the `onboarding` branch); the AI image-scan wake-challenge UI; the account / profile /
+  Firebase / analytics / crash-reporting subsystem; a modern UI redesign restructuring the app into
+  `lib/features`; and current TestFlight/release work under the `com.mekylealam.wakeguardalarm` identity.
 - **AI assistants** — generated, refactored, audited, and documented code; implemented contributor-directed
-  changes; wrote tests; surfaced bugs and trade-offs for the human contributors to choose from.
+  changes; wrote tests; and surfaced bugs and trade-offs for the humans to decide.
 
-### Equal contributor credit — Mekyle Alam
+### Contribution record (from the git history)
 
-Mekyle Alam (GitHub `unfound-2`) is an equal contributor to WakeGuard. His work includes building the
-original **onboarding software** (onboarding flow/screens and pairing-progress UI, merged into `main` via
-the `onboarding` branch), contributing feature and product ideas, and directing substantial app-side
-iteration through hands-on testing, screenshots, UX feedback, and AI-assisted implementation sessions.
+Recorded from what the commit history actually shows, so credit stays accurate across future edits:
 
-Mekyle's contribution areas include:
-- **Onboarding and pairing**: onboarding flow, replayable onboarding direction, clearer narcolepsy/sleep
-  inertia explanation, Connect WakeGuard redesign, pairing-status hero, Bluetooth permission states,
-  timeout recovery, and nearby-clock copy/state improvements.
-- **Modern app UI direction**: home dashboard redesign direction, stronger visual system, launch/splash
-  polish, WakeGuard logo color matching, refined copy, stronger status language, and compact/premium card
-  layouts across the app.
-- **Account and Firebase direction**: account creation, Google/Apple sign-in direction, profile creation,
-  user display names, profile pictures, Firebase connection setup, storage setup, profile sync, cloud alarm
-  backup/restore, analytics, and crash/error reporting direction.
-- **Alarm experience direction**: cleaner alarm cards, stronger Alarm/Timer split, swipe actions, alarm
-  templates, empty-state improvements, detail/edit upgrades, iOS-only haptic direction, and repeated QA of
-  alarm-page behavior.
-- **Display and settings direction**: live clock preview hero, preset strip, Appearance section, visual
-  clock-face picker, sleep schedule upgrades, connection-state improvements, Settings search, profile/account
-  merge, status summary, compact settings groups, and detail-page organization.
-- **Dedicated/standalone clock direction**: explored and directed the phone-as-dedicated-clock mode,
-  background/locked-screen alarm limitations, standalone alarm expectations, and user-facing limitation
-  language.
-- **Build, TestFlight, release, and QA work**: repeatedly surfaced simulator screenshots, build failures,
-  CocoaPods/iOS platform issues, Firebase/Google sign-in errors, display scrolling/layout assertions,
-  startup slowness, and button interaction problems; handled current TestFlight/release work under the
-  `com.mekylealam.wakeguardalarm` bundle identity; directed fixes and verified behavior through follow-up
-  testing.
-
-This contribution record should be read as shared project credit. It should not minimize Mekyle's role as
-only "some UI" or a minor collaborator: he has driven major app-side product, UX, feature, QA, and
-implementation decisions.
+- **Aaron Hua** authored **36 of 46 commits** and every core-engineering file — the Arduino firmware
+  (`WakeGuardClock.ino`), the BLE protocol (`ble_payloads.dart`), and the sync engine (`clock_sync.dart`) —
+  plus on-demand BLE, timers, the real `0x09` dismissal path, and the production hardening. He wrote the
+  first version of this log on 2026-07-08.
+- **Mekyle Alam** authored **9 commits**, including the largest app-side changesets: the 2026-07-02
+  onboarding + AI image-scanning work, and the 2026-07-13 "Polish" commit that added the
+  account/Firebase/analytics subsystem and restructured the presentation layer into `lib/features`
+  (a mix of ~33 net-new files and a redesign of ~64 existing files). The net-new account/Firebase/analytics
+  work is genuinely his.
+- **Timeline note**: Aaron's original 2026-07-08 log described Mekyle's contribution as it stood on that
+  date — onboarding, feature ideas, and some UI — which was accurate then; the account/Firebase layer and
+  the UI redesign landed afterward, in Mekyle's 2026-07-13 commit, which also rewrote this Attribution
+  section to read as "equal contributor." This corrected version restores the record to the git evidence.
+- Release/TestFlight and QA specifics for both contributors happened off-commit and are not verifiable from
+  git; they are noted on trust, not as measured contribution.
 
 ---
 
