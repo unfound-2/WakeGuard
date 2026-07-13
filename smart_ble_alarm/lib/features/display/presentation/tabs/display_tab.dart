@@ -35,6 +35,12 @@ class DisplayTab extends StatelessWidget {
     (name: 'Violet', color: Color(0xFF8B5CF6)),
   ];
 
+  // Keep these paired with the firmware RGB565 palette in WakeGuardClock.ino.
+  static const Color _previewDarkFace = Color(0xFF111A20);
+  static const Color _previewDarkFace2 = Color(0xFF1C2831);
+  static const Color _previewLightFace = Color(0xFFF6F8FA);
+  static const Color _previewLightFace2 = Color(0xFFE9EEF2);
+
   static const List<_DisplayPreset> _presets = [
     _DisplayPreset(
       name: 'Minimal',
@@ -140,6 +146,8 @@ class DisplayTab extends StatelessWidget {
                 _livePreviewSection(context, settings),
                 const SizedBox(height: 16),
                 _connectionStateCard(context),
+                const SizedBox(height: 16),
+                _resetDisplayCard(context, settings),
                 const SizedBox(height: 24),
                 _presetSection(context, settings),
                 const SizedBox(height: 24),
@@ -270,6 +278,76 @@ class DisplayTab extends StatelessWidget {
     );
   }
 
+  Widget _resetDisplayCard(BuildContext context, SettingsState settings) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDefault = _isDisplayDefault(settings);
+
+    return GlassCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+      borderRadius: 24,
+      shadows: wakeCardShadow(context),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.13),
+              shape: BoxShape.circle,
+              border: Border.all(color: scheme.primary.withValues(alpha: 0.28)),
+            ),
+            child: Icon(
+              Icons.restart_alt_rounded,
+              color: scheme.primary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reset clock screen',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isDefault
+                      ? 'The display is already at its original state.'
+                      : 'Restore the original face, color, weather, and night mode.',
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 12.5,
+                    height: 1.28,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          TextButton.icon(
+            onPressed: isDefault
+                ? null
+                : () => context.read<SettingsBloc>().add(
+                    const ResetClockDisplayEvent(),
+                  ),
+            icon: const Icon(Icons.restore_rounded, size: 17),
+            label: const Text('Reset'),
+            style: TextButton.styleFrom(
+              foregroundColor: scheme.primary,
+              textStyle: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _presetSection(BuildContext context, SettingsState settings) {
     return WakeSection(
       title: 'Presets',
@@ -380,6 +458,7 @@ class DisplayTab extends StatelessWidget {
     _DisplayUpdate update,
   ) {
     final scheme = Theme.of(context).colorScheme;
+    final accentIndex = _safeAccentIndex(settings.clockAccentIndex);
     return WakeSection(
       title: 'Appearance',
       subtitle: 'Face theme and the accent used for clock highlights.',
@@ -422,7 +501,7 @@ class DisplayTab extends StatelessWidget {
                 ),
                 const Spacer(),
                 Text(
-                  _accents[settings.clockAccentIndex].name,
+                  _accents[accentIndex].name,
                   style: TextStyle(
                     color: scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
@@ -1332,8 +1411,29 @@ class DisplayTab extends StatelessWidget {
   }
 
   Color _accentFor(SettingsState settings) {
-    final safeIndex = settings.clockAccentIndex.clamp(0, _accents.length - 1);
+    final safeIndex = _safeAccentIndex(settings.clockAccentIndex);
     return _accents[safeIndex].color;
+  }
+
+  int _safeAccentIndex(int value) =>
+      value.clamp(0, _accents.length - 1).toInt();
+
+  bool _isDisplayDefault(SettingsState settings) {
+    return settings.is24HourTime == SettingsState.defaultIs24HourTime &&
+        settings.clockThemeLight == SettingsState.defaultClockThemeLight &&
+        settings.clockAccentIndex == SettingsState.defaultClockAccentIndex &&
+        settings.clockShowSeconds == SettingsState.defaultClockShowSeconds &&
+        settings.clockShowDate == SettingsState.defaultClockShowDate &&
+        settings.clockShowDayOfWeek ==
+            SettingsState.defaultClockShowDayOfWeek &&
+        settings.clockDateFormat == SettingsState.defaultClockDateFormat &&
+        settings.clockSleepEnabled == SettingsState.defaultClockSleepEnabled &&
+        settings.clockSleepStartMinutes ==
+            SettingsState.defaultClockSleepStartMinutes &&
+        settings.clockSleepEndMinutes ==
+            SettingsState.defaultClockSleepEndMinutes &&
+        settings.showWeather == SettingsState.defaultShowWeather &&
+        settings.weatherFahrenheit == SettingsState.defaultWeatherFahrenheit;
   }
 }
 
@@ -1351,8 +1451,12 @@ class _ClockFacePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final light = settings.clockThemeLight;
-    final face = light ? const Color(0xFFF6F8FA) : const Color(0xFF111A20);
-    final face2 = light ? const Color(0xFFE9EEF2) : const Color(0xFF1C2831);
+    final face = light
+        ? DisplayTab._previewLightFace
+        : DisplayTab._previewDarkFace;
+    final face2 = light
+        ? DisplayTab._previewLightFace2
+        : DisplayTab._previewDarkFace2;
     final text = light ? const Color(0xFF101820) : Colors.white;
     final muted = light ? const Color(0xFF5C6872) : Colors.white70;
 
@@ -1439,56 +1543,67 @@ class _ClockFacePreview extends StatelessWidget {
                       ),
                   ],
                 ),
-                const Spacer(),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        parts.main,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: text,
-                          fontSize: settings.clockShowSeconds ? 38 : 44,
-                          height: 0.95,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ),
-                    if (parts.suffix != null) ...[
-                      const SizedBox(width: 7),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 5),
-                        child: Text(
-                          parts.suffix!,
+                const SizedBox(height: 30),
+                Align(
+                  alignment: Alignment.center,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          parts.main,
+                          maxLines: 1,
                           style: TextStyle(
-                            color: muted,
-                            fontSize: 14,
+                            color: text,
+                            fontSize: settings.clockShowSeconds ? 38 : 44,
+                            height: 0.95,
                             fontWeight: FontWeight.w900,
+                            letterSpacing: 0,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 12),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  child: Text(
-                    infoLine,
-                    key: ValueKey(infoLine),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: muted,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+                        if (parts.suffix != null) ...[
+                          const SizedBox(width: 4),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 7),
+                            child: Text(
+                              parts.suffix!,
+                              style: TextStyle(
+                                color: text.withValues(
+                                  alpha: light ? 0.86 : 0.88,
+                                ),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
+                const SizedBox(height: 10),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  child: Align(
+                    key: ValueKey(infoLine),
+                    alignment: Alignment.center,
+                    child: Text(
+                      infoLine,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: muted,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const Spacer(),
               ],
             );
           },
@@ -1520,20 +1635,20 @@ class _ClockFacePreview extends StatelessWidget {
     final parts = <String>[];
     if (settings.clockShowDayOfWeek) {
       const days = [
+        'Sunday',
         'Monday',
         'Tuesday',
         'Wednesday',
         'Thursday',
         'Friday',
         'Saturday',
-        'Sunday',
       ];
-      parts.add(days[now.weekday - 1]);
+      parts.add(days[now.weekday % 7]);
     }
     if (settings.clockShowDate) {
       parts.add(_formatDate(now));
     }
-    return parts.isEmpty ? 'Ready for your next alarm' : parts.join('  •  ');
+    return parts.isEmpty ? 'Ready for your next alarm' : parts.join('   ');
   }
 
   String _formatDate(DateTime date) {

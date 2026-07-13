@@ -11,7 +11,7 @@
  *    - 2.4"/2.8" ILI9341  240x320 SPI TFT on hardware SPI (backlight LED tied
  *                         straight to 3.3V, so it is ALWAYS ON; touch pins unused)
  *    - Passive speaker    (driven by Timer1 PWM on D9 — NOT an active buzzer)
- *    - (optional) momentary push button for snooze while ringing (on D4)
+ *    - No physical buttons; alarm dismissal is handled through the app.
  *    - (optional) photoresistor (LDR) for ambient auto-dim
  *
  *  This firmware is the "clock node". The phone app is the configuration master
@@ -110,7 +110,7 @@
   // Arduino IDE reports the sketch overflowing the Uno's 32256-byte program space
   // on upload, step TIME_FONT_PT DOWN: 24 -> 18 -> 12 (12 falls back to the old
   // doubled look but is tiny). Nothing else needs to change.
-  #define TIME_FONT_PT 24                   // 24 (crispest) | 18 (lighter) | 12 (fallback)
+  #define TIME_FONT_PT 12                   // 24 (crispest) | 18 (lighter) | 12 (stable Uno fallback)
   #if   TIME_FONT_PT == 24
     #include <Fonts/FreeSansBold24pt7b.h>
     #define TIME_FONT (&FreeSansBold24pt7b)
@@ -180,7 +180,7 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 // flashing this (an old bootloader can loop on a watchdog reset), set to 0.
 #define ENABLE_WATCHDOG   1
 
-#define ENABLE_SNOOZE_BUTTON 1     // physical snooze button on D4 (ignored if absent)
+#define ENABLE_SNOOZE_BUTTON 0     // this WakeGuard build has no physical button
 #define ENABLE_LDR           0     // ambient-light auto-dim on A0 (off by default)
 #define LDR_DARK_THRESHOLD   180   // analogRead below this => "dark" => dim
 
@@ -949,7 +949,7 @@ void tryDismiss(uint8_t id, const uint8_t *token) {
   int slot = findAlarmSlot(id);
   bool ok;
   if (!ringSecured) {
-    ok = true;                                   // button-dismissal alarm
+    ok = true;                                   // unsecured alarm: app dismisses directly
   } else if (slot >= 0 && alarms[slot].hasToken) {
     ok = (memcmp(alarms[slot].token, token, 8) == 0);
   } else {
@@ -959,8 +959,8 @@ void tryDismiss(uint8_t id, const uint8_t *token) {
   // On mismatch: stay silent and keep ringing; the user must present the right code.
 }
 
-// Snooze the current ring (physical button). Secured alarms may only snooze
-// (never fully dismiss) via the button; unsecured alarms are dismissed outright.
+// Optional future hardware variant: snooze/dismiss via a physical button. Disabled
+// for this WakeGuard build (ENABLE_SNOOZE_BUTTON = 0), which has no buttons.
 void buttonOnRing() {
   if (!ringLatched) return;
   if (!ringSecured) {
@@ -1233,7 +1233,7 @@ void serviceBuzzer() {
 }
 
 // ============================================================================
-//  PHYSICAL BUTTON  (snooze / dismiss while ringing)
+//  OPTIONAL PHYSICAL BUTTON  (disabled for this no-button WakeGuard build)
 // ============================================================================
 bool     lastButton = HIGH;
 uint32_t lastButtonMs = 0;
@@ -1261,27 +1261,27 @@ void serviceButton() {
 //  (clock <-> ring <-> timer-up <-> syncing <-> blank), never per frame — this
 //  keeps SPI traffic low so it can't starve the SoftwareSerial RX during a sync.
 // ============================================================================
-// Palette (RGB565). A dark, desaturated "liquid glass" scheme: a near-black
-// background, a raised slate panel with a hairline stroke + a lighter top
-// specular edge, white time, muted-grey secondary text, and a warm amber accent
-// that mirrors the app's "Ember" tint. The ring mode swaps the panel to a dark
-// red so the whole face reads as an alert.
+// Palette (RGB565). These values mirror the Flutter Display tab's live preview:
+// a full-screen dark/light face, a subtle second shade for the gradient, white or
+// near-black time text, muted secondary text, and the same four app accents.
 // Two clock-face themes plus four selectable accents. The app pushes {theme,
 // accent, flags} over 0x06; applyTheme() copies the chosen set into the g*
 // globals the renderer reads. The link dot is theme-independent.
 // --- Dark theme ---
-#define DARK_BG        0x0862   // near-black navy background
-#define DARK_PANEL     0x1906   // glass panel fill (dark slate)
+#define DARK_BG        0x10C4   // #111A20
+#define DARK_BG_2      0x1946   // #1C2831
+#define DARK_PANEL     DARK_BG_2
 #define DARK_PANEL_ALT 0x2862   // ring panel fill (dark red)
 #define DARK_STROKE    0x3A0A   // hairline panel border
 #define DARK_HILITE    0x4AAD   // top specular highlight
 #define DARK_TIME      0xFFFF   // primary time text (white)
-#define DARK_TEXT      0xC618   // secondary text (light grey)
-#define DARK_MUTED     0x8410   // tertiary / hints (muted grey)
+#define DARK_TEXT      0xBE19   // secondary text (white70-ish)
+#define DARK_MUTED     0x9CF3   // tertiary / hints (muted grey)
 #define DARK_ALERT     0xFACB   // ring headline (soft red)
 // --- Light theme ---
-#define LIGHT_BG        0xCE59  // soft grey field
-#define LIGHT_PANEL     0xFFFF  // white glass panel
+#define LIGHT_BG        0xF7DF  // #F6F8FA
+#define LIGHT_BG_2      0xEF7E  // #E9EEF2
+#define LIGHT_PANEL     LIGHT_BG_2
 #define LIGHT_PANEL_ALT 0xFCF3  // ring panel fill (pale red)
 #define LIGHT_STROKE    0xB596  // light hairline border
 #define LIGHT_HILITE    0xFFFF  // bright top edge
@@ -1291,25 +1291,25 @@ void serviceButton() {
 #define LIGHT_ALERT     0xC000  // ring headline (deep red)
 // --- Fixed (both themes) ---
 #define COL_LINK_ON   0x2E6E    // link-up dot (green)
-#define COL_LINK_OFF  0x9CD3    // link-down dot (grey)
-// --- Accent presets, index 0..3: amber, blue, green, violet ---
-static const uint16_t ACCENTS[4] = { 0xFCE0, 0x3C1F, 0x2E6E, 0x8AFF };
+// --- Accent presets, index 0..3: amber, blue, green, violet. Keep these in
+// sync with DisplayTab._accents in Flutter.
+static const uint16_t ACCENTS[4] = { 0xFD00, 0x3C1E, 0x2E6E, 0x8AFE };
 
 // Runtime palette the renderer reads (filled by applyTheme() from dispTheme /
 // dispAccent). Initialised to the dark set; applyTheme() runs at boot.
-uint16_t gBg = DARK_BG, gPanel = DARK_PANEL, gPanelAlt = DARK_PANEL_ALT;
+uint16_t gBg = DARK_BG, gBg2 = DARK_BG_2, gPanel = DARK_PANEL, gPanelAlt = DARK_PANEL_ALT;
 uint16_t gStroke = DARK_STROKE, gHilite = DARK_HILITE;
 uint16_t gTime = DARK_TIME, gText = DARK_TEXT, gMuted = DARK_MUTED;
-uint16_t gAlert = DARK_ALERT, gAccent = 0xFCE0;
+uint16_t gAlert = DARK_ALERT, gAccent = 0xFD00;
 
 void applyTheme() {
   if (dispTheme == 1) {            // light
-    gBg = LIGHT_BG; gPanel = LIGHT_PANEL; gPanelAlt = LIGHT_PANEL_ALT;
+    gBg = LIGHT_BG; gBg2 = LIGHT_BG_2; gPanel = LIGHT_PANEL; gPanelAlt = LIGHT_PANEL_ALT;
     gStroke = LIGHT_STROKE; gHilite = LIGHT_HILITE;
     gTime = LIGHT_TIME; gText = LIGHT_TEXT; gMuted = LIGHT_MUTED;
     gAlert = LIGHT_ALERT;
   } else {                         // dark
-    gBg = DARK_BG; gPanel = DARK_PANEL; gPanelAlt = DARK_PANEL_ALT;
+    gBg = DARK_BG; gBg2 = DARK_BG_2; gPanel = DARK_PANEL; gPanelAlt = DARK_PANEL_ALT;
     gStroke = DARK_STROKE; gHilite = DARK_HILITE;
     gTime = DARK_TIME; gText = DARK_TEXT; gMuted = DARK_MUTED;
     gAlert = DARK_ALERT;
@@ -1317,10 +1317,10 @@ void applyTheme() {
   gAccent = ACCENTS[dispAccent & 3];
 }
 
-const char *DOW_FULL[7] = {"SUNDAY","MONDAY","TUESDAY","WEDNESDAY",
-                           "THURSDAY","FRIDAY","SATURDAY"};
-const char *MON_ABBR[12] = {"JAN","FEB","MAR","APR","MAY","JUN",
-                            "JUL","AUG","SEP","OCT","NOV","DEC"};
+const char *DOW_FULL[7] = {"Sunday","Monday","Tuesday","Wednesday",
+                           "Thursday","Friday","Saturday"};
+const char *MON_ABBR[12] = {"Jan","Feb","Mar","Apr","May","Jun",
+                            "Jul","Aug","Sep","Oct","Nov","Dec"};
 
 bool linkUp() { return lastFrameMs != 0 && (millis() - lastFrameMs) < LINK_TIMEOUT_MS; }
 
@@ -1360,6 +1360,34 @@ void forceRedrawAll() {
   pvLink = -1;
 }
 
+uint16_t mix565(uint16_t a, uint16_t b, uint8_t step, uint8_t steps) {
+  uint8_t ar = (a >> 11) & 0x1F, ag = (a >> 5) & 0x3F, ab = a & 0x1F;
+  uint8_t br = (b >> 11) & 0x1F, bg = (b >> 5) & 0x3F, bb = b & 0x1F;
+  uint8_t r = ar + ((int16_t)(br - ar) * step) / steps;
+  uint8_t g = ag + ((int16_t)(bg - ag) * step) / steps;
+  uint8_t bl = ab + ((int16_t)(bb - ab) * step) / steps;
+  return ((uint16_t)r << 11) | ((uint16_t)g << 5) | bl;
+}
+
+void fillFaceRect(int16_t x, int16_t y, int16_t w, int16_t h) {
+  if (w <= 0 || h <= 0) return;
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
+  if (x >= 320 || y >= 240) return;
+  if (x + w > 320) w = 320 - x;
+  if (y + h > 240) h = 240 - y;
+  if (w <= 0 || h <= 0) return;
+
+  if (scrMode == SCR_CLOCK) {
+    for (int16_t row = y; row < y + h; row++) {
+      uint16_t c = mix565(gBg, gBg2, (uint8_t)row, 239);
+      tft.drawFastHLine(x, row, w, c);
+    }
+  } else {
+    tft.fillRect(x, y, w, h, curPanel);
+  }
+}
+
 // Draw a text slot only when its string changed. `xRef` is the left edge when
 // `center` is false, or the horizontal centre when true; `yTop` is the top of
 // the glyph box. Works for both the custom and built-in fonts because
@@ -1370,7 +1398,7 @@ void drawSlot(TextSlot &s, int16_t xRef, int16_t yTop, const GFXfont *font,
   // Erase the old box (+1 px margin) with the panel colour. The slots all sit in
   // the panel interior, well clear of the border/highlight/accent chrome, so the
   // margin can't nibble those.
-  if (s.bh) tft.fillRect(s.bx - 1, s.by - 1, s.bw + 2, s.bh + 2, curPanel);
+  if (s.bh) fillFaceRect(s.bx - 1, s.by - 1, s.bw + 2, s.bh + 2);
   s.bh = 0;
   if (str[0] != '\0') {
     tft.setFont(font);
@@ -1386,6 +1414,15 @@ void drawSlot(TextSlot &s, int16_t xRef, int16_t yTop, const GFXfont *font,
     s.bx = left; s.by = yTop; s.bw = bw; s.bh = bh;
   }
   strcpy(s.prev, str);
+}
+
+uint16_t measureTextWidth(const GFXfont *font, uint8_t size, const char *str) {
+  if (str[0] == '\0') return 0;
+  tft.setFont(font);
+  tft.setTextSize(size);
+  int16_t bx, by; uint16_t bw, bh;
+  tft.getTextBounds(str, 0, 0, &bx, &by, &bw, &bh);
+  return bw;
 }
 
 // Format a compact "time until" string (<= 6 chars): "6d23h", "23h59m", "59m".
@@ -1506,16 +1543,27 @@ void buildInfoStr(char *out) {
            alarms[bestSlot].hour, alarms[bestSlot].minute, cd);
 }
 
-// Small link-status indicator: a filled dot in the top-right of the panel, green
-// when the app link is live, dim grey otherwise. Redrawn only on state change.
+// The one detail line below the time, matching the Flutter live preview. If the
+// user hides both date and weekday, show the same calm ready message the preview
+// shows instead of introducing a second hardware-only status line.
+void buildPreviewInfoStr(char *out) {
+  if (!haveTime) { strcpy(out, "Open the app to sync"); return; }
+  if (dispDate || dispDow) {
+    buildDateStr(out);
+  } else {
+    strcpy(out, "Ready for your next alarm");
+  }
+}
+
+// Small link-status indicator: same top-left dot shown in the Flutter live
+// preview. Connected = green; saved/offline = current accent.
 void drawLinkDot() {
   int8_t up = linkUp() ? 1 : 0;
   if (up == pvLink) return;
   pvLink = up;
-  // Bottom-right corner: the top-right is now the weather corner. Small + quiet.
-  uint16_t c = up ? COL_LINK_ON : COL_LINK_OFF;
-  tft.fillCircle(306, 228, 4, c);
-  tft.drawCircle(306, 228, 6, up ? COL_LINK_ON : gStroke);   // faint halo
+  uint16_t c = up ? COL_LINK_ON : gAccent;
+  tft.fillCircle(23, 22, 5, c);
+  tft.drawCircle(23, 22, 7, c);   // faint halo / preview glow equivalent
 }
 
 // ---- Brand logo (drawn, not a bitmap) --------------------------------------
@@ -1623,7 +1671,7 @@ void drawWeather() {
   if (codeNow == pvWxShown && strcmp(buf, sWx.prev) == 0) return;
 
   // Erase the whole corner (icon + old text box) before repainting.
-  tft.fillRect(224, 4, 96, 32, curPanel);
+  fillFaceRect(224, 4, 96, 32);
   pvWxShown = codeNow;
   strcpy(sWx.prev, buf);
   if (!haveWeather) { sWx.bh = 0; return; }
@@ -1648,40 +1696,43 @@ void drawWeather() {
 void renderClock() {
   char buf[28];
 
-  // The brand logo (top-left) and background are static chrome painted once by
-  // drawPanel() on the mode change, so they're not redrawn here every frame.
+  // Static chrome (WakeGuard label + gradient backdrop) is painted by drawPanel()
+  // on mode change. Dynamic header elements diff-update here.
   drawLinkDot();
   drawWeather();      // top-right: condition icon + temperature (diffs internally)
 
   bool infoLine = dispDate || dispDow;   // day-of-week and/or date shown below
-  int16_t timeY = infoLine ? 86 : 100;   // nudge down when the line is hidden
+  int16_t timeY = infoLine ? 104 : 116;  // lifted for a cleaner nightstand face
 
   buildHHMM(buf);
-  // Big, crisp time in the boldest style — the primary element of the face. The
-  // HH:MM digits stay centred on x=160; remember whether the box moved so the
-  // AM/PM tag can be re-anchored to the new right edge only when it actually
-  // shifts (a proportional digit changing width, or 9:59 -> 10:00).
-  int16_t oldBx = sTime.bx; uint16_t oldBw = sTime.bw;
-  drawSlot(sTime, 160, timeY, TIME_FONT, SZ_TIME, gTime, buf, true);
-  bool timeBoxMoved = (sTime.bx != oldBx) || (sTime.bw != oldBw);
-
-  // AM/PM: a smaller tag hugging the right of the centred time (12-hour only, so
-  // the time itself stays centred). Bottom-aligned to the big digits.
   char mer[3];
   if (!disp24h && haveTime) strcpy(mer, (localNow().hh < 12) ? "AM" : "PM");
   else                      mer[0] = '\0';
+
+  // Center the whole time group on the physical display. In 12-hour mode that
+  // means the HH:MM text plus its AM/PM tag are measured together before drawing,
+  // so the tag doesn't visually push the time off-center.
+  uint16_t timeW = measureTextWidth(TIME_FONT, SZ_TIME, buf);
+  uint16_t merW = measureTextWidth(UI_FONT, SZ_TEXT, mer);
+  uint8_t merGap = mer[0] ? 4 : 0;
+  int16_t timeX = mer[0] ? (int16_t)((320 - (int16_t)(timeW + merGap + merW)) / 2) : 160;
+
+  // Remember whether the box moved so the AM/PM tag can re-anchor when a
+  // proportional digit width changes (for example 9:59 -> 10:00).
+  int16_t oldBx = sTime.bx; uint16_t oldBw = sTime.bw;
+  drawSlot(sTime, timeX, timeY, TIME_FONT, SZ_TIME, gTime, buf, mer[0] == '\0');
+  bool timeBoxMoved = (sTime.bx != oldBx) || (sTime.bw != oldBw);
+
+  // AM/PM: a smaller tag tucked close to the right of the centered time group,
+  // optically aligned to the lower half of the big digits. Hidden for 24-hour mode.
   if (timeBoxMoved) resetSlot(sMeridiem);          // right edge moved: force reflow
-  int16_t merX = sTime.bh ? (sTime.bx + (int16_t)sTime.bw + 6) : 200;
-  int16_t merY = sTime.bh ? (sTime.by + (int16_t)sTime.bh - 18) : timeY;
-  drawSlot(sMeridiem, merX, merY, UI_FONT, SZ_TEXT, gMuted, mer, false);
+  int16_t merX = sTime.bh ? (sTime.bx + (int16_t)sTime.bw + 4) : 220;
+  int16_t merY = sTime.bh ? (sTime.by + (int16_t)sTime.bh - 23) : timeY;
+  drawSlot(sMeridiem, merX, merY, UI_FONT, SZ_TEXT, gText, mer, false);
 
-  // Day-of-week and/or calendar date, each independently toggled; "" erases it.
-  // Muted + smaller than the time so the hierarchy reads clearly.
-  if (infoLine) buildDateStr(buf); else buf[0] = '\0';
-  drawSlot(sDate, 160, 152, UI_FONT, SZ_TEXT, gMuted, buf, true);
-
-  buildInfoStr(buf);
-  drawSlot(sInfo, 20, 200, UI_FONT, SZ_TEXT, gAccent, buf, false);
+  buildPreviewInfoStr(buf);
+  drawSlot(sDate, 160, 174, UI_FONT, SZ_TEXT, gMuted, buf, true);
+  drawSlot(sInfo, 18, 208, UI_FONT, SZ_TEXT, gAccent, "", false);
 }
 
 void renderRing(uint32_t nowMs) {
@@ -1700,7 +1751,7 @@ void renderRing(uint32_t nowMs) {
   drawSlot(sRingTime, 160, 104, TIME_FONT, SZ_TIME, gTime, ts, true);
 
   drawSlot(sRingHint, 160, 176, UI_FONT, SZ_TEXT, gText,
-           ringSecured ? "Dismiss in the app" : "Press button to stop", true);
+           "Open app to dismiss", true);
 }
 
 void renderTimerDone(uint32_t nowMs) {
@@ -1712,16 +1763,39 @@ void renderTimerDone(uint32_t nowMs) {
   drawSlot(sTd2, 160, 130, UI_FONT, SZ_HEAD, gTime, "Time's up!", true);
 }
 
-// Paint the full-bleed backdrop: the whole screen filled with `bgCol` (no floating
-// box/card any more — the face sits directly on the background). Drawn ONCE per
-// mode change (never per frame) so its ~150ms of SPI traffic can't starve the BLE
-// RX — the per-frame path only repaints changed text slots. `clockChrome` draws
-// the brand logo in the top-left of the clock face.
-void drawPanel(uint16_t bgCol, bool clockChrome) {
-  tft.fillScreen(bgCol);
-  if (clockChrome) {
-    drawLogo(32, 12, gAccent, gTime);       // sunrise-W mark, top-left
+void drawStaticText(int16_t x, int16_t yTop, const GFXfont *font,
+                    uint8_t size, uint16_t fg, const char *str) {
+  tft.setFont(font);
+  tft.setTextSize(size);
+  tft.setTextColor(fg);
+  int16_t bx, by; uint16_t bw, bh;
+  tft.getTextBounds(str, 0, 0, &bx, &by, &bw, &bh);
+  tft.setCursor(x - bx, yTop - by);
+  tft.print(str);
+}
+
+void drawPreviewBackdrop() {
+  // Approximate the Flutter preview gradient with horizontal rows. It runs only
+  // on mode changes, never in the per-frame path; slot erases use the same math.
+  const int16_t bandH = 3;
+  for (int16_t row = 0; row < 240; row += bandH) {
+    uint16_t c = mix565(gBg, gBg2, (uint8_t)row, 239);
+    int16_t h = (row + bandH > 240) ? (240 - row) : bandH;
+    tft.fillRect(0, row, 320, h, c);
   }
+  tft.drawRect(0, 0, 320, 240, gAccent);
+}
+
+// Paint the backdrop. The clock face matches the Flutter live preview; alert
+// modes remain full-bleed solid colours for readability. Drawn ONCE per mode
+// change so its SPI traffic can't starve BLE RX.
+void drawPanel(uint16_t bgCol, bool clockChrome) {
+  if (clockChrome) {
+    drawPreviewBackdrop();
+    drawStaticText(37, 13, UI_FONT, SZ_TEXT, gAccent, "WakeGuard");
+    return;
+  }
+  tft.fillScreen(bgCol);
 }
 
 // Top-level display refresh. Picks a screen mode with the same priority the LCD
@@ -1742,7 +1816,7 @@ bool inSleepWindow(LocalTime t) {
 void renderTft() {
   static uint32_t lastRenderMs = 0;
   uint32_t nowMs = millis();
-  if ((uint32_t)(nowMs - lastRenderMs) < 120UL) return;
+  if ((uint32_t)(nowMs - lastRenderMs) < 80UL) return;
   lastRenderMs = nowMs;
 
   // CRITICAL: do not touch the SPI bus while a sync batch is streaming. A blocking
@@ -1940,7 +2014,7 @@ void loop() {
   serviceRing();    // 4. maintain a ringing alarm (snooze resume, re-broadcast)
   serviceTimer();   // 5. maintain the countdown timer
   serviceBuzzer();  // 6. step the non-blocking tone pattern
-  serviceButton();  // 7. read the physical button
+  serviceButton();  // 7. no-op unless ENABLE_SNOOZE_BUTTON is enabled
   serviceSyncFlush();// 8. flush batched alarm writes if a sync's 0x05 was lost
   renderTft();      // 9. refresh the TFT (mode-aware, field-diffed)
 }
