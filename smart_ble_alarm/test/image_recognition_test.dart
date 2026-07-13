@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_ble_alarm/data/datasources/image_recognition_datasource.dart';
+import 'package:smart_ble_alarm/data/repositories/simulated_ble_repository_impl.dart';
 import 'package:smart_ble_alarm/domain/entities/alarm.dart';
-import 'package:smart_ble_alarm/presentation/blocs/alarm_bloc/alarm_bloc.dart';
+import 'package:smart_ble_alarm/features/alarms/data/alarm_cloud_sync_service.dart';
+import 'package:smart_ble_alarm/features/alarms/presentation/bloc/alarm_bloc.dart';
 
 void main() {
   group('ImageRecognitionDatasource.matchesLabel', () {
@@ -266,11 +269,62 @@ void main() {
 
     test('returns empty for null, empty-envelope or unrecognised shapes', () {
       expect(AlarmBloc.parseStoredAlarms(null), isEmpty);
-      expect(
-        AlarmBloc.parseStoredAlarms(jsonEncode({'version': 2})),
-        isEmpty,
-      );
+      expect(AlarmBloc.parseStoredAlarms(jsonEncode({'version': 2})), isEmpty);
       expect(AlarmBloc.parseStoredAlarms(jsonEncode(42)), isEmpty);
     });
+
+    test('loads local alarms without auto-restoring cloud backups', () async {
+      SharedPreferences.setMockInitialValues({
+        'saved_alarms': AlarmBloc.encodeStoredAlarms(const []),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final cloudSync = _RecordingAlarmCloudSyncService(
+        restored: const [alarm],
+      );
+      final repository = SimulatedBleRepositoryImpl();
+      final bloc = AlarmBloc(
+        bleRepository: repository,
+        prefs: prefs,
+        alarmCloudSyncService: cloudSync,
+      );
+      addTearDown(() async {
+        await bloc.close();
+        repository.dispose();
+      });
+
+      bloc.add(LoadAlarmsEvent());
+
+      final loaded = await bloc.stream.firstWhere((state) => !state.isLoading);
+      expect(loaded.alarms, isEmpty);
+      expect(cloudSync.restoreCalls, 0);
+      expect(cloudSync.restoreIfLocalEmptyCalls, 0);
+      expect(cloudSync.syncCalls, 0);
+    });
   });
+}
+
+class _RecordingAlarmCloudSyncService extends AlarmCloudSyncService {
+  final List<Alarm> restored;
+  int restoreCalls = 0;
+  int restoreIfLocalEmptyCalls = 0;
+  int syncCalls = 0;
+
+  _RecordingAlarmCloudSyncService({required this.restored});
+
+  @override
+  Future<List<Alarm>> restoreIfLocalEmpty(List<Alarm> localAlarms) async {
+    restoreIfLocalEmptyCalls++;
+    return restored;
+  }
+
+  @override
+  Future<List<Alarm>> restoreBackups({List<Alarm> fallback = const []}) async {
+    restoreCalls++;
+    return restored;
+  }
+
+  @override
+  Future<void> syncAlarms(List<Alarm> alarms) async {
+    syncCalls++;
+  }
 }

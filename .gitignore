@@ -4,6 +4,11 @@
 
 # Stray build output (the real app builds under smart_ble_alarm/)
 /build/
+build/
+**/build/
+
+# Flutter / Dart generated state
+**/.dart_tool/
 
 # IDE / editor
 .idea/
@@ -12,3 +17,12 @@
 
 # Logs
 *.log
+
+# Dependency caches / generated packages
+.pnpm-store/
+**/node_modules/
+**/.next/
+**/Pods/
+
+# Separate embedded repo; push from inside that directory if needed.
+wakeguard-website/

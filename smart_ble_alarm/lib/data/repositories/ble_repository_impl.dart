@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../../domain/repositories/ble_repository.dart';
+import 'package:smart_ble_alarm/domain/repositories/ble_repository.dart';
 import '../datasources/ble_framing.dart';
 
 class BleRepositoryImpl implements BleRepository {
@@ -88,13 +88,15 @@ class BleRepositoryImpl implements BleRepository {
             _txRxCharacteristic = characteristic;
 
             // Subscribe to notifications
-            await characteristic.setNotifyValue(true).timeout(
-              const Duration(seconds: 8),
-              onTimeout: () async {
-                await device.disconnect();
-                throw TimeoutException('Enabling notifications timed out');
-              },
-            );
+            await characteristic
+                .setNotifyValue(true)
+                .timeout(
+                  const Duration(seconds: 8),
+                  onTimeout: () async {
+                    await device.disconnect();
+                    throw TimeoutException('Enabling notifications timed out');
+                  },
+                );
             _characteristicSub = characteristic.lastValueStream.listen((value) {
               if (value.isNotEmpty) {
                 _processIncomingBytes(value);

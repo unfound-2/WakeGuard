@@ -2,33 +2,65 @@
 
 ## Attribution
 
-**WakeGuard is the work of Aaron Hua.** Every design decision, product-direction call, feature idea, UX
-choice, and all hardware and app testing were conceived, directed, and validated by Aaron. An AI assistant
-(Claude, via Claude Code) was used as a **coding and auditing tool** — it generated, refactored, reviewed,
-and documented code under Aaron's direction, and surfaced issues for Aaron to decide on. It did not
-originate the product vision or make the product decisions; it implemented and audited against Aaron's
-specifications and judgment.
+**WakeGuard is the shared work of Aaron Hua and Mekyle Alam.** Both contributors shaped the product,
+experience, and implementation direction. The project should be credited as a collaborative build, not as
+the work of one person alone. AI assistants were used as **coding, auditing, refactoring, and execution
+tools** — they generated, revised, tested, and documented code based on contributor direction, feedback,
+design decisions, screenshots, build issues, and acceptance criteria. AI assistance does not replace the
+human contribution: the product decisions, QA feedback, feature direction, and final judgment came from the
+people directing the work.
 
 In short:
-- **Aaron Hua** — creator: product vision, all feature ideas, all design/UX decisions, the hardware build
-  and wiring, and all real-world testing (BLE, alarms, buzzer, TestFlight).
-- **AI assistant** — generated and audited code, implemented Aaron's decisions, wrote tests and docs,
-  and flagged trade-offs for Aaron to choose.
+- **Aaron Hua** — equal contributor: hardware build and wiring, clock/firmware direction, BLE and alarm
+  validation, and product/technical decisions.
+- **Mekyle Alam** — equal contributor: app feature direction, onboarding and pairing experience, modern UI
+  direction, account/profile/Firebase direction, alarms/display/settings/home workflow improvements,
+  dedicated-clock and standalone-phone direction, TestFlight/release work, QA feedback from simulator/build
+  testing, and AI-assisted implementation management.
+- **AI assistants** — generated, refactored, audited, and documented code; implemented contributor-directed
+  changes; wrote tests; surfaced bugs and trade-offs for the human contributors to choose from.
 
-### Collaborator credit — Mekyle Alam
+### Equal contributor credit — Mekyle Alam
 
-Mekyle Alam (GitHub `unfound-2`) built the **onboarding software** (the onboarding flow / screens and
-pairing-progress UI, merged into `main` via the `onboarding` branch), and contributed **feature and idea
-generation** plus some **UI** work — helping brainstorm features and directions for the app, including
-around the **wake-challenge / on-device image-scanning** experience. This was a modest slice of the
-project: the bulk of the app — its architecture, BLE protocol, the wake-challenge and single-backup-code
-systems, alarms/timers/clock control, sync, and the Liquid Glass design system — was designed by Aaron and
-implemented under his direction. The onboarding and wake-challenge features have since been substantially
-reworked.
+Mekyle Alam (GitHub `unfound-2`) is an equal contributor to WakeGuard. His work includes building the
+original **onboarding software** (onboarding flow/screens and pairing-progress UI, merged into `main` via
+the `onboarding` branch), contributing feature and product ideas, and directing substantial app-side
+iteration through hands-on testing, screenshots, UX feedback, and AI-assisted implementation sessions.
+
+Mekyle's contribution areas include:
+- **Onboarding and pairing**: onboarding flow, replayable onboarding direction, clearer narcolepsy/sleep
+  inertia explanation, Connect WakeGuard redesign, pairing-status hero, Bluetooth permission states,
+  timeout recovery, and nearby-clock copy/state improvements.
+- **Modern app UI direction**: home dashboard redesign direction, stronger visual system, launch/splash
+  polish, WakeGuard logo color matching, refined copy, stronger status language, and compact/premium card
+  layouts across the app.
+- **Account and Firebase direction**: account creation, Google/Apple sign-in direction, profile creation,
+  user display names, profile pictures, Firebase connection setup, storage setup, profile sync, cloud alarm
+  backup/restore, analytics, and crash/error reporting direction.
+- **Alarm experience direction**: cleaner alarm cards, stronger Alarm/Timer split, swipe actions, alarm
+  templates, empty-state improvements, detail/edit upgrades, iOS-only haptic direction, and repeated QA of
+  alarm-page behavior.
+- **Display and settings direction**: live clock preview hero, preset strip, Appearance section, visual
+  clock-face picker, sleep schedule upgrades, connection-state improvements, Settings search, profile/account
+  merge, status summary, compact settings groups, and detail-page organization.
+- **Dedicated/standalone clock direction**: explored and directed the phone-as-dedicated-clock mode,
+  background/locked-screen alarm limitations, standalone alarm expectations, and user-facing limitation
+  language.
+- **Build, TestFlight, release, and QA work**: repeatedly surfaced simulator screenshots, build failures,
+  CocoaPods/iOS platform issues, Firebase/Google sign-in errors, display scrolling/layout assertions,
+  startup slowness, and button interaction problems; handled current TestFlight/release work under the
+  `com.mekylealam.wakeguardalarm` bundle identity; directed fixes and verified behavior through follow-up
+  testing.
+
+This contribution record should be read as shared project credit. It should not minimize Mekyle's role as
+only "some UI" or a minor collaborator: he has driven major app-side product, UX, feature, QA, and
+implementation decisions.
 
 ---
 
-## Aaron's contributions (design & direction)
+## Contributor responsibilities and contribution areas
+
+### Aaron Hua
 
 - **Product concept**: an autonomous alarm clock for people with narcolepsy that can't be silenced with a
   tap — dismissal requires a physical wake challenge so the user actually gets up.
@@ -45,9 +77,25 @@ reworked.
   ringing state must be unmistakable on the Alarms card; snackbars must not queue.
 - **Hardware**: the physical build, wiring (buzzer on D9 → GND), and the hands-on buzzer diagnosis
   (cleaned contacts, reflashed, confirmed wiring) that isolated a hardware-vs-firmware question.
-- **Release direction**: first beta as `0.1.0`, rebrand to the `com.aaronhua.wakeguard` identity, and the
-  TestFlight submission (including handling the ITMS-90683 rejection and export-compliance answer).
-- **Testing & validation**: all on-device and hardware testing, and the acceptance of each trade-off.
+- **Release support**: contributed to release planning, TestFlight troubleshooting, export-compliance
+  decisions, and App Store configuration/debugging alongside Mekyle's current TestFlight/release work.
+- **Testing & validation**: hardware, BLE, release, and clock-side validation, plus acceptance of hardware
+  and release trade-offs.
+
+### Mekyle Alam
+
+- **App-side product direction**: onboarding, account/profile, Firebase sync, alarm UX, display UX, settings
+  UX, home dashboard, dedicated-clock mode, launch experience, and Connect WakeGuard pairing improvements.
+- **UX and visual design direction**: modernized screens, stronger visual hierarchy, refined card density,
+  better empty states, clearer status language, improved onboarding copy, and a more premium WakeGuard
+  presentation while keeping the existing aesthetic.
+- **QA and issue discovery**: provided screenshots and concrete bug reports for build failures, Firebase
+  configuration, CocoaPods/iOS deployment target issues, scrolling/layout assertions, startup delays,
+  non-working buttons, pairing confusion, display-tab problems, and auth/profile issues.
+- **TestFlight and release ownership**: handled current TestFlight/release work and corrected the app's
+  bundle identifier to `com.mekylealam.wakeguardalarm`.
+- **AI-assisted implementation management**: directed Codex/AI implementation work, reviewed results,
+  requested revisions, and pushed the app through repeated analyze/test/fix cycles.
 
 ---
 
@@ -159,8 +207,9 @@ on-device ML, embedded C++, and an App Store release. Grouped by area, with the 
 
 ### Onboarding, pairing & app routing
 - First-run onboarding → pairing screen with **live BLE scan** and auto-connect to the first "WG Clock".
-  *(Onboarding flow + pairing-progress UI built by Mekyle Alam via the merged `onboarding` branch, with
-  additional feature/idea and UI input; since reworked.)*
+  *(Original onboarding flow + pairing-progress UI built by Mekyle Alam via the merged `onboarding` branch;
+  later onboarding, profile/account, pairing-status, copy, and Connect WakeGuard improvements were also
+  driven through Mekyle's app-side direction and QA.)*
 - **Skip-pairing** (persisted `setupSkipped`) so the app opens **fully offline** — alarms still save locally
   and fire via backup notifications — with **Settings → Advanced → Connect a Clock** as the reversible way
   back in.
@@ -169,6 +218,27 @@ on-device ML, embedded C++, and an App Store release. Grouped by area, with the 
   about whether a clock is paired.
 - **Developer mode / simulated clock** — a full `SimulatedBleRepositoryImpl` lets the entire connected UI
   (sync, ringing, dismissal) be exercised **without any hardware**, swappable at runtime in debug builds.
+
+### Recent app-side expansion directed by Mekyle
+- **Replayable onboarding** from Settings without requiring an app restart, with clearer onboarding copy
+  explaining narcolepsy, sleep inertia, why WakeGuard exists, and how wake challenges help.
+- **Connect WakeGuard redesign** with the pairing status as the hero, stronger copy, subtle scan motion,
+  better Bluetooth permission/radio states, improved nearby-clock states, and timeout recovery.
+- **Firebase/account direction**: profile creation, Google and Apple sign-in direction, profile names and
+  pictures, Firebase project setup, Storage setup, cloud alarm backup/restore, analytics, and Crashlytics
+  direction.
+- **Home dashboard direction**: personalized greetings using the user's name and stronger status language.
+- **Alarm tab direction**: cleaner alarm cards, stronger Alarm/Timer split, refined empty state, swipe
+  actions, alarm templates, and richer detail/edit direction.
+- **Display tab direction**: live preview as the hero, instant preview direction, preset strip, Appearance
+  section, visual face picker, sleep schedule upgrade, better connection state, and more premium controls.
+- **Settings direction**: Settings search, merged Profile + Account direction, status summary card,
+  fewer/cleaner groups, compact cards, and moving complex settings into detail pages.
+- **Dedicated Clock / standalone-phone direction**: clarified iOS locked-screen/background limits, added
+  dedicated clock mode polish, and improved user-facing limitation language.
+- **Performance, release, and QA direction**: startup optimization, splash/load polish, Cocoapods/iOS target
+  debugging, Firebase/Google sign-in error triage, TestFlight/release work, display scrolling/layout
+  assertion fixes, button interaction fixes, and repeated analyze/test verification.
 
 ### Settings
 - **Appearance** (light/dark/system theme + accent color), **Time** (a 24-hour toggle routed through one
@@ -193,8 +263,9 @@ on-device ML, embedded C++, and an App Store release. Grouped by area, with the 
   **timer quick action**; and removed non-functional placeholder Developer settings.
 
 ### iOS / App Store (TestFlight)
-- Shipped a **first beta to TestFlight**: rebranded bundle id `com.aaronhua.wakeguard`, versioned
-  `0.1.0+N` with the build-number-bump discipline App Store Connect requires.
+- Current TestFlight/release work is handled by **Mekyle Alam**, with the app using bundle identifier
+  `com.mekylealam.wakeguardalarm`, versioned `0.1.0+N` with the build-number-bump discipline App Store
+  Connect requires.
 - Resolved a real **App Store rejection (ITMS-90683)** by adding the missing
   `NSLocationAlwaysAndWhenInUseUsageDescription` purpose string, and correctly answered **export compliance**
   (HMAC-authentication-only → exempt).
@@ -202,7 +273,7 @@ on-device ML, embedded C++, and an App Store release. Grouped by area, with the 
 ### Repo, testing & docs
 - Migrated the project to `github.com/cowfollowdog/WakeGuard.git` with **full commit history preserved** and
   origin repointed.
-- **39 passing automated tests** guarding the load-bearing pieces — the BLE framing round-trip, the `0x02`
+- **53 passing automated tests** guarding the load-bearing pieces — the BLE framing round-trip, the `0x02`
   payload encoding, sync-status/hash logic, storage-envelope migration, light-theme text color, and the
   ringing-dismissal action mapping — with `flutter analyze` kept clean throughout.
 - Maintained a `CLAUDE.md` engineering brief and a structured per-fact memory so the project stays
@@ -210,5 +281,5 @@ on-device ML, embedded C++, and an App Store release. Grouped by area, with the 
 
 ---
 
-*This log reflects the app as of 2026-07-08 (first beta, v0.1.0). For engineering detail see `CLAUDE.md`;
+*This log reflects the app through 2026-07-13. For engineering detail see `CLAUDE.md`;
 for the product/protocol spec see `README.md` and `Smart BLE Alarm Specification.md`.*

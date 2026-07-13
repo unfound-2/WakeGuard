@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../ui/wake_haptics.dart';
 import 'glass.dart';
 
 /// Shared WakeGuard components, ported from the native app's
@@ -124,7 +124,7 @@ class WakePrimaryButton extends StatelessWidget {
         onPressed: onPressed == null
             ? null
             : () {
-                HapticFeedback.lightImpact();
+                WakeHaptics.lightImpact();
                 onPressed!();
               },
         child: Row(
@@ -186,7 +186,7 @@ class WakeSecondaryButton extends StatelessWidget {
           onTap: onPressed == null
               ? null
               : () {
-                  HapticFeedback.lightImpact();
+                  WakeHaptics.lightImpact();
                   onPressed!();
                 },
           child: ConstrainedBox(
@@ -208,6 +208,99 @@ class WakeSecondaryButton extends StatelessWidget {
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Provider sign-in button with the same glass treatment as the rest of the app.
+class WakeAuthProviderButton extends StatelessWidget {
+  final String label;
+  final IconData? icon;
+  final String? mark;
+  final VoidCallback? onPressed;
+
+  const WakeAuthProviderButton({
+    super.key,
+    required this.label,
+    this.icon,
+    this.mark,
+    required this.onPressed,
+  }) : assert(icon != null || mark != null);
+
+  @override
+  Widget build(BuildContext context) {
+    final glass = GlassTheme.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = onPressed != null;
+    final foreground = enabled
+        ? scheme.onSurface
+        : scheme.onSurface.withValues(alpha: 0.42);
+
+    return SizedBox(
+      width: double.infinity,
+      child: Material(
+        color: glass.elevated.withValues(alpha: 0.86),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: glass.stroke),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onPressed == null
+              ? null
+              : () {
+                  WakeHaptics.lightImpact();
+                  onPressed!();
+                },
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 52),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: scheme.surface.withValues(alpha: 0.72),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: glass.stroke.withValues(alpha: 0.86),
+                      ),
+                    ),
+                    child: icon == null
+                        ? Text(
+                            mark!,
+                            style: TextStyle(
+                              color: foreground,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          )
+                        : Icon(icon, size: 18, color: foreground),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -313,10 +406,7 @@ class WakeMetricTile extends StatelessWidget {
               const SizedBox(height: 3),
               Text(
                 title,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
             ],
           ),
@@ -345,7 +435,7 @@ class WakeQuickAction extends StatelessWidget {
     return GlassCard(
       borderRadius: 24,
       onTap: () {
-        HapticFeedback.lightImpact();
+        WakeHaptics.lightImpact();
         onTap();
       },
       padding: const EdgeInsets.all(16),
@@ -393,10 +483,7 @@ class WakeActivityRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 30,
-          child: Icon(icon, size: 20, color: scheme.primary),
-        ),
+        SizedBox(width: 30, child: Icon(icon, size: 20, color: scheme.primary)),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -413,10 +500,7 @@ class WakeActivityRow extends StatelessWidget {
               const SizedBox(height: 3),
               Text(
                 subtitle,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
             ],
           ),

@@ -67,10 +67,7 @@ class WeatherDatasource {
     final tempNum = current['temperature_2m'] as num?;
     final wmo = (current['weather_code'] as num?)?.toInt();
     if (tempNum == null || wmo == null) return null;
-    return WeatherReading(
-      temp: tempNum.round(),
-      code: _bucketForWmo(wmo),
-    );
+    return WeatherReading(temp: tempNum.round(), code: _bucketForWmo(wmo));
   }
 
   /// Collapse Open-Meteo's WMO weather code (0..99) into the firmware's 0..6
@@ -89,8 +86,7 @@ class WeatherDatasource {
   }
 
   Future<Map<String, dynamic>?> _getJson(Uri uri) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 6);
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
     try {
       final req = await client.getUrl(uri);
       req.headers.set(HttpHeaders.userAgentHeader, 'WakeGuard/0.1');

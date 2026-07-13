@@ -45,10 +45,12 @@ Uint8List _wrapWav(Int16List samples, int sampleRate) {
 
   final builder = BytesBuilder();
   void ascii(String s) => builder.add(s.codeUnits);
-  void u32(int v) => builder
-      .add((ByteData(4)..setUint32(0, v, Endian.little)).buffer.asUint8List());
-  void u16(int v) => builder
-      .add((ByteData(2)..setUint16(0, v, Endian.little)).buffer.asUint8List());
+  void u32(int v) => builder.add(
+    (ByteData(4)..setUint32(0, v, Endian.little)).buffer.asUint8List(),
+  );
+  void u16(int v) => builder.add(
+    (ByteData(2)..setUint16(0, v, Endian.little)).buffer.asUint8List(),
+  );
 
   // RIFF chunk descriptor.
   ascii('RIFF');

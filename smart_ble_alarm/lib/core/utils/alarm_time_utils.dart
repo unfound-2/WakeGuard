@@ -1,4 +1,4 @@
-import '../../domain/entities/alarm.dart';
+import 'package:smart_ble_alarm/domain/entities/alarm.dart';
 
 class AlarmTimeUtils {
   const AlarmTimeUtils._();

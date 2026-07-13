@@ -1,0 +1,2 @@
+#include? "Pods/Target Support Files/Pods-WakeGuard/Pods-WakeGuard.debug-wakeguard.xcconfig"
+#include "Generated.xcconfig"

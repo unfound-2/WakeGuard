@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_ble_alarm/domain/entities/alarm.dart';
-import 'package:smart_ble_alarm/presentation/widgets/ringing_dismissal.dart';
+import 'package:smart_ble_alarm/features/alarms/presentation/widgets/ringing_dismissal.dart';
 
 void main() {
   group('RingingDismissal task-aware action', () {

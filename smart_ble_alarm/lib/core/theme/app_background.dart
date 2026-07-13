@@ -79,7 +79,8 @@ class _AnimatedAppBackgroundState extends State<AnimatedAppBackground>
   }
 
   void _syncTicker() {
-    final shouldRun = widget.animate && widget.style != AppBackgroundStyle.minimal;
+    final shouldRun =
+        widget.animate && widget.style != AppBackgroundStyle.minimal;
     if (shouldRun) {
       if (!_c.isAnimating) _c.repeat();
     } else {
@@ -174,10 +175,12 @@ class _FlowPainter extends CustomPainter {
       path.lineTo(0, baseY);
       const step = 12.0;
       for (double x = 0; x <= size.width; x += step) {
-        final y = baseY +
+        final y =
+            baseY +
             b.amp *
-                math.sin((x / size.width) * math.pi * 2 * b.len +
-                    phase * b.speed);
+                math.sin(
+                  (x / size.width) * math.pi * 2 * b.len + phase * b.speed,
+                );
         path.lineTo(x, y);
       }
       path.lineTo(size.width, size.height);
@@ -192,23 +195,91 @@ class _FlowPainter extends CustomPainter {
 
   // --- Blob presets ---------------------------------------------------------
   static final List<_Blob> _auroraBlobs = [
-    _Blob(x: 0.20, y: 0.18, ax: 0.10, ay: 0.08, sx: 1.0, sy: 0.7, r: 0.55,
-        alpha: 0.20, hueShift: 0),
-    _Blob(x: 0.82, y: 0.30, ax: 0.09, ay: 0.10, sx: 0.8, sy: 1.1, r: 0.50,
-        alpha: 0.14, hueShift: 40, px: 1.6),
-    _Blob(x: 0.55, y: 0.85, ax: 0.12, ay: 0.07, sx: 1.2, sy: 0.9, r: 0.60,
-        alpha: 0.12, hueShift: -30, px: 3.0),
+    _Blob(
+      x: 0.20,
+      y: 0.18,
+      ax: 0.10,
+      ay: 0.08,
+      sx: 1.0,
+      sy: 0.7,
+      r: 0.55,
+      alpha: 0.20,
+      hueShift: 0,
+    ),
+    _Blob(
+      x: 0.82,
+      y: 0.30,
+      ax: 0.09,
+      ay: 0.10,
+      sx: 0.8,
+      sy: 1.1,
+      r: 0.50,
+      alpha: 0.14,
+      hueShift: 40,
+      px: 1.6,
+    ),
+    _Blob(
+      x: 0.55,
+      y: 0.85,
+      ax: 0.12,
+      ay: 0.07,
+      sx: 1.2,
+      sy: 0.9,
+      r: 0.60,
+      alpha: 0.12,
+      hueShift: -30,
+      px: 3.0,
+    ),
   ];
 
   static final List<_Blob> _meshBlobs = [
-    _Blob(x: 0.18, y: 0.22, ax: 0.14, ay: 0.12, sx: 1.1, sy: 0.9, r: 0.48,
-        alpha: 0.22, hueShift: 0),
-    _Blob(x: 0.80, y: 0.20, ax: 0.12, ay: 0.10, sx: 0.9, sy: 1.2, r: 0.44,
-        alpha: 0.18, hueShift: 55, px: 1.2),
-    _Blob(x: 0.78, y: 0.82, ax: 0.13, ay: 0.13, sx: 1.3, sy: 0.8, r: 0.50,
-        alpha: 0.16, hueShift: 120, px: 2.4),
-    _Blob(x: 0.22, y: 0.80, ax: 0.11, ay: 0.11, sx: 0.7, sy: 1.0, r: 0.46,
-        alpha: 0.16, hueShift: -60, px: 3.5),
+    _Blob(
+      x: 0.18,
+      y: 0.22,
+      ax: 0.14,
+      ay: 0.12,
+      sx: 1.1,
+      sy: 0.9,
+      r: 0.48,
+      alpha: 0.22,
+      hueShift: 0,
+    ),
+    _Blob(
+      x: 0.80,
+      y: 0.20,
+      ax: 0.12,
+      ay: 0.10,
+      sx: 0.9,
+      sy: 1.2,
+      r: 0.44,
+      alpha: 0.18,
+      hueShift: 55,
+      px: 1.2,
+    ),
+    _Blob(
+      x: 0.78,
+      y: 0.82,
+      ax: 0.13,
+      ay: 0.13,
+      sx: 1.3,
+      sy: 0.8,
+      r: 0.50,
+      alpha: 0.16,
+      hueShift: 120,
+      px: 2.4,
+    ),
+    _Blob(
+      x: 0.22,
+      y: 0.80,
+      ax: 0.11,
+      ay: 0.11,
+      sx: 0.7,
+      sy: 1.0,
+      r: 0.46,
+      alpha: 0.16,
+      hueShift: -60,
+      px: 3.5,
+    ),
   ];
 }
 

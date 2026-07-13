@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "445120481576",
+    "project_id": "wakegaurd",
+    "storage_bucket": "wakegaurd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:445120481576:android:cf3a34a750712ba02fe81d",
+        "android_client_info": {
+          "package_name": "com.smartblealarm.smart_ble_alarm"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "445120481576-2t5kcb9jd3chp075ccd2vg1v9952eruo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC42VWDBzMQv4KG111tXOtT_onAQwsEfZI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "445120481576-2t5kcb9jd3chp075ccd2vg1v9952eruo.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "445120481576-afrmeccejlokq2g2f2dj261hu0bg7at2.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.mekylealam.wakeguardalarm"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -133,10 +133,10 @@ and object scans, and notification permission for backup alarms.
 
 ## Project docs
 
-- [`CLAUDE.md`](CLAUDE.md) — fresh-session engineering brief (architecture, protocol, conventions, status)
+- [`CLAUDE.md`](agent%20reference/CLAUDE.md) — fresh-session engineering brief (architecture, protocol, conventions, status)
 - [`PROJECT_LOG.md`](PROJECT_LOG.md) — attribution + full log of features and implementations
-- [`Smart BLE Alarm Specification.md`](Smart%20BLE%20Alarm%20Specification.md) — full hardware/app spec
-- [`UI Design.md`](UI%20Design.md) — UI & navigation spec
-- [`Audit 1 report.md`](Audit%201%20report.md) — earlier integration audit (issues since resolved)
+- [`Smart BLE Alarm Specification.md`](agent%20reference/Smart%20BLE%20Alarm%20Specification.md) — full hardware/app spec
+- [`UI Design.md`](agent%20reference/UI%20Design.md) — UI & navigation spec
+- [`Audit 1 report.md`](agent%20reference/Audit%201%20report.md) — earlier integration audit (issues since resolved)
 
 Where these conflict, `CLAUDE.md`, this README, and the current code are the source of truth.

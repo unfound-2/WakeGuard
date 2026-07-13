@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_ble_alarm/core/audio/alarm_sound.dart';
-import 'package:smart_ble_alarm/presentation/blocs/settings_bloc/settings_bloc.dart';
+import 'package:smart_ble_alarm/features/settings/presentation/bloc/settings_bloc.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -20,14 +20,17 @@ void main() {
   });
 
   group('Dedicated Clock mode', () {
-    test('dedicatedClockEnabled defaults to false and loads from prefs', () async {
-      SharedPreferences.setMockInitialValues({});
-      final prefs = await SharedPreferences.getInstance();
-      final bloc = SettingsBloc(prefs: prefs)..add(LoadSettingsEvent());
-      await bloc.stream.first;
-      expect(bloc.state.dedicatedClockEnabled, isFalse);
-      await bloc.close();
-    });
+    test(
+      'dedicatedClockEnabled defaults to false and loads from prefs',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        final bloc = SettingsBloc(prefs: prefs)..add(LoadSettingsEvent());
+        await bloc.stream.first;
+        expect(bloc.state.dedicatedClockEnabled, isFalse);
+        await bloc.close();
+      },
+    );
 
     test('a stored dedicatedClockEnabled=true is loaded back', () async {
       SharedPreferences.setMockInitialValues({'dedicatedClockEnabled': true});

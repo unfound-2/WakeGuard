@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../../domain/repositories/ble_repository.dart';
+import 'package:smart_ble_alarm/domain/repositories/ble_repository.dart';
 
 class SimulatedBleRepositoryImpl implements BleRepository {
   final StreamController<List<ScanResult>> _scanResultsController =

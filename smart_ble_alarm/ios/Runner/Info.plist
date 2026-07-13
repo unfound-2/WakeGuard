@@ -12,6 +12,17 @@
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.445120481576-afrmeccejlokq2g2f2dj261hu0bg7at2</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -24,8 +35,24 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>GIDClientID</key>
+	<string>445120481576-afrmeccejlokq2g2f2dj261hu0bg7at2.apps.googleusercontent.com</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>WakeGuard connects to your smart alarm clock to sync alarms, timers, time, and display settings.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>WakeGuard connects to your smart alarm clock to sync alarms, timers, time, and display settings.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>WakeGuard uses the camera to verify your wake object and scan backup dismissal codes.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Bluetooth scanning may require location permission to discover nearby alarm clocks.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Bluetooth scanning may require location permission to discover nearby alarm clocks.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>WakeGuard lets you choose a profile picture from your photo library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -66,17 +93,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>WakeGuard connects to your smart alarm clock to sync alarms, timers, time, and display settings.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>WakeGuard connects to your smart alarm clock to sync alarms, timers, time, and display settings.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>WakeGuard uses the camera to verify your wake object and scan backup dismissal codes.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Bluetooth scanning may require location permission to discover nearby alarm clocks.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Bluetooth scanning may require location permission to discover nearby alarm clocks.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 </dict>
 </plist>

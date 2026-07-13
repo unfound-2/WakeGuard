@@ -1,4 +1,4 @@
-import '../../domain/entities/alarm.dart';
+import 'package:smart_ble_alarm/domain/entities/alarm.dart';
 
 class BlePayloads {
   const BlePayloads._();
@@ -77,7 +77,8 @@ class BlePayloads {
     required int theme,
     required int accent,
   }) {
-    final flags = (use24h ? 0x01 : 0) |
+    final flags =
+        (use24h ? 0x01 : 0) |
         (showSeconds ? 0x02 : 0) |
         (showDate ? 0x04 : 0) |
         (showDayOfWeek ? 0x08 : 0) |

@@ -4,7 +4,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
-import '../../domain/entities/alarm.dart';
+import 'package:smart_ble_alarm/domain/entities/alarm.dart';
 
 /// Phone-scheduled *backup* alarms.
 ///
@@ -20,60 +20,74 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin;
   bool _ready = false;
+  bool _initializing = false;
+  List<Alarm>? _pendingAlarms;
 
   static const String _channelId = 'wakeguard_backup_alarms';
   static const String _channelName = 'Backup alarms';
   static const String _channelDescription =
       'Backup alarms in case the WakeGuard clock is unreachable.';
+  static const int _eveningReminderId = 900001;
+  static const String _eveningReminderChannelId = 'wakeguard_evening_reminder';
+  static const String _eveningReminderChannelName = 'Evening reminder';
+  static const String _eveningReminderChannelDescription =
+      'A nightly check-in to set tomorrow\'s alarm.';
 
   /// Initialise the plugin, resolve the device timezone, and request the
   /// notification/exact-alarm permissions. Safe to call once at startup.
   Future<void> init() async {
-    tzdata.initializeTimeZones();
+    if (_ready || _initializing) return;
+    _initializing = true;
     try {
-      final info = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(info.identifier));
-    } catch (_) {
-      // The IANA lookup failed. Don't leave tz.local at its UTC default — every
-      // backup alarm would then be scheduled at UTC wall-clock, which is hours
-      // off for most users (the backup layer exists precisely to cover a dead
-      // clock, so firing it at the wrong time defeats the purpose). Fall back to
-      // a fixed zone matching the phone's current UTC offset instead.
-      _setFallbackLocalLocation();
+      tzdata.initializeTimeZones();
+      try {
+        final info = await FlutterTimezone.getLocalTimezone();
+        tz.setLocalLocation(tz.getLocation(info.identifier));
+      } catch (_) {
+        // The IANA lookup failed. Don't leave tz.local at its UTC default:
+        // every backup alarm would then be scheduled at UTC wall-clock, which
+        // is hours off for most users.
+        _setFallbackLocalLocation();
+      }
+
+      const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const darwin = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: false,
+        requestSoundPermission: true,
+      );
+      await _plugin.initialize(
+        settings: const InitializationSettings(android: android, iOS: darwin),
+      );
+
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >()
+          ?.requestPermissions(alert: true, badge: false, sound: true);
+      final androidImpl = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await androidImpl?.requestNotificationsPermission();
+      await androidImpl?.requestExactAlarmsPermission();
+
+      _ready = true;
+      final queuedAlarms = _pendingAlarms;
+      _pendingAlarms = null;
+      if (queuedAlarms != null) {
+        await syncAlarms(queuedAlarms);
+      } else {
+        await _syncEveningReminderFromPrefs();
+      }
+    } finally {
+      _initializing = false;
     }
-
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const darwin = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: false,
-      requestSoundPermission: true,
-    );
-    await _plugin.initialize(
-      settings: const InitializationSettings(android: android, iOS: darwin),
-    );
-
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin
-        >()
-        ?.requestPermissions(alert: true, badge: false, sound: true);
-    final androidImpl = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
-    await androidImpl?.requestNotificationsPermission();
-    await androidImpl?.requestExactAlarmsPermission();
-
-    _ready = true;
   }
 
-  /// Best-effort local timezone for when the IANA lookup (via flutter_timezone)
-  /// fails. Maps a whole-hour UTC offset to its fixed `Etc/GMT±N` zone — these
-  /// are always present in the embedded tz database, so this is a pure lookup
-  /// that can't construct a bad zone. Note POSIX inverts the sign: UTC+8 is
-  /// `Etc/GMT-8`. A fractional-offset region (India, Newfoundland, …) whose
-  /// IANA name *also* failed to resolve is left at UTC — a rare double failure,
-  /// and never worse than the previous unconditional-UTC behaviour.
+  /// Best-effort local timezone for when the IANA lookup fails. Maps a
+  /// whole-hour UTC offset to an embedded fixed `Etc/GMT` zone. Fractional
+  /// offsets fall back to UTC only if the real IANA lookup also failed.
   void _setFallbackLocalLocation() {
     try {
       final offset = DateTime.now().timeZoneOffset;
@@ -85,21 +99,25 @@ class NotificationService {
         tz.setLocalLocation(tz.getLocation(name));
       }
     } catch (_) {
-      // Leave tz.local at UTC — matches the prior fallback behaviour.
+      // Leave tz.local at UTC.
     }
   }
 
   /// Cancel the previous backup set and schedule fresh notifications for the
   /// current enabled alarms. Safe (and intended) to call on every alarm change;
-  /// no-op until [init] has completed.
+  /// queues the latest alarm state until [init] has completed.
   Future<void> syncAlarms(List<Alarm> alarms) async {
-    if (!_ready) return;
+    if (!_ready) {
+      _pendingAlarms = List<Alarm>.unmodifiable(alarms);
+      return;
+    }
     try {
       // The user can turn the backup layer off in Settings; honour that here
       // (the single choke point every scheduling path goes through).
       final prefs = await SharedPreferences.getInstance();
       if (!(prefs.getBool('backupNotificationsEnabled') ?? true)) {
         await _plugin.cancelAll();
+        await _syncEveningReminderFromPrefs();
         return;
       }
       await _plugin.cancelAll();
@@ -125,6 +143,7 @@ class NotificationService {
           }
         }
       }
+      await _syncEveningReminderFromPrefs();
     } catch (e, s) {
       // Never let a scheduling failure crash an alarm edit — the BLE path and
       // local save are the source of truth; the notification is a backup.
@@ -134,11 +153,56 @@ class NotificationService {
 
   /// Remove all scheduled backup notifications (e.g. on a full local reset).
   Future<void> cancelAll() async {
-    if (!_ready) return;
+    if (!_ready) {
+      _pendingAlarms = const <Alarm>[];
+      return;
+    }
     try {
       await _plugin.cancelAll();
     } catch (_) {}
   }
+
+  Future<void> syncEveningReminder({bool? enabled}) async {
+    if (!_ready) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shouldSchedule =
+          enabled ?? prefs.getBool('eveningReminderEnabled') ?? false;
+      await _plugin.cancel(id: _eveningReminderId);
+      if (!shouldSchedule) return;
+
+      const details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          _eveningReminderChannelId,
+          _eveningReminderChannelName,
+          channelDescription: _eveningReminderChannelDescription,
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority,
+          category: AndroidNotificationCategory.reminder,
+          playSound: true,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.active,
+        ),
+      );
+
+      await _plugin.zonedSchedule(
+        id: _eveningReminderId,
+        title: 'WakeGuard check-in',
+        body: 'Set tomorrow\'s alarm and make sure your clock is ready.',
+        scheduledDate: _nextTimeOfDay(hour: 21, minute: 0),
+        notificationDetails: details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    } catch (e, s) {
+      debugPrint('NotificationService.syncEveningReminder failed: $e\n$s');
+    }
+  }
+
+  Future<void> _syncEveningReminderFromPrefs() => syncEveningReminder();
 
   /// The alarm's active days as DateTime weekdays (Mon=1 … Sun=7). The dayMask
   /// numbers days 0=Sun … 6=Sat, so Mon–Sat map straight through and Sun wraps
@@ -177,6 +241,22 @@ class NotificationService {
     // +7 to stay on the chosen weekday for a repeating alarm.
     while (!scheduled.isAfter(now)) {
       scheduled = scheduled.add(Duration(days: weekday == null ? 1 : 7));
+    }
+    return scheduled;
+  }
+
+  tz.TZDateTime _nextTimeOfDay({required int hour, required int minute}) {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
+    if (!scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
     }
     return scheduled;
   }

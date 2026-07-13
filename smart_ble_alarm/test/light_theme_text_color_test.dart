@@ -14,10 +14,16 @@ void main() {
 
     // computeLuminance() ~1.0 is white, ~0.0 is black. Primary/secondary text
     // and the default body colour must all read as clearly dark.
-    expect(t.colorScheme.onSurface.computeLuminance(), lessThan(0.35),
-        reason: 'onSurface should be dark slate in light mode');
-    expect(t.colorScheme.onSurfaceVariant.computeLuminance(), lessThan(0.5),
-        reason: 'secondary text should still read dark on a light surface');
+    expect(
+      t.colorScheme.onSurface.computeLuminance(),
+      lessThan(0.35),
+      reason: 'onSurface should be dark slate in light mode',
+    );
+    expect(
+      t.colorScheme.onSurfaceVariant.computeLuminance(),
+      lessThan(0.5),
+      reason: 'secondary text should still read dark on a light surface',
+    );
     expect(t.textTheme.bodyLarge!.color!.computeLuminance(), lessThan(0.35));
     expect(t.textTheme.titleLarge!.color!.computeLuminance(), lessThan(0.35));
   });
@@ -32,7 +38,8 @@ void main() {
         home: Scaffold(
           body: Builder(
             builder: (context) {
-              resolved = DefaultTextStyle.of(context).style.color ??
+              resolved =
+                  DefaultTextStyle.of(context).style.color ??
                   const Color(0xFFFFFFFF);
               return const Text('sample');
             },
@@ -40,7 +47,10 @@ void main() {
         ),
       ),
     );
-    expect(resolved.computeLuminance(), lessThan(0.6),
-        reason: 'ambient text colour in a light Scaffold must not be white');
+    expect(
+      resolved.computeLuminance(),
+      lessThan(0.6),
+      reason: 'ambient text colour in a light Scaffold must not be white',
+    );
   });
 }

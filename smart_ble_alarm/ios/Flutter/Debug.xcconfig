@@ -1,4 +1,4 @@
-#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+#include? "Pods/Target Support Files/Pods-WakeGuard/Pods-WakeGuard.debug.xcconfig"
 #include "Generated.xcconfig"
 
 // ML Kit's MLImage.framework ships only x86_64-simulator + arm64-device slices
