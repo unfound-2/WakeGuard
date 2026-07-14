@@ -20,6 +20,7 @@ import 'package:smart_ble_alarm/features/timers/presentation/cubit/countdown_tim
 import 'package:smart_ble_alarm/features/timers/presentation/widgets/create_timer_sheet.dart';
 import 'package:smart_ble_alarm/features/alarms/presentation/widgets/ringing_dismissal.dart';
 import 'package:smart_ble_alarm/features/alarms/presentation/screens/alarm_edit_screen.dart';
+import 'package:smart_ble_alarm/features/alarms/presentation/screens/alarm_templates_screen.dart';
 
 /// The Alarms tab, ported from the native WakeGuard AlarmsView. A sliding
 /// segmented control at the top splits the screen into two subtabs: "Alarm"
@@ -35,41 +36,6 @@ class AlarmsTab extends StatefulWidget {
 class _AlarmsTabState extends State<AlarmsTab> {
   // 0 = Alarm subtab, 1 = Timer subtab.
   int _segment = 0;
-
-  static const List<_AlarmTemplate> _templates = [
-    _AlarmTemplate(
-      label: 'Workday',
-      subtitle: 'Mon-Fri',
-      icon: Icons.work_rounded,
-      hour: 7,
-      minute: 0,
-      repeatMask: 0x3E,
-    ),
-    _AlarmTemplate(
-      label: 'Medication',
-      subtitle: 'Daily',
-      icon: Icons.medication_rounded,
-      hour: 8,
-      minute: 0,
-      repeatMask: 0x7F,
-    ),
-    _AlarmTemplate(
-      label: 'School',
-      subtitle: 'Weekdays',
-      icon: Icons.school_rounded,
-      hour: 6,
-      minute: 30,
-      repeatMask: 0x3E,
-    ),
-    _AlarmTemplate(
-      label: 'Weekend',
-      subtitle: 'Sat-Sun',
-      icon: Icons.weekend_rounded,
-      hour: 9,
-      minute: 0,
-      repeatMask: 0x41,
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -96,8 +62,6 @@ class _AlarmsTabState extends State<AlarmsTab> {
                 _ModeIntroCard(isAlarms: isAlarms),
                 if (isAlarms) ...[
                   const SizedBox(height: 18),
-                  _buildTemplateStrip(context),
-                  const SizedBox(height: 18),
                   _buildAlarmsList(),
                 ] else ...[
                   const SizedBox(height: 18),
@@ -106,14 +70,14 @@ class _AlarmsTabState extends State<AlarmsTab> {
               ],
             ),
             Positioned(
-              left: 20,
               right: 20,
               bottom: 108,
-              child: _BottomActionBar(
-                label: isAlarms ? 'New Alarm' : 'New Timer',
-                icon: isAlarms ? Icons.add_alarm_rounded : Icons.timer_rounded,
+              child: _CreateFab(
+                // A single circular "+" that opens the create menu on the Alarm
+                // subtab (New Alarm / Templates) or jumps straight to the timer
+                // sheet on the Timer subtab, where there are no templates.
                 onPressed: () => isAlarms
-                    ? _openNewAlarm(context)
+                    ? _showCreateMenu(context)
                     : _showCreateTimer(context),
               ),
             ),
@@ -198,15 +162,14 @@ class _AlarmsTabState extends State<AlarmsTab> {
         return BlocBuilder<AlarmBloc, AlarmState>(
           builder: (context, state) {
             if (state.alarms.isEmpty) {
-              return _ActionEmptyState(
+              // No inline action button here: creating an alarm now lives on
+              // the "+" button at the bottom right of the tab.
+              return const _ActionEmptyState(
                 title: 'No alarms scheduled',
                 message:
                     'Create a protected wake plan with repeat days, '
                     'snooze, sound, and a wake challenge.',
                 icon: Icons.alarm_rounded,
-                actionLabel: 'Create Alarm',
-                actionIcon: Icons.add_alarm_rounded,
-                onAction: () => _openNewAlarm(context),
               );
             }
 
@@ -227,81 +190,6 @@ class _AlarmsTabState extends State<AlarmsTab> {
           },
         );
       },
-    );
-  }
-
-  Widget _buildTemplateStrip(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return WakeSection(
-      title: 'Templates',
-      subtitle: 'Start with a routine, then tune the details.',
-      child: SizedBox(
-        height: 92,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: _templates.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 10),
-          itemBuilder: (context, index) {
-            final template = _templates[index];
-            return SizedBox(
-              width: 154,
-              child: GlassCard(
-                borderRadius: 22,
-                padding: const EdgeInsets.all(14),
-                shadows: wakeCardShadow(context),
-                onTap: () => _openTemplate(context, template),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: scheme.primary.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(
-                        template.icon,
-                        size: 20,
-                        color: scheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            template.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: scheme.onSurface,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            template.subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: scheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
     );
   }
 
@@ -557,17 +445,30 @@ class _AlarmsTabState extends State<AlarmsTab> {
     );
   }
 
-  void _openTemplate(BuildContext context, _AlarmTemplate template) {
+  /// Opens the "+" create menu: a small glass sheet with New Alarm on top and
+  /// Templates below it.
+  void _showCreateMenu(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      builder: (sheetContext) => _CreateMenuSheet(
+        onNewAlarm: () {
+          Navigator.pop(sheetContext);
+          _openNewAlarm(context);
+        },
+        onTemplates: () {
+          Navigator.pop(sheetContext);
+          _openTemplates(context);
+        },
+      ),
+    );
+  }
+
+  void _openTemplates(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => AlarmEditScreen(
-          initialLabel: template.label,
-          initialTime: TimeOfDay(hour: template.hour, minute: template.minute),
-          initialRepeatMask: template.repeatMask,
-          initialQrRequired: true,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => const AlarmTemplatesScreen()),
     );
   }
 
@@ -620,24 +521,6 @@ class _AlarmsTabState extends State<AlarmsTab> {
   void _showCreateTimer(BuildContext context) {
     showCreateTimerSheet(context);
   }
-}
-
-class _AlarmTemplate {
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final int hour;
-  final int minute;
-  final int repeatMask;
-
-  const _AlarmTemplate({
-    required this.label,
-    required this.subtitle,
-    required this.icon,
-    required this.hour,
-    required this.minute,
-    required this.repeatMask,
-  });
 }
 
 class _ModeIntroCard extends StatelessWidget {
@@ -722,17 +605,19 @@ class _ActionEmptyState extends StatelessWidget {
   final String title;
   final String message;
   final IconData icon;
-  final String actionLabel;
-  final IconData actionIcon;
-  final VoidCallback onAction;
+  // Optional call-to-action. When omitted (e.g. the Alarms empty state, whose
+  // create action now lives on the "+" button), only the title and message show.
+  final String? actionLabel;
+  final IconData? actionIcon;
+  final VoidCallback? onAction;
 
   const _ActionEmptyState({
     required this.title,
     required this.message,
     required this.icon,
-    required this.actionLabel,
-    required this.actionIcon,
-    required this.onAction,
+    this.actionLabel,
+    this.actionIcon,
+    this.onAction,
   });
 
   @override
@@ -780,29 +665,27 @@ class _ActionEmptyState extends StatelessWidget {
               height: 1.36,
             ),
           ),
-          const SizedBox(height: 20),
-          _InlineAlarmAction(
-            label: actionLabel,
-            icon: actionIcon,
-            color: scheme.primary,
-            onPressed: onAction,
-          ),
+          if (onAction != null) ...[
+            const SizedBox(height: 20),
+            _InlineAlarmAction(
+              label: actionLabel!,
+              icon: actionIcon!,
+              color: scheme.primary,
+              onPressed: onAction!,
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _BottomActionBar extends StatelessWidget {
-  final String label;
-  final IconData icon;
+/// The circular "+" floating action button anchored to the bottom-right of the
+/// Alarms tab. Replaces the old full-width action bar.
+class _CreateFab extends StatelessWidget {
   final VoidCallback onPressed;
 
-  const _BottomActionBar({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-  });
+  const _CreateFab({required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -810,38 +693,92 @@ class _BottomActionBar extends StatelessWidget {
     final glass = GlassTheme.of(context);
     final dark = glass.brightness == Brightness.dark;
 
-    return GlassCard(
-      borderRadius: 24,
-      padding: const EdgeInsets.all(8),
-      blurSigma: 30,
-      borderColor: scheme.primary.withValues(alpha: 0.34),
-      shadows: wakeCardShadow(context),
+    return Semantics(
+      button: true,
+      label: 'Add',
       child: Material(
-        color: scheme.primary.withValues(alpha: dark ? 0.92 : 1),
-        borderRadius: BorderRadius.circular(18),
+        color: scheme.primary.withValues(alpha: dark ? 0.94 : 1),
+        shape: const CircleBorder(),
+        elevation: 0,
+        shadowColor: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(18),
+          customBorder: const CircleBorder(),
           onTap: () {
             WakeHaptics.lightImpact();
             onPressed();
           },
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 54),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: scheme.onPrimary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: scheme.onPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
+          child: Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: scheme.primary.withValues(alpha: 0.34),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: scheme.primary.withValues(alpha: 0.34),
+                  blurRadius: 22,
+                  spreadRadius: -6,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
+            child: Icon(Icons.add_rounded, color: scheme.onPrimary, size: 30),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The glass sheet shown by the "+" button: New Alarm on top, Templates below,
+/// with breathing room between them.
+class _CreateMenuSheet extends StatelessWidget {
+  final VoidCallback onNewAlarm;
+  final VoidCallback onTemplates;
+
+  const _CreateMenuSheet({
+    required this.onNewAlarm,
+    required this.onTemplates,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: GlassCard(
+          borderRadius: 28,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          shadows: wakeCardShadow(context),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: BoxDecoration(
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.28),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              WakePrimaryButton(
+                label: 'New Alarm',
+                icon: Icons.add_alarm_rounded,
+                onPressed: onNewAlarm,
+              ),
+              const SizedBox(height: 12),
+              WakeSecondaryButton(
+                label: 'Templates',
+                icon: Icons.dashboard_customize_rounded,
+                onPressed: onTemplates,
+              ),
+            ],
           ),
         ),
       ),

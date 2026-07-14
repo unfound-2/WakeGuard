@@ -898,7 +898,9 @@ class DisplayTab extends StatelessWidget {
 
     return WakeSection(
       title: 'Night Mode',
-      subtitle: 'Blank the display during quiet hours while alarms stay armed.',
+      subtitle:
+          'An auto display dimmer that lowers the screen during quiet hours '
+          'while alarms stay armed.',
       child: GlassCard(
         padding: const EdgeInsets.all(16),
         borderRadius: 26,
@@ -928,7 +930,7 @@ class DisplayTab extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        enabled ? 'Screen sleeps overnight' : 'Always on',
+                        enabled ? 'Auto-dims overnight' : 'Always on',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurface,
                           fontSize: 15,
@@ -939,7 +941,7 @@ class DisplayTab extends StatelessWidget {
                       Text(
                         enabled
                             ? _sleepSummary(settings)
-                            : 'The clock face remains visible all night.',
+                            : 'The display stays at full brightness all night.',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 12.5,
@@ -947,10 +949,6 @@ class DisplayTab extends StatelessWidget {
                       ),
                     ],
                   ),
-                ),
-                Switch(
-                  value: enabled,
-                  onChanged: (v) => dispatch(on: v),
                 ),
               ],
             ),
@@ -985,23 +983,13 @@ class DisplayTab extends StatelessWidget {
         ),
         _sleepPresetChip(
           context,
-          label: 'Bedroom',
+          label: 'Dynamic',
           selected:
               settings.clockSleepEnabled &&
               settings.clockSleepStartMinutes == 22 * 60 &&
               settings.clockSleepEndMinutes == 7 * 60,
           onTap: () =>
               dispatch(on: true, startMinutes: 22 * 60, endMinutes: 7 * 60),
-        ),
-        _sleepPresetChip(
-          context,
-          label: 'Late Night',
-          selected:
-              settings.clockSleepEnabled &&
-              settings.clockSleepStartMinutes == 23 * 60 &&
-              settings.clockSleepEndMinutes == 8 * 60,
-          onTap: () =>
-              dispatch(on: true, startMinutes: 23 * 60, endMinutes: 8 * 60),
         ),
       ],
     );
@@ -1051,7 +1039,7 @@ class DisplayTab extends StatelessWidget {
           child: _timeButton(
             context,
             settings,
-            label: 'Sleep',
+            label: 'Dim',
             icon: Icons.nightlight_round,
             minutes: settings.clockSleepStartMinutes,
             onPicked: (m) => dispatch(startMinutes: m),
@@ -1082,7 +1070,7 @@ class DisplayTab extends StatelessWidget {
           child: _timeButton(
             context,
             settings,
-            label: 'Wake',
+            label: 'Undim',
             icon: Icons.wb_twilight_rounded,
             minutes: settings.clockSleepEndMinutes,
             onPicked: (m) => dispatch(endMinutes: m),
@@ -1177,24 +1165,37 @@ class DisplayTab extends StatelessWidget {
 
   Widget _sleepHint(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          Icons.info_outline_rounded,
-          size: 15,
-          color: scheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            'The face hides during this window. Alarms still wake the screen and ring.',
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.35,
-              color: scheme.onSurfaceVariant,
+    Widget line(IconData icon, Color color, String text) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 12, height: 1.35, color: color),
             ),
           ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        line(
+          Icons.info_outline_rounded,
+          scheme.onSurfaceVariant,
+          'The display dims during this window and returns to full brightness '
+          'afterward. Alarms still wake the screen and ring.',
+        ),
+        const SizedBox(height: 8),
+        line(
+          Icons.lightbulb_outline_rounded,
+          scheme.primary,
+          'Recommended: set the Undim time to match when your alarm rings, so '
+          'the screen is bright as you wake.',
         ),
       ],
     );
