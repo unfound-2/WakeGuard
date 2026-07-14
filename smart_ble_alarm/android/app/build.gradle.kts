@@ -39,6 +39,18 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    // The app is flavorized as "WakeGuard" (see `default-flavor` in pubspec.yaml
+    // and the matching iOS WakeGuard scheme). Flutter builds the WakeGuard flavor
+    // on every platform, so Android must define a matching product flavor or the
+    // build fails looking for the `assembleWakeGuard*` tasks. The flavor keeps the
+    // same applicationId, so the existing google-services.json still resolves.
+    flavorDimensions += "brand"
+    productFlavors {
+        create("WakeGuard") {
+            dimension = "brand"
+        }
+    }
 }
 
 kotlin {
