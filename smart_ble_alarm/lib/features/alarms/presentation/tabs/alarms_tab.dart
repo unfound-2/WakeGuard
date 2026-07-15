@@ -136,7 +136,8 @@ class _AlarmsTabState extends State<AlarmsTab> {
     required Color onSurface,
   }) {
     final primary = Theme.of(context).colorScheme.primary;
-    final onAccent = ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
+    final onAccent =
+        ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
         ? Colors.white
         : Colors.black;
     final color = selected ? onAccent : onSurface;
@@ -238,162 +239,164 @@ class _AlarmsTabState extends State<AlarmsTab> {
         child: GestureDetector(
           onTap: () => _openEditor(context, alarm),
           child: GlassCard(
-          padding: const EdgeInsets.all(16),
-          tintColor: isRinging ? scheme.error : null,
-          borderColor: isRinging
-              ? scheme.error
-              : active
-              ? scheme.primary.withValues(alpha: 0.36)
-              : GlassTheme.of(context).stroke,
-          borderWidth: isRinging ? 2 : 1,
-          shadows: isRinging
-              ? [
-                  BoxShadow(
-                    color: scheme.error.withValues(alpha: 0.24),
-                    blurRadius: 24,
-                    spreadRadius: -4,
-                  ),
-                ]
-              : wakeCardShadow(context),
-          child: AnimatedOpacity(
-            opacity: active || isRinging ? 1 : 0.56,
-            duration: const Duration(milliseconds: 180),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: statusColor,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
+            blur:
+                false, // list row: solid fill avoids per-frame blur while scrolling
+            padding: const EdgeInsets.all(16),
+            tintColor: isRinging ? scheme.error : null,
+            borderColor: isRinging
+                ? scheme.error
+                : active
+                ? scheme.primary.withValues(alpha: 0.36)
+                : GlassTheme.of(context).stroke,
+            borderWidth: isRinging ? 2 : 1,
+            shadows: isRinging
+                ? [
+                    BoxShadow(
+                      color: scheme.error.withValues(alpha: 0.24),
+                      blurRadius: 24,
+                      spreadRadius: -4,
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              AlarmTimeUtils.formatTime(
-                                alarm.hour,
-                                alarm.minute,
-                                is24Hour: is24Hour,
-                              ),
-                              maxLines: 1,
-                              style: TextStyle(
-                                fontSize: 40,
-                                fontWeight: FontWeight.w900,
-                                color: timeColor,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  alarm.displayName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                color: scheme.onSurfaceVariant.withValues(
-                                  alpha: 0.62,
-                                ),
-                                size: 18,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    if (!isRinging)
-                      Switch(
-                        value: active,
-                        onChanged: (val) =>
-                            _setAlarmActive(context, alarm, val),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    _StatusDot(color: statusColor),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        summary,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: isRinging ? scheme.error : scheme.onSurface,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          height: 1.25,
+                  ]
+                : wakeCardShadow(context),
+            child: AnimatedOpacity(
+              opacity: active || isRinging ? 1 : 0.56,
+              duration: const Duration(milliseconds: 180),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          borderRadius: BorderRadius.circular(999),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _CompactStatusChip(
-                        label: repeatLabel,
-                        icon: Icons.repeat_rounded,
-                        color: scheme.onSurfaceVariant,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                AlarmTimeUtils.formatTime(
+                                  alarm.hour,
+                                  alarm.minute,
+                                  is24Hour: is24Hour,
+                                ),
+                                maxLines: 1,
+                                style: TextStyle(
+                                  fontSize: 40,
+                                  fontWeight: FontWeight.w900,
+                                  color: timeColor,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    alarm.displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: scheme.onSurfaceVariant.withValues(
+                                    alpha: 0.62,
+                                  ),
+                                  size: 18,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _CompactStatusChip(
-                        label: _challengeLabel(alarm),
-                        icon: alarm.qrRequired
-                            ? (alarm.usesItemScan
-                                  ? Icons.camera_alt_rounded
-                                  : Icons.qr_code_rounded)
-                            : Icons.lock_open_rounded,
-                        color: alarm.qrRequired
-                            ? scheme.primary
-                            : scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-                if (isRinging) ...[
-                  const SizedBox(height: 14),
-                  _InlineAlarmAction(
-                    label: RingingDismissal.actionLabel(alarm),
-                    icon: RingingDismissal.actionIcon(alarm),
-                    color: scheme.error,
-                    onPressed: () => RingingDismissal.trigger(context, alarm),
+                      const SizedBox(width: 12),
+                      if (!isRinging)
+                        Switch(
+                          value: active,
+                          onChanged: (val) =>
+                              _setAlarmActive(context, alarm, val),
+                        ),
+                    ],
                   ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      _StatusDot(color: statusColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          summary,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isRinging ? scheme.error : scheme.onSurface,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _CompactStatusChip(
+                          label: repeatLabel,
+                          icon: Icons.repeat_rounded,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _CompactStatusChip(
+                          label: _challengeLabel(alarm),
+                          icon: alarm.qrRequired
+                              ? (alarm.usesItemScan
+                                    ? Icons.camera_alt_rounded
+                                    : Icons.qr_code_rounded)
+                              : Icons.lock_open_rounded,
+                          color: alarm.qrRequired
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (isRinging) ...[
+                    const SizedBox(height: 14),
+                    _InlineAlarmAction(
+                      label: RingingDismissal.actionLabel(alarm),
+                      icon: RingingDismissal.actionIcon(alarm),
+                      color: scheme.error,
+                      onPressed: () => RingingDismissal.trigger(context, alarm),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -739,10 +742,7 @@ class _CreateMenuSheet extends StatelessWidget {
   final VoidCallback onNewAlarm;
   final VoidCallback onTemplates;
 
-  const _CreateMenuSheet({
-    required this.onNewAlarm,
-    required this.onTemplates,
-  });
+  const _CreateMenuSheet({required this.onNewAlarm, required this.onTemplates});
 
   @override
   Widget build(BuildContext context) {
@@ -1024,6 +1024,8 @@ class _TimersSectionState extends State<_TimersSection> {
         : (remaining.inSeconds / timer.totalSeconds).clamp(0.0, 1.0);
 
     return GlassCard(
+      blur:
+          false, // live timer row (rebuilds every second): skip per-frame blur
       padding: const EdgeInsets.all(18),
       shadows: wakeCardShadow(context),
       tintColor: done ? error : primary,

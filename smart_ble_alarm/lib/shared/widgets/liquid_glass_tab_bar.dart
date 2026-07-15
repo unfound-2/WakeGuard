@@ -52,75 +52,80 @@ class LiquidGlassTabBar extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.05)
         : Colors.black.withValues(alpha: 0.05);
 
-    return SafeArea(
-      top: false,
-      minimum: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Container(
-          height: 64,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(32),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [rimTop, rimBottom],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: dark ? 0.34 : 0.14),
-                blurRadius: 24,
-                offset: const Offset(0, 12),
+    // RepaintBoundary isolates the bar (and its animating selection pill) into
+    // its own layer so its repaints don't cascade to the content scrolling
+    // beneath it via extendBody.
+    return RepaintBoundary(
+      child: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(
+            height: 64,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(32),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [rimTop, rimBottom],
               ),
-            ],
-          ),
-          // 1px padding lets the gradient behind read as a specular rim.
-          padding: const EdgeInsets.all(1),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(31),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color.alphaBlend(highlight, fill), fill],
-                  ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: dark ? 0.34 : 0.14),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
                 ),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final slotWidth = constraints.maxWidth / items.length;
-                    return Stack(
-                      children: [
-                        AnimatedPositioned(
-                          duration: const Duration(milliseconds: 260),
-                          curve: Curves.easeOutCubic,
-                          left: slotWidth * currentIndex + 6,
-                          top: 6,
-                          bottom: 6,
-                          width: slotWidth - 12,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(26),
-                              color: scheme.primary.withValues(
-                                alpha: dark ? 0.26 : 0.16,
-                              ),
-                              border: Border.all(
-                                color: scheme.primary.withValues(alpha: 0.28),
+              ],
+            ),
+            // 1px padding lets the gradient behind read as a specular rim.
+            padding: const EdgeInsets.all(1),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(31),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color.alphaBlend(highlight, fill), fill],
+                    ),
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final slotWidth = constraints.maxWidth / items.length;
+                      return Stack(
+                        children: [
+                          AnimatedPositioned(
+                            duration: const Duration(milliseconds: 260),
+                            curve: Curves.easeOutCubic,
+                            left: slotWidth * currentIndex + 6,
+                            top: 6,
+                            bottom: 6,
+                            width: slotWidth - 12,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(26),
+                                color: scheme.primary.withValues(
+                                  alpha: dark ? 0.26 : 0.16,
+                                ),
+                                border: Border.all(
+                                  color: scheme.primary.withValues(alpha: 0.28),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        Row(
-                          children: [
-                            for (var i = 0; i < items.length; i++)
-                              Expanded(child: _buildItem(context, i)),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
+                          Row(
+                            children: [
+                              for (var i = 0; i < items.length; i++)
+                                Expanded(child: _buildItem(context, i)),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
             ),

@@ -34,7 +34,7 @@ class GlassTheme extends ThemeExtension<GlassTheme> {
     tint: AppColors.surface,
     elevated: AppColors.elevatedSurface,
     stroke: AppColors.glassStrokeDark,
-    blurSigma: 26,
+    blurSigma: 18,
     fillOpacity: 0.52,
     brightness: Brightness.dark,
   );
@@ -48,7 +48,7 @@ class GlassTheme extends ThemeExtension<GlassTheme> {
     tint: Color(0xFFFFFFFF),
     elevated: AppColors.lightElevatedSurface,
     stroke: AppColors.glassStrokeLight,
-    blurSigma: 26,
+    blurSigma: 18,
     fillOpacity: 0.78,
     brightness: Brightness.light,
   );
@@ -207,6 +207,13 @@ class GlassCard extends StatelessWidget {
   final double? blurSigma;
   final List<BoxShadow>? shadows;
 
+  /// When false, the card skips the live `BackdropFilter` and paints a solid
+  /// (slightly more opaque) tinted fill instead. Use this for rows inside a
+  /// scrolling list: a real backdrop blur re-samples the moving content behind
+  /// every visible row on every frame, which is the main cause of scroll jank
+  /// and heat. Static/hero cards can keep the frosted blur (the default).
+  final bool blur;
+
   const GlassCard({
     super.key,
     required this.child,
@@ -218,6 +225,7 @@ class GlassCard extends StatelessWidget {
     this.tintColor,
     this.blurSigma,
     this.shadows,
+    this.blur = true,
   });
 
   @override
@@ -225,38 +233,45 @@ class GlassCard extends StatelessWidget {
     final glass = GlassTheme.of(context);
     final radius = BorderRadius.circular(borderRadius);
     final baseTint = tintColor ?? glass.tint;
-    final fill = tintColor != null
-        ? baseTint.withValues(
-            alpha: glass.brightness == Brightness.dark ? 0.20 : 0.16,
-          )
-        : baseTint.withValues(alpha: glass.fillOpacity);
+    final baseOpacity = tintColor != null
+        ? (glass.brightness == Brightness.dark ? 0.20 : 0.16)
+        : glass.fillOpacity;
+    // Without a live blur the fill must carry the surface on its own, so nudge
+    // it more opaque to stay legible over a busy background.
+    final fill = baseTint.withValues(
+      alpha: blur ? baseOpacity : (baseOpacity + 0.14).clamp(0.0, 1.0),
+    );
     final highlight = glass.brightness == Brightness.dark
         ? Colors.white.withValues(alpha: 0.05)
         : Colors.white.withValues(alpha: 0.55);
 
-    Widget content = ClipRRect(
-      borderRadius: radius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: blurSigma ?? glass.blurSigma,
-          sigmaY: blurSigma ?? glass.blurSigma,
+    final decorated = DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color.alphaBlend(highlight, fill), fill],
         ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: radius,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color.alphaBlend(highlight, fill), fill],
-            ),
-            border: Border.all(
-              color: borderColor ?? glass.stroke,
-              width: borderWidth,
-            ),
-          ),
-          child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
+        border: Border.all(
+          color: borderColor ?? glass.stroke,
+          width: borderWidth,
         ),
       ),
+      child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
+    );
+
+    Widget content = ClipRRect(
+      borderRadius: radius,
+      child: blur
+          ? BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: blurSigma ?? glass.blurSigma,
+                sigmaY: blurSigma ?? glass.blurSigma,
+              ),
+              child: decorated,
+            )
+          : decorated,
     );
 
     if (onTap != null) {

@@ -659,9 +659,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                               child: ValueListenableBuilder<int>(
                                 valueListenable: _currentIndex,
                                 builder: (context, index, _) {
+                                  // IndexedStack keeps every tab mounted, which
+                                  // otherwise lets hidden tabs' tickers (animated
+                                  // backgrounds, live timers) keep running at
+                                  // 60fps off-screen. TickerMode mutes the
+                                  // inactive tabs so only the visible one animates.
                                   return IndexedStack(
                                     index: index,
-                                    children: _tabs,
+                                    children: [
+                                      for (var i = 0; i < _tabs.length; i++)
+                                        TickerMode(
+                                          enabled: i == index,
+                                          child: _tabs[i],
+                                        ),
+                                    ],
                                   );
                                 },
                               ),

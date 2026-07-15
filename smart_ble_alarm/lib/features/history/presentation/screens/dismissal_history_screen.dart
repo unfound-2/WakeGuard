@@ -84,6 +84,8 @@ class DismissalHistoryScreen extends StatelessWidget {
                       ? record.label!.trim()
                       : 'Alarm ${record.alarmId}';
                   return GlassCard(
+                    blur:
+                        false, // list row: solid fill avoids per-frame blur while scrolling
                     padding: const EdgeInsets.all(16),
                     borderRadius: 22,
                     shadows: wakeCardShadow(context),
