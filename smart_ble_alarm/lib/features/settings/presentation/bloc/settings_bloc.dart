@@ -113,6 +113,13 @@ class UpdateClockSleepEvent extends SettingsEvent {
   List<Object?> get props => [enabled, startMinutes, endMinutes];
 }
 
+/// Restores the physical clock's display controls to the first-run WakeGuard
+/// defaults. This only resets display-related settings: it does not touch
+/// alarms, account data, pairing, notifications, or app-wide appearance.
+class ResetClockDisplayEvent extends SettingsEvent {
+  const ResetClockDisplayEvent();
+}
+
 /// Turns the clock's weather corner on/off. When off the app pushes a "hide"
 /// frame (0x0C `[0,0xFF]`) so the clock blanks it.
 class ToggleShowWeatherEvent extends SettingsEvent {
@@ -173,6 +180,19 @@ class UpdateAppBackgroundEvent extends SettingsEvent {
 
 // --- State ---
 class SettingsState extends Equatable {
+  static const defaultIs24HourTime = false;
+  static const defaultClockThemeLight = false;
+  static const defaultClockAccentIndex = 0;
+  static const defaultClockShowSeconds = false;
+  static const defaultClockShowDate = true;
+  static const defaultClockShowDayOfWeek = true;
+  static const defaultClockDateFormat = 0;
+  static const defaultClockSleepEnabled = false;
+  static const defaultClockSleepStartMinutes = 22 * 60;
+  static const defaultClockSleepEndMinutes = 7 * 60;
+  static const defaultShowWeather = true;
+  static const defaultWeatherFahrenheit = false;
+
   final bool is24HourTime;
   final bool defaultQrRequired;
   final String themeString;
@@ -217,7 +237,7 @@ class SettingsState extends Equatable {
   final String appBackgroundKey;
 
   const SettingsState({
-    this.is24HourTime = false, // false = 12h default
+    this.is24HourTime = defaultIs24HourTime, // false = 12h default
     this.defaultQrRequired = true,
     this.themeString = 'Dark',
     this.accentColorString = 'Ember',
@@ -225,17 +245,17 @@ class SettingsState extends Equatable {
     this.autoTimeSync = true,
     this.backupNotificationsEnabled = true,
     this.eveningReminderEnabled = false,
-    this.clockThemeLight = false,
-    this.clockAccentIndex = 0,
-    this.clockShowSeconds = false,
-    this.clockShowDate = true,
-    this.clockShowDayOfWeek = true,
-    this.clockDateFormat = 0,
-    this.clockSleepEnabled = false,
-    this.clockSleepStartMinutes = 22 * 60, // 22:00
-    this.clockSleepEndMinutes = 7 * 60, // 07:00
-    this.showWeather = true,
-    this.weatherFahrenheit = false,
+    this.clockThemeLight = defaultClockThemeLight,
+    this.clockAccentIndex = defaultClockAccentIndex,
+    this.clockShowSeconds = defaultClockShowSeconds,
+    this.clockShowDate = defaultClockShowDate,
+    this.clockShowDayOfWeek = defaultClockShowDayOfWeek,
+    this.clockDateFormat = defaultClockDateFormat,
+    this.clockSleepEnabled = defaultClockSleepEnabled,
+    this.clockSleepStartMinutes = defaultClockSleepStartMinutes, // 22:00
+    this.clockSleepEndMinutes = defaultClockSleepEndMinutes, // 07:00
+    this.showWeather = defaultShowWeather,
+    this.weatherFahrenheit = defaultWeatherFahrenheit,
     this.phoneAlarmEnabled = false,
     this.phoneAlarmRequireCharging = true,
     this.dedicatedClockEnabled = false,
@@ -346,6 +366,7 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<ToggleEveningReminderEvent>(_onToggleEveningReminder);
     on<UpdateClockDisplayEvent>(_onUpdateClockDisplay);
     on<UpdateClockSleepEvent>(_onUpdateClockSleep);
+    on<ResetClockDisplayEvent>(_onResetClockDisplay);
     on<ToggleShowWeatherEvent>(_onToggleShowWeather);
     on<ToggleWeatherUnitEvent>(_onToggleWeatherUnit);
     on<TogglePhoneAlarmEvent>(_onTogglePhoneAlarm);
@@ -354,14 +375,24 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<UpdateAppBackgroundEvent>(_onUpdateAppBackground);
   }
 
+  static int _clockAccentIndex(int value) => value.clamp(0, 3).toInt();
+  static int _clockDateFormat(int value) => value.clamp(0, 3).toInt();
+
   void _onLoadSettings(LoadSettingsEvent event, Emitter<SettingsState> emit) {
     final bgKey = prefs.getString('appBackground') ?? 'minimal';
+    final clockAccentIndex = _clockAccentIndex(
+      prefs.getInt('clockAccentIndex') ?? SettingsState.defaultClockAccentIndex,
+    );
+    final clockDateFormat = _clockDateFormat(
+      prefs.getInt('clockDateFormat') ?? SettingsState.defaultClockDateFormat,
+    );
     // Prime the global notifier so every GlassBackground paints the saved style
     // from the first frame.
     appBackgroundStyle.value = appBackgroundStyleFromKey(bgKey);
     emit(
       state.copyWith(
-        is24HourTime: prefs.getBool('is24HourTime') ?? false,
+        is24HourTime:
+            prefs.getBool('is24HourTime') ?? SettingsState.defaultIs24HourTime,
         defaultQrRequired: prefs.getBool('defaultQrRequired') ?? true,
         themeString: prefs.getString('themeString') ?? 'Dark',
         accentColorString: prefs.getString('accentColorString') ?? 'Ember',
@@ -371,17 +402,34 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
             prefs.getBool('backupNotificationsEnabled') ?? true,
         eveningReminderEnabled:
             prefs.getBool('eveningReminderEnabled') ?? false,
-        clockThemeLight: prefs.getBool('clockThemeLight') ?? false,
-        clockAccentIndex: prefs.getInt('clockAccentIndex') ?? 0,
-        clockShowSeconds: prefs.getBool('clockShowSeconds') ?? false,
-        clockShowDate: prefs.getBool('clockShowDate') ?? true,
-        clockShowDayOfWeek: prefs.getBool('clockShowDayOfWeek') ?? true,
-        clockDateFormat: prefs.getInt('clockDateFormat') ?? 0,
-        clockSleepEnabled: prefs.getBool('clockSleepEnabled') ?? false,
-        clockSleepStartMinutes: prefs.getInt('clockSleepStart') ?? (22 * 60),
-        clockSleepEndMinutes: prefs.getInt('clockSleepEnd') ?? (7 * 60),
-        showWeather: prefs.getBool('showWeather') ?? true,
-        weatherFahrenheit: prefs.getBool('weatherFahrenheit') ?? false,
+        clockThemeLight:
+            prefs.getBool('clockThemeLight') ??
+            SettingsState.defaultClockThemeLight,
+        clockAccentIndex: clockAccentIndex,
+        clockShowSeconds:
+            prefs.getBool('clockShowSeconds') ??
+            SettingsState.defaultClockShowSeconds,
+        clockShowDate:
+            prefs.getBool('clockShowDate') ??
+            SettingsState.defaultClockShowDate,
+        clockShowDayOfWeek:
+            prefs.getBool('clockShowDayOfWeek') ??
+            SettingsState.defaultClockShowDayOfWeek,
+        clockDateFormat: clockDateFormat,
+        clockSleepEnabled:
+            prefs.getBool('clockSleepEnabled') ??
+            SettingsState.defaultClockSleepEnabled,
+        clockSleepStartMinutes:
+            prefs.getInt('clockSleepStart') ??
+            SettingsState.defaultClockSleepStartMinutes,
+        clockSleepEndMinutes:
+            prefs.getInt('clockSleepEnd') ??
+            SettingsState.defaultClockSleepEndMinutes,
+        showWeather:
+            prefs.getBool('showWeather') ?? SettingsState.defaultShowWeather,
+        weatherFahrenheit:
+            prefs.getBool('weatherFahrenheit') ??
+            SettingsState.defaultWeatherFahrenheit,
         phoneAlarmEnabled: prefs.getBool('phoneAlarmEnabled') ?? false,
         phoneAlarmRequireCharging:
             prefs.getBool('phoneAlarmRequireCharging') ?? true,
@@ -459,20 +507,22 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     UpdateClockDisplayEvent event,
     Emitter<SettingsState> emit,
   ) async {
+    final accentIndex = _clockAccentIndex(event.accentIndex);
+    final dateFormat = _clockDateFormat(event.dateFormat);
     await prefs.setBool('clockThemeLight', event.themeLight);
-    await prefs.setInt('clockAccentIndex', event.accentIndex);
+    await prefs.setInt('clockAccentIndex', accentIndex);
     await prefs.setBool('clockShowSeconds', event.showSeconds);
     await prefs.setBool('clockShowDate', event.showDate);
     await prefs.setBool('clockShowDayOfWeek', event.showDayOfWeek);
-    await prefs.setInt('clockDateFormat', event.dateFormat);
+    await prefs.setInt('clockDateFormat', dateFormat);
     emit(
       state.copyWith(
         clockThemeLight: event.themeLight,
-        clockAccentIndex: event.accentIndex,
+        clockAccentIndex: accentIndex,
         clockShowSeconds: event.showSeconds,
         clockShowDate: event.showDate,
         clockShowDayOfWeek: event.showDayOfWeek,
-        clockDateFormat: event.dateFormat,
+        clockDateFormat: dateFormat,
       ),
     );
   }
@@ -489,6 +539,65 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
         clockSleepEnabled: event.enabled,
         clockSleepStartMinutes: event.startMinutes,
         clockSleepEndMinutes: event.endMinutes,
+      ),
+    );
+  }
+
+  Future<void> _onResetClockDisplay(
+    ResetClockDisplayEvent event,
+    Emitter<SettingsState> emit,
+  ) async {
+    await prefs.setBool('is24HourTime', SettingsState.defaultIs24HourTime);
+    await prefs.setBool(
+      'clockThemeLight',
+      SettingsState.defaultClockThemeLight,
+    );
+    await prefs.setInt(
+      'clockAccentIndex',
+      SettingsState.defaultClockAccentIndex,
+    );
+    await prefs.setBool(
+      'clockShowSeconds',
+      SettingsState.defaultClockShowSeconds,
+    );
+    await prefs.setBool('clockShowDate', SettingsState.defaultClockShowDate);
+    await prefs.setBool(
+      'clockShowDayOfWeek',
+      SettingsState.defaultClockShowDayOfWeek,
+    );
+    await prefs.setInt('clockDateFormat', SettingsState.defaultClockDateFormat);
+    await prefs.setBool(
+      'clockSleepEnabled',
+      SettingsState.defaultClockSleepEnabled,
+    );
+    await prefs.setInt(
+      'clockSleepStart',
+      SettingsState.defaultClockSleepStartMinutes,
+    );
+    await prefs.setInt(
+      'clockSleepEnd',
+      SettingsState.defaultClockSleepEndMinutes,
+    );
+    await prefs.setBool('showWeather', SettingsState.defaultShowWeather);
+    await prefs.setBool(
+      'weatherFahrenheit',
+      SettingsState.defaultWeatherFahrenheit,
+    );
+
+    emit(
+      state.copyWith(
+        is24HourTime: SettingsState.defaultIs24HourTime,
+        clockThemeLight: SettingsState.defaultClockThemeLight,
+        clockAccentIndex: SettingsState.defaultClockAccentIndex,
+        clockShowSeconds: SettingsState.defaultClockShowSeconds,
+        clockShowDate: SettingsState.defaultClockShowDate,
+        clockShowDayOfWeek: SettingsState.defaultClockShowDayOfWeek,
+        clockDateFormat: SettingsState.defaultClockDateFormat,
+        clockSleepEnabled: SettingsState.defaultClockSleepEnabled,
+        clockSleepStartMinutes: SettingsState.defaultClockSleepStartMinutes,
+        clockSleepEndMinutes: SettingsState.defaultClockSleepEndMinutes,
+        showWeather: SettingsState.defaultShowWeather,
+        weatherFahrenheit: SettingsState.defaultWeatherFahrenheit,
       ),
     );
   }

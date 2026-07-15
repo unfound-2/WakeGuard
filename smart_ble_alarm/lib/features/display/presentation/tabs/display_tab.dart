@@ -150,9 +150,98 @@ class DisplayTab extends StatelessWidget {
                 _nightModeSection(context, settings),
                 const SizedBox(height: 24),
                 _weatherSection(context, settings),
+                const SizedBox(height: 24),
+                _resetSection(context, settings),
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  // Restore every clock-display control to its first-run default. Dispatches
+  // ResetClockDisplayEvent (see SettingsBloc); the button disables itself once
+  // the display already matches the defaults.
+  Widget _resetSection(BuildContext context, SettingsState settings) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDefault =
+        settings.is24HourTime == SettingsState.defaultIs24HourTime &&
+        settings.clockThemeLight == SettingsState.defaultClockThemeLight &&
+        settings.clockAccentIndex == SettingsState.defaultClockAccentIndex &&
+        settings.clockShowSeconds == SettingsState.defaultClockShowSeconds &&
+        settings.clockShowDate == SettingsState.defaultClockShowDate &&
+        settings.clockShowDayOfWeek ==
+            SettingsState.defaultClockShowDayOfWeek &&
+        settings.clockDateFormat == SettingsState.defaultClockDateFormat &&
+        settings.clockSleepEnabled == SettingsState.defaultClockSleepEnabled &&
+        settings.clockSleepStartMinutes ==
+            SettingsState.defaultClockSleepStartMinutes &&
+        settings.clockSleepEndMinutes ==
+            SettingsState.defaultClockSleepEndMinutes &&
+        settings.showWeather == SettingsState.defaultShowWeather &&
+        settings.weatherFahrenheit == SettingsState.defaultWeatherFahrenheit;
+
+    return WakeSection(
+      title: 'Reset',
+      subtitle: 'Return the clock display to its first-run defaults.',
+      child: GlassCard(
+        padding: const EdgeInsets.all(16),
+        borderRadius: 26,
+        shadows: wakeCardShadow(context),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(Icons.restart_alt_rounded, color: scheme.primary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Reset clock screen',
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isDefault
+                        ? 'The display is already at its original state.'
+                        : 'Restore the original face, colour, weather, and night mode.',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 12.5,
+                      height: 1.28,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            TextButton.icon(
+              onPressed: isDefault
+                  ? null
+                  : () => context.read<SettingsBloc>().add(
+                      const ResetClockDisplayEvent(),
+                    ),
+              icon: const Icon(Icons.restore_rounded, size: 17),
+              label: const Text('Reset'),
+              style: TextButton.styleFrom(
+                foregroundColor: scheme.primary,
+                textStyle: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
         ),
       ),
     );
