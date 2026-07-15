@@ -106,14 +106,16 @@
   // --- Big clock time -------------------------------------------------------
   // The old face drew the 12 pt font at size 2 (every glyph pixel doubled), which
   // still looks blocky. Drawing a LARGER font at native size 1 is smooth instead.
-  // FreeSansBold24pt7b is the crispest but the heaviest on flash (~14 KB). If the
-  // Arduino IDE reports the sketch overflowing the Uno's 32256-byte program space
-  // on upload, step TIME_FONT_PT DOWN: 24 -> 18 -> 12 (12 falls back to the old
-  // doubled look but is tiny). Nothing else needs to change.
-  #define TIME_FONT_PT 24                   // 24 (crispest) | 18 (lighter) | 12 (fallback)
+  // The big clock only ever draws 0-9 and ':', so at 24 pt we use a DIGITS-ONLY
+  // subset of FreeSansBold24pt7b (TimeDigits24pt.h, ~1 KB) instead of the full
+  // 95-glyph font (~8.8 KB) -- that ~7.7 KB saving is what lets the sketch fit the
+  // Uno's 32256-byte program space while keeping the crisp native-size digits.
+  // (Regenerate the subset via scratchpad/gen.py.) If you still overflow, step
+  // TIME_FONT_PT DOWN: 24 -> 18 -> 12 (18/12 use the full Adafruit fonts).
+  #define TIME_FONT_PT 24                   // 24 (crisp digits subset) | 18 | 12 (fallback)
   #if   TIME_FONT_PT == 24
-    #include <Fonts/FreeSansBold24pt7b.h>
-    #define TIME_FONT (&FreeSansBold24pt7b)
+    #include "TimeDigits24pt.h"             // 0-9 and ':' only; out-of-range chars are skipped
+    #define TIME_FONT (&TimeDigits24pt)
     #define SZ_TIME   1
   #elif TIME_FONT_PT == 18
     #include <Fonts/FreeSansBold18pt7b.h>
@@ -160,7 +162,7 @@ ScreenMode scrMode = SCR_NONE;
 static const long TIMEZONE_OFFSET_SECONDS = 0L;
 
 #define USE_24H_DISPLAY   1        // 1 = HH:MM:SS 24h, 0 = hh:mm:ss AM/PM
-#define TFT_ROTATION      1        // 1 or 3 = landscape 320x240; flip if upside down
+#define TFT_ROTATION      3        // 1 or 3 = landscape 320x240; flip if upside down
 
 // ---- Display reliability ---------------------------------------------------
 // Symptom this addresses: "after a while the whole screen goes white and I have
