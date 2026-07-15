@@ -115,6 +115,23 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         ),
       );
     });
+
+    // Auto-sync on initial connect. The BlocListener in build() syncs on every
+    // BleConnected *transition*, but if the link was already established before
+    // this screen mounted (e.g. the clock connected during first-run setup, so
+    // main_screen wasn't listening yet), that transition is missed and the clock
+    // would never get its first sync or have its frames listened to. Catch that
+    // here on mount: syncConnectedClock is coalesced via clockSyncInProgress and
+    // _listenForDeviceFrames cancels-then-resubscribes, so this can't double-fire
+    // with the listener when a connect happens normally after mount.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final bleState = context.read<BleConnectionBloc>().state;
+      if (bleState is BleConnected) {
+        _listenForDeviceFrames(context, bleState);
+        syncConnectedClock(context, bleState.device);
+      }
+    });
   }
 
   @override
