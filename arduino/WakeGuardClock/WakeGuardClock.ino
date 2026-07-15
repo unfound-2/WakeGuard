@@ -174,15 +174,30 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 // panel while it's just showing the clock. A healthy panel sees a brief repaint;
 // a white/garbled one recovers on its own, no power cycle. Raise this if the
 // periodic repaint is distracting; lower it to recover faster.
-#define DISPLAY_HEAL_MS   300000UL // re-init the TFT every 5 min on the idle clock face
+//
+// 2026-07-15: the white-screen root cause was electrical — the HM-10's BLE-connect
+// current spike browned out the shared 3V3 rail and corrupted the ILI9341 config.
+// Fixed in HARDWARE by moving the backlight LED onto 5V (series resistor), which
+// freed enough rail headroom that the panel no longer white-screens on connect.
+// With the cause cured, the periodic re-init is pure downside (a subtle ~150 ms
+// blink), so it's DISABLED (0). Set to e.g. 30000UL to bring back the 30 s
+// self-heal if a panel ever silently corrupts again; 0 compiles the block out.
+#define DISPLAY_HEAL_MS   0UL  // 0 = self-heal off (cured electrically); >0 = ms between re-inits
 
 // Hardware watchdog: if loop() ever wedges (e.g. an SPI/UART deadlock) the AVR
 // auto-reboots after ~8 s and setup() re-inits everything. Genuine Uno R3 boards
 // (optiboot) handle this cleanly. If a particular board fails to BOOT after
 // flashing this (an old bootloader can loop on a watchdog reset), set to 0.
-#define ENABLE_WATCHDOG   1
+// 2026-07-15: disabled (0) to free ~50 bytes of flash for the BLE-connect display
+// re-init fix (renderTft), which directly cures the "goes white when the app
+// connects" bug. Display robustness is now covered by that re-init + the 30 s
+// self-heal. Re-enable (1) once flash is freed (e.g. after the hardware decoupling
+// cap lets DISPLAY_HEAL_MS rise, or an 18 pt font subset reclaims space).
+#define ENABLE_WATCHDOG   0
 
-#define ENABLE_SNOOZE_BUTTON 1     // physical snooze button on D4 (ignored if absent)
+#define ENABLE_SNOOZE_BUTTON 0     // this WakeGuard unit has no physical button (app-only
+                                   // dismissal). 0 compiles out serviceButton()/buttonOnRing()
+                                   // — reclaims flash and is correct for the buttonless build.
 #define ENABLE_LDR           0     // ambient-light auto-dim on A0 (off by default)
 #define LDR_DARK_THRESHOLD   180   // analogRead below this => "dark" => dim
 
@@ -215,8 +230,15 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 // 0 = PASSIVE piezo/speaker (needs a driven frequency): the original mode that
 //     supports the chime melodies, volume, and gradual-wake fade via Timer1 PWM.
 // Same wiring either way (D9 -> buzzer -> GND); this only changes how D9 is driven.
+//
+// 2026-07-15: switched to PASSIVE (0). In active mode the alarm only *clicked* —
+// which is exactly what a passive speaker does when driven as active (a click at
+// each on/off edge instead of a sustained tone), so this unit is passive after
+// all. Passive mode plays the real melody below and honours the per-alarm volume
+// and gradual-wake fade. (If a future unit is genuinely active per the 2026-07-07
+// BuzzerTest, set this back to 1 — then it beeps one fixed tone with no melody.)
 #ifndef BUZZER_IS_ACTIVE
-#define BUZZER_IS_ACTIVE 1
+#define BUZZER_IS_ACTIVE 0
 #endif
 
 // ============================================================================
@@ -1082,12 +1104,13 @@ void serviceTimer() {
 // ============================================================================
 BuzzMode buzzMode = BUZZ_OFF;
 
-// Per-note amplitude envelope — a struck-bell shape: a very fast attack then an
-// exponential decay. Built once in soundInit() so there's no hand-typed table.
-#define ENV_LEN       40      // decay samples...
-#define ENV_STEP_MS   10      // ...one every 10 ms => ~400 ms of shaped decay
-#define ATTACK_MS     4       // brief ramp-in so note onsets don't click
-uint8_t envTable[ENV_LEN];
+// NOTE: the per-note struck-bell envelope was removed to fit the Uno's flash.
+// It built its decay table at boot with exp(), which dragged in the whole AVR
+// float library (~1.6 KB) — enough to overflow the 32 KB sketch in passive mode.
+// Notes now play at a flat amplitude; the gradual-wake master fade (masterVolNow,
+// below) still ramps overall loudness soft -> full, and each note's trailing rest
+// keeps the chime feel. If flash is freed later, a precomputed integer decay
+// table (no float) could restore the bell timbre.
 
 void soundOff() {
 #if BUZZER_IS_ACTIVE
@@ -1139,18 +1162,6 @@ void soundInit() {
   pinMode(PIN_BUZZER, OUTPUT);
   digitalWrite(PIN_BUZZER, LOW);
   TCCR1A = 0; TCCR1B = 0;                    // Timer1 idle until the first note
-  for (uint8_t i = 0; i < ENV_LEN; i++) {
-    // Exp decay, tau ~= 18 samples (~180 ms to 37%): rings like a soft chime.
-    envTable[i] = (uint8_t)(255.0 * exp(-(float)i / 18.0) + 0.5);
-  }
-}
-
-// The per-note envelope amplitude (0..255) at `elapsed` ms into the note.
-uint8_t noteEnv(uint32_t elapsed) {
-  if (elapsed < ATTACK_MS) return (uint8_t)(255UL * elapsed / ATTACK_MS);
-  uint32_t di = (elapsed - ATTACK_MS) / ENV_STEP_MS;
-  if (di >= ENV_LEN) return envTable[ENV_LEN - 1];
-  return envTable[di];
 }
 
 // Master loudness right now: a fixed level for timers; for an alarm, the
@@ -1171,18 +1182,20 @@ uint8_t masterVolNow() {
 //  SoftwareSerial clean windows to receive the dismiss frame while ringing.
 struct ToneStep { uint16_t freq; uint16_t ms; }; // freq 0 = silence
 
-// An ascending major arpeggio (G6-C7-E7) that steps down to resolve on C7 and
-// rings out through the bell decay. Pitched an octave up from the "musical"
-// register on purpose: a passive piezo's output peaks sharply around 2-4 kHz
-// and is far quieter below ~1.5 kHz, so keeping the notes in the 1.5-2.6 kHz
-// band is what makes the alarm actually loud on the hardware buzzer.
+// A warm ascending major-pentatonic wake call (G6-A6-C7-E7) that resolves on a
+// held C7 and rings out like a bell, then breathes before repeating. Pentatonic
+// = no harsh intervals, so it reads as "music" while the bright E7 peak and the
+// repetition keep it alerting. The gradual-wake fade ramps the whole thing from
+// soft to full over the alarm's fade seconds (gentle -> insistent). Pitched high
+// on purpose: a passive piezo peaks around 2-4 kHz and is far quieter below
+// ~1.5 kHz, so keeping notes in the 1.5-2.6 kHz band is what makes it loud.
 const ToneStep ALARM_PATTERN[] = {
-  {1568, 260}, {0, 30},   // G6
-  {2093, 260}, {0, 30},   // C7
-  {2637, 300}, {0, 40},   // E7  (bright peak — near the piezo's resonance)
-  {2349, 260}, {0, 30},   // D7
-  {2093, 480},            // C7  (resolve — held, decays away)
-  {   0, 620},            // breathe before the phrase repeats
+  {1568, 200}, {0, 20},   // G6  — gentle opening
+  {1760, 200}, {0, 20},   // A6  — rising
+  {2093, 220}, {0, 20},   // C7
+  {2637, 320}, {0, 30},   // E7  — bright peak (piezo resonance: loudest + most alerting)
+  {2093, 520},            // C7  — resolve, held, rings out like a bell
+  {   0, 560},            // breathe before the phrase repeats
 };
 // A short two-note "ding-dong" for finished timers, distinct from the alarm,
 // kept in the same loud piezo band.
@@ -1202,8 +1215,8 @@ void applyBuzzStep() {
   const ToneStep *pat = (buzzMode == BUZZ_ALARM) ? ALARM_PATTERN : TIMER_PATTERN;
   buzzNoteFreq = pat[buzzStep].freq;
   if (buzzNoteFreq == 0) { soundOff(); return; }
-  // Start at the envelope onset scaled by the current master (gradual-wake) volume.
-  soundStart(buzzNoteFreq, (uint8_t)((uint16_t)noteEnv(0) * masterVolNow() / 255));
+  // Play the note at the current master (gradual-wake) volume.
+  soundStart(buzzNoteFreq, masterVolNow());
 }
 
 void buzzerSetMode(BuzzMode m) {
@@ -1228,9 +1241,8 @@ void serviceBuzzer() {
     applyBuzzStep();
     return;
   }
-  if (buzzNoteFreq != 0) {                     // shape the note in progress
-    uint16_t v = (uint16_t)noteEnv(elapsed) * masterVolNow() / 255;
-    soundSetVol((uint8_t)v);
+  if (buzzNoteFreq != 0) {                     // keep the gradual-wake fade updating
+    soundSetVol(masterVolNow());
   }
 }
 
@@ -1754,19 +1766,26 @@ void renderTft() {
   // The screen holds its last frame for the ~1-2s the batch takes and repaints the
   // instant it ends; serviceSyncFlush() force-ends a stuck sync after SYNC_MAX_MS.
   static bool syncWasActive = false;
+  static bool wasLinkUp     = false;
   if (syncing) { syncWasActive = true; return; }
-  // A sync just finished. The BLE frame burst (heavy SoftwareSerial + EEPROM writes,
-  // plus the current spike) can brown-out the ILI9341 while we were holding the SPI
-  // bus idle, silently clearing its config -> the repaint below would land on a
-  // white panel. Re-init the controller once on the syncing->done edge so the
-  // post-sync repaint always lands on a good display. Covers both the normal
-  // SYNC_END and serviceSyncFlush()'s force-end, since both clear `syncing`.
-  if (syncWasActive) {
+  // Re-init the ILI9341 after any BLE activity that can brown it out to WHITE:
+  //   (a) syncWasActive — a sync batch just ended. The frame burst + EEPROM writes
+  //       + current spike clear the panel config while we hold the SPI bus idle.
+  //   (b) nowLinkUp && !wasLinkUp — a fresh app CONNECTION (first valid frame after
+  //       the link was down). The HM-10 link-up current spike + SoftwareSerial
+  //       interrupt masking wipe the config the same way, but a plain connect is
+  //       NOT wrapped in SYNC_START/END so it never sets `syncing`. Without this,
+  //       the panel goes white ~2 s after the phone connects and stays white until
+  //       the slow heal. THIS is the "goes blank when the app connects" fix.
+  // Either way, re-init once so the repaint below lands on a good controller.
+  bool nowLinkUp = linkUp();
+  if (syncWasActive || (nowLinkUp && !wasLinkUp)) {
     syncWasActive = false;
     tft.begin();
     tft.setRotation(TFT_ROTATION);
     scrMode = SCR_NONE;             // force the full repaint below
   }
+  wasLinkUp = nowLinkUp;
 
   // Scheduled display sleep: inside the user's nightly window, blank the panel to
   // black so it doesn't light a dark room. A ring or finished timer ALWAYS wins (an
@@ -1786,10 +1805,12 @@ void renderTft() {
   }
   if (displayAsleep) return;
 
+#if DISPLAY_HEAL_MS > 0
   // Display self-heal: periodically re-init + repaint the panel while it's just
   // showing the clock, so a silently-corrupted (white/garbled) panel recovers on
   // its own without a power cycle. Skipped during ring/timer so an alarm screen
-  // never blinks. See DISPLAY_HEAL_MS.
+  // never blinks. See DISPLAY_HEAL_MS. Disabled (0) since the brownout was fixed
+  // electrically (backlight moved to 5V), which was the real cause of the whiteout.
   static uint32_t lastHealMs = 0;
   if (lastHealMs == 0) lastHealMs = nowMs;
   if (scrMode == SCR_CLOCK && (uint32_t)(nowMs - lastHealMs) >= DISPLAY_HEAL_MS) {
@@ -1798,6 +1819,7 @@ void renderTft() {
     tft.setRotation(TFT_ROTATION);
     scrMode = SCR_NONE;             // force the full repaint below
   }
+#endif
 
   ScreenMode want;
   if (ringActive)     want = SCR_RING;           // ring/timer take the whole screen
@@ -1934,8 +1956,6 @@ void setup() {
     tft.print("clock ready");
   }
   scrMode = SCR_NONE;      // make the first renderTft() lay out a fresh screen
-
-  bootSelfTestChime();  // audible proof the speaker + PWM path works at power-on
 
 #if ENABLE_WATCHDOG
   // Arm the watchdog now that the slow one-time boot work (BLE rename, self-test
