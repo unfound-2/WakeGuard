@@ -1753,7 +1753,20 @@ void renderTft() {
   // TIME_SYNC (clock would then show --:--:-- forever) or SYNC_END (UI would hang).
   // The screen holds its last frame for the ~1-2s the batch takes and repaints the
   // instant it ends; serviceSyncFlush() force-ends a stuck sync after SYNC_MAX_MS.
-  if (syncing) return;
+  static bool syncWasActive = false;
+  if (syncing) { syncWasActive = true; return; }
+  // A sync just finished. The BLE frame burst (heavy SoftwareSerial + EEPROM writes,
+  // plus the current spike) can brown-out the ILI9341 while we were holding the SPI
+  // bus idle, silently clearing its config -> the repaint below would land on a
+  // white panel. Re-init the controller once on the syncing->done edge so the
+  // post-sync repaint always lands on a good display. Covers both the normal
+  // SYNC_END and serviceSyncFlush()'s force-end, since both clear `syncing`.
+  if (syncWasActive) {
+    syncWasActive = false;
+    tft.begin();
+    tft.setRotation(TFT_ROTATION);
+    scrMode = SCR_NONE;             // force the full repaint below
+  }
 
   // Scheduled display sleep: inside the user's nightly window, blank the panel to
   // black so it doesn't light a dark room. A ring or finished timer ALWAYS wins (an
