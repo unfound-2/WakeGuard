@@ -18,6 +18,11 @@
     <!-- Launch the full-screen alarm over the lock screen (Android 14+ gates this
          to alarm/calling apps; our alarm notifications use category=alarm). -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- "Display over other apps": lets the alarm reliably appear over the lock
+         screen and whatever is on-screen. Some OEM builds suppress full-screen
+         intents unless this is granted, so we expose an in-app toggle that opens
+         the system grant screen (Settings.ACTION_MANAGE_OVERLAY_PERMISSION). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:label="WakeGuard"

@@ -43,6 +43,26 @@ class AndroidAlarmChannel {
   /// Open the default messaging app.
   static Future<void> openMessages() => _invoke('openMessages');
 
+  /// Whether the app currently holds the "Display over other apps"
+  /// (SYSTEM_ALERT_WINDOW) permission. When granted, the full-screen alarm can
+  /// reliably appear over the lock screen and other apps even on OEM builds that
+  /// otherwise suppress full-screen-intent alarms. Returns `true` on non-Android
+  /// platforms (no such restriction) and `false` if the query fails.
+  static Future<bool> canDrawOverlays() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _channel.invokeMethod<bool>('canDrawOverlays') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Deep-link to the system "Display over other apps" screen for this app so
+  /// the user can grant the permission. The grant itself happens in system
+  /// Settings; callers should re-check [canDrawOverlays] once the app resumes.
+  static Future<void> requestOverlayPermission() =>
+      _invoke('requestOverlayPermission');
+
   static Future<void> _invoke(String method) async {
     if (!Platform.isAndroid) return;
     try {

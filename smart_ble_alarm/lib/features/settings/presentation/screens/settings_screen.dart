@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_ble_alarm/core/platform/android_alarm_channel.dart';
 import 'package:smart_ble_alarm/core/theme/app_background.dart';
 import 'package:smart_ble_alarm/core/theme/app_colors.dart';
 import 'package:smart_ble_alarm/core/theme/glass.dart';
@@ -1078,6 +1080,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
+            // Android-only; renders nothing on iOS. Lets the alarm pop over the
+            // lock screen and other apps by granting SYSTEM_ALERT_WINDOW.
+            const _OverlayPermissionRow(),
             _footnote(
               'Backup notifications mirror active alarms. The evening reminder '
               'is a gentle daily prompt and does not ring like an alarm.',
@@ -1666,6 +1671,93 @@ class _SettingsDetailScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Android-only row for the "Display over other apps" (SYSTEM_ALERT_WINDOW)
+/// permission. Granting it lets the full-screen alarm reliably appear over the
+/// lock screen and whatever else is on-screen — several OEM builds suppress
+/// full-screen-intent alarms unless overlay is allowed.
+///
+/// The permission can only be granted from system Settings (the app can't set
+/// it directly), so the switch deep-links there and reflects the live grant
+/// state, re-reading it whenever the app returns to the foreground. On iOS —
+/// and any non-Android platform — it renders nothing.
+class _OverlayPermissionRow extends StatefulWidget {
+  const _OverlayPermissionRow();
+
+  @override
+  State<_OverlayPermissionRow> createState() => _OverlayPermissionRowState();
+}
+
+class _OverlayPermissionRowState extends State<_OverlayPermissionRow>
+    with WidgetsBindingObserver {
+  bool _granted = false;
+  bool _checked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addObserver(this);
+      _refresh();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-read once the user comes back from the system settings screen.
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final granted = await AndroidAlarmChannel.canDrawOverlays();
+    if (!mounted) return;
+    setState(() {
+      _granted = granted;
+      _checked = true;
+    });
+  }
+
+  Future<void> _openSettings() async {
+    // The grant happens in system Settings; the resume-lifecycle refresh picks
+    // up the new state when the user returns.
+    await AndroidAlarmChannel.requestOverlayPermission();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!Platform.isAndroid) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Divider(height: 20, color: Theme.of(context).dividerColor),
+        WakeSettingsRow(
+          icon: Icons.layers_rounded,
+          title: 'Display over other apps',
+          subtitle: !_checked
+              ? 'Checking permission…'
+              : _granted
+              ? 'Allowed — the alarm can appear over the lock screen'
+              : 'Tap to allow the alarm over the lock screen and other apps',
+          onTap: _openSettings,
+          trailing: Switch(
+            value: _granted,
+            // The OS owns this permission, so both directions just deep-link to
+            // the system screen; the switch reflects the real state on resume.
+            onChanged: (_) => _openSettings(),
+          ),
+        ),
+      ],
     );
   }
 }

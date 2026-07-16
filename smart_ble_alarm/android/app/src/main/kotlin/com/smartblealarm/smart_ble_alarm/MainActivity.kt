@@ -9,6 +9,7 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.provider.Telephony
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -68,6 +69,13 @@ class MainActivity : FlutterActivity() {
                     }
                     "openMessages" -> {
                         openMessages()
+                        result.success(true)
+                    }
+                    "canDrawOverlays" -> {
+                        result.success(canDrawOverlays())
+                    }
+                    "requestOverlayPermission" -> {
+                        requestOverlayPermission()
                         result.success(true)
                     }
                     else -> result.notImplemented()
@@ -155,6 +163,43 @@ class MainActivity : FlutterActivity() {
             intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             if (intent != null) startActivity(intent)
         } catch (_: Exception) {
+        }
+    }
+
+    /// Whether the app holds the "Display over other apps" (SYSTEM_ALERT_WINDOW)
+    /// permission. Always true below Android M, where the permission is granted
+    /// at install time and there is no per-app toggle.
+    private fun canDrawOverlays(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else {
+            true
+        }
+    }
+
+    /// Open the system "Display over other apps" screen for this package. The
+    /// grant can only be made by the user in Settings — the app can't set it
+    /// directly — so the in-app toggle deep-links here and re-reads the state on
+    /// resume. No-op (and no crash) if the settings activity is unavailable.
+    private fun requestOverlayPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName"),
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (_: Exception) {
+            // Fall back to the generic overlay settings list if the per-package
+            // deep link isn't resolvable on this OEM build.
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            } catch (_: Exception) {
+            }
         }
     }
 
