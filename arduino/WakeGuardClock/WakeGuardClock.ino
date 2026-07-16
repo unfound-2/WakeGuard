@@ -414,6 +414,19 @@ static const uint32_t SYNC_MAX_MS = 8000UL;
 //  "ILI9341 TFT USER INTERFACE" section further down.
 // ============================================================================
 Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
+// SPI clock for the panel. The Uno's AVR maxes at F_CPU/2 = 8 MHz, which is what
+// Adafruit's default (24 MHz request, clamped) gives — and 8 MHz is the ROOT
+// CAUSE of the recurring white screen: SCK/MOSI/CS/DC/RST all reach the 3.3V
+// panel through 1k/2k resistor dividers, which low-pass every edge. At 8 MHz an
+// edge barely settles before the next bit, so BLE-radio noise coupled onto the
+// lines can flip a bit in a control-register write and the ILI9341 resets to a
+// blank (white) state. Clocking at 4 MHz doubles the per-bit settling time =
+// far more noise margin through the dividers, at the cost of ~2x slower full
+// repaints (a clock face only redraws a few small text fields per second, so
+// this is imperceptible). Drop to 2000000UL if a white screen ever recurs.
+// This is passed to EVERY tft.begin() below (boot + both re-inits) so the slow,
+// safe clock is used on every init, not just the first.
+#define SPI_FREQ   4000000UL
 SoftwareSerial bleSerial(PIN_HM10_TXD, PIN_HM10_RXD); // (rxPin, txPin)
 
 // ---- Forward declarations --------------------------------------------------
@@ -1818,7 +1831,7 @@ void renderTft() {
   bool nowLinkUp = linkUp();
   if (syncWasActive || (nowLinkUp != wasLinkUp)) {
     syncWasActive = false;
-    tft.begin();
+    tft.begin(SPI_FREQ);
     tft.setRotation(TFT_ROTATION);
     scrMode = SCR_NONE;             // force the full repaint below
   }
@@ -1852,7 +1865,7 @@ void renderTft() {
   if (lastHealMs == 0) lastHealMs = nowMs;
   if (scrMode == SCR_CLOCK && (uint32_t)(nowMs - lastHealMs) >= DISPLAY_HEAL_MS) {
     lastHealMs = nowMs;
-    tft.begin();                    // resend the ILI9341 init sequence
+    tft.begin(SPI_FREQ);            // resend the ILI9341 init sequence
     tft.setRotation(TFT_ROTATION);
     scrMode = SCR_NONE;             // force the full repaint below
   }
@@ -1970,7 +1983,7 @@ void setup() {
   configureBleName();    // advertise as "WG Clock" (best-effort, one-time)
 #endif
 
-  tft.begin();
+  tft.begin(SPI_FREQ);
   tft.setRotation(TFT_ROTATION);   // landscape 320x240
   tft.fillScreen(gBg);
 
