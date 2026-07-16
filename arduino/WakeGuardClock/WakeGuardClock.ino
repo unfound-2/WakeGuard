@@ -175,16 +175,19 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 // a white/garbled one recovers on its own, no power cycle. Raise this if the
 // periodic repaint is distracting; lower it to recover faster.
 //
-// 2026-07-15: the white-screen root cause was electrical — the HM-10's BLE-connect
-// current spike browned out the shared 3V3 rail and corrupted the ILI9341 config.
-// Moving the backlight LED onto 5V (series resistor) cured the CONNECT whiteout,
-// and the heal was disabled as pure downside (a subtle ~150 ms blink).
-// 2026-07-16: RE-ENABLED. The hardware fix was not the whole story — a BLE
-// DISCONNECT (phone off / out of range) spikes the rail the same way, and other
-// silent corruptions have no event to hook. The link-transition re-init in
-// renderTft catches connect/disconnect fast; this periodic heal is the backstop
-// for everything else. 0 compiles the block out.
-#define DISPLAY_HEAL_MS   30000UL  // ms between re-inits while idle on the clock face; 0 = off
+// 2026-07-16: the earlier "blindly re-init + repaint every 30 s" heal was itself a
+// visible periodic blink AND still left the panel white between whiteout and the
+// next 30 s tick. Replaced with DETECT-then-repair: MISO is DIRECT-wired (no
+// divider — see the pinout header), so we can read the panel's Read-Display-Power-
+// Mode register (RDDPM, 0x0A) and tell a healthy display-ON panel from one that has
+// reset itself to white (display-OFF bit clear). We poll it every DISPLAY_HEAL_MS
+// and only pay for a full re-init + repaint when it actually reads wrong for two
+// polls running. A healthy panel is NEVER disturbed (no periodic blink), yet a real
+// white-out is caught and cleared within ~2 polls (~2 s) instead of up to 30 s. A
+// 60 s absolute backstop re-inits regardless, so recovery still happens even if the
+// register read is unreliable on a given panel. This is the best a firmware-only
+// fix can do — the true cure is electrical (decoupling cap at the panel). 0 = off.
+#define DISPLAY_HEAL_MS   2000UL   // ms between panel health polls (RDDPM read); 0 = off
 
 // Hardware watchdog: if loop() ever wedges (e.g. an SPI/UART deadlock) the AVR
 // auto-reboots after ~8 s and setup() re-inits everything. Genuine Uno R3 boards
@@ -1860,18 +1863,28 @@ void renderTft() {
   if (displayAsleep) return;
 
 #if DISPLAY_HEAL_MS > 0
-  // Display self-heal: periodically re-init + repaint the panel while it's just
-  // showing the clock, so a silently-corrupted (white/garbled) panel recovers on
-  // its own without a power cycle. Skipped during ring/timer so an alarm screen
-  // never blinks. Backstop for whiteouts with no event to hook (the link-
-  // transition re-init above catches connect/disconnect). See DISPLAY_HEAL_MS.
-  static uint32_t lastHealMs = 0;
-  if (lastHealMs == 0) lastHealMs = nowMs;
-  if (scrMode == SCR_CLOCK && (uint32_t)(nowMs - lastHealMs) >= DISPLAY_HEAL_MS) {
-    lastHealMs = nowMs;
-    tft.begin(SPI_FREQ);            // resend the ILI9341 init sequence
-    tft.setRotation(TFT_ROTATION);
-    scrMode = SCR_NONE;             // force the full repaint below
+  // Display self-heal, DETECT-then-repair (see DISPLAY_HEAL_MS). Poll the panel's
+  // Power-Mode register; bit 2 (0x04) is the display-ON flag, which a white/reset
+  // panel has CLEAR. Only re-init when it reads OFF twice running (shrugs off a
+  // lone noisy read) — so a healthy panel never blinks — or once every 60 s as an
+  // absolute backstop in case the read is unreliable. Skipped during ring/timer so
+  // an alarm screen never blinks.
+  static uint32_t lastCheckMs = 0;
+  static uint32_t lastFixMs   = 0;
+  static uint8_t  badReads    = 0;
+  if (lastFixMs == 0) lastFixMs = nowMs;
+  if (scrMode == SCR_CLOCK && (uint32_t)(nowMs - lastCheckMs) >= DISPLAY_HEAL_MS) {
+    lastCheckMs = nowMs;
+    uint8_t pm = tft.readcommand8(ILI9341_RDMODE);   // 0x0A Read Display Power Mode
+    if ((pm & 0x04) == 0) badReads++;                // display-OFF => panel reset to white
+    else                  badReads = 0;
+    if (badReads >= 2 || (uint32_t)(nowMs - lastFixMs) >= 60000UL) {
+      badReads  = 0;
+      lastFixMs = nowMs;
+      tft.begin(SPI_FREQ);           // resend the ILI9341 init sequence
+      tft.setRotation(TFT_ROTATION);
+      scrMode = SCR_NONE;            // force the full repaint below
+    }
   }
 #endif
 
