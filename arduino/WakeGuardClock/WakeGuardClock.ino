@@ -177,12 +177,14 @@ static const long TIMEZONE_OFFSET_SECONDS = 0L;
 //
 // 2026-07-15: the white-screen root cause was electrical — the HM-10's BLE-connect
 // current spike browned out the shared 3V3 rail and corrupted the ILI9341 config.
-// Fixed in HARDWARE by moving the backlight LED onto 5V (series resistor), which
-// freed enough rail headroom that the panel no longer white-screens on connect.
-// With the cause cured, the periodic re-init is pure downside (a subtle ~150 ms
-// blink), so it's DISABLED (0). Set to e.g. 30000UL to bring back the 30 s
-// self-heal if a panel ever silently corrupts again; 0 compiles the block out.
-#define DISPLAY_HEAL_MS   0UL  // 0 = self-heal off (cured electrically); >0 = ms between re-inits
+// Moving the backlight LED onto 5V (series resistor) cured the CONNECT whiteout,
+// and the heal was disabled as pure downside (a subtle ~150 ms blink).
+// 2026-07-16: RE-ENABLED. The hardware fix was not the whole story — a BLE
+// DISCONNECT (phone off / out of range) spikes the rail the same way, and other
+// silent corruptions have no event to hook. The link-transition re-init in
+// renderTft catches connect/disconnect fast; this periodic heal is the backstop
+// for everything else. 0 compiles the block out.
+#define DISPLAY_HEAL_MS   30000UL  // ms between re-inits while idle on the clock face; 0 = off
 
 // Hardware watchdog: if loop() ever wedges (e.g. an SPI/UART deadlock) the AVR
 // auto-reboots after ~8 s and setup() re-inits everything. Genuine Uno R3 boards
@@ -1844,8 +1846,8 @@ void renderTft() {
   // Display self-heal: periodically re-init + repaint the panel while it's just
   // showing the clock, so a silently-corrupted (white/garbled) panel recovers on
   // its own without a power cycle. Skipped during ring/timer so an alarm screen
-  // never blinks. See DISPLAY_HEAL_MS. Disabled (0) since the brownout was fixed
-  // electrically (backlight moved to 5V), which was the real cause of the whiteout.
+  // never blinks. Backstop for whiteouts with no event to hook (the link-
+  // transition re-init above catches connect/disconnect). See DISPLAY_HEAL_MS.
   static uint32_t lastHealMs = 0;
   if (lastHealMs == 0) lastHealMs = nowMs;
   if (scrMode == SCR_CLOCK && (uint32_t)(nowMs - lastHealMs) >= DISPLAY_HEAL_MS) {
