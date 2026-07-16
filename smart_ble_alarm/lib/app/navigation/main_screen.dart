@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -16,6 +17,7 @@ import 'package:smart_ble_alarm/core/utils/alarm_time_utils.dart';
 import 'package:smart_ble_alarm/shared/widgets/liquid_glass_tab_bar.dart';
 import 'package:smart_ble_alarm/features/alarms/presentation/widgets/ringing_dismissal.dart';
 import 'package:smart_ble_alarm/features/alarms/presentation/widgets/phone_alarm_ringer.dart';
+import 'package:smart_ble_alarm/features/alarms/presentation/screens/full_screen_alarm_screen.dart';
 import 'package:smart_ble_alarm/features/alarms/presentation/tabs/alarms_tab.dart';
 import 'package:smart_ble_alarm/features/display/presentation/tabs/display_tab.dart';
 import 'package:smart_ble_alarm/features/home/presentation/tabs/home_tab.dart';
@@ -306,6 +308,38 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   /// "Dismiss" for a no-task alarm, "Take Photo" for an item alarm, "Scan QR"
   /// for a QR alarm — the same [RingingDismissal] the Home card and Alarms row
   /// use, so all three surfaces always agree.
+  /// Full-screen, system-style alarm surface (Android only). It sits above the
+  /// entire Scaffold — tab bar included — whenever an alarm is ringing, so the
+  /// alarm truly fills the screen like a stock clock app. When nothing is
+  /// ringing it's an [IgnorePointer] so taps pass straight through to the app.
+  Widget _buildFullScreenAlarmOverlay() {
+    if (!Platform.isAndroid) {
+      return const IgnorePointer(child: SizedBox.expand());
+    }
+    return BlocBuilder<AlarmBloc, AlarmState>(
+      buildWhen: (prev, curr) =>
+          prev.ringingAlarmId != curr.ringingAlarmId ||
+          prev.alarms != curr.alarms,
+      builder: (context, alarmState) {
+        final id = alarmState.ringingAlarmId;
+        if (id == null) {
+          return const IgnorePointer(child: SizedBox.expand());
+        }
+        Alarm? ringing;
+        for (final a in alarmState.alarms) {
+          if (a.id == id) {
+            ringing = a;
+            break;
+          }
+        }
+        if (ringing == null) {
+          return const IgnorePointer(child: SizedBox.expand());
+        }
+        return FullScreenAlarmScreen(alarm: ringing);
+      },
+    );
+  }
+
   Widget _buildRingingBanner() {
     return BlocBuilder<AlarmBloc, AlarmState>(
       buildWhen: (prev, curr) =>
@@ -623,7 +657,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           },
         ),
       ],
-      child: Scaffold(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Scaffold(
         extendBody: true,
         body: BlocBuilder<BleConnectionBloc, BleState>(
           builder: (context, bleState) {
@@ -729,6 +766,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             );
           },
         ),
+          ),
+          _buildFullScreenAlarmOverlay(),
+        ],
       ),
     );
   }

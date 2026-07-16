@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -7,9 +8,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:smart_ble_alarm/core/audio/alarm_tone_player.dart';
+import 'package:smart_ble_alarm/core/platform/android_alarm_channel.dart';
 import 'package:smart_ble_alarm/core/ui/wake_haptics.dart';
 import 'package:smart_ble_alarm/domain/entities/alarm.dart';
 import 'package:smart_ble_alarm/features/alarms/presentation/bloc/alarm_bloc.dart';
+import 'package:smart_ble_alarm/features/bluetooth/presentation/bloc/ble_bloc.dart';
+import 'package:smart_ble_alarm/features/bluetooth/presentation/bloc/ble_state.dart';
 import 'package:smart_ble_alarm/features/settings/presentation/bloc/settings_bloc.dart';
 
 /// The "Ring on this phone" engine — an invisible widget mounted app-wide (over
@@ -140,6 +144,7 @@ class _PhoneAlarmRingerState extends State<PhoneAlarmRinger>
       _ringHaptic?.cancel();
       _ringHaptic = null;
       unawaited(_tone.stop());
+      unawaited(AndroidAlarmChannel.stopSystemAlarm());
       _releaseWakelock();
       return;
     }
@@ -161,7 +166,50 @@ class _PhoneAlarmRingerState extends State<PhoneAlarmRinger>
       const Duration(milliseconds: 1400),
       (_) => WakeHaptics.heavyImpact(),
     );
-    unawaited(_tone.play(alarm));
+    _applySound(alarm);
+  }
+
+  /// Pick the ring's audio source: the hardware clock's own buzzer when it's
+  /// connected (phone stays silent — the Arduino wakes you), otherwise this
+  /// phone. On Android the offline tone is the *system-selected* alarm sound
+  /// (RingtoneManager); elsewhere it's the built-in synthesized tone. Idempotent
+  /// enough to re-call when the connection flips mid-ring.
+  void _applySound(Alarm alarm) {
+    if (_isClockConnected()) {
+      // The WakeGuard clock is buzzing — don't double up on the phone.
+      unawaited(_tone.stop());
+      unawaited(AndroidAlarmChannel.stopSystemAlarm());
+    } else if (Platform.isAndroid) {
+      unawaited(_tone.stop());
+      unawaited(AndroidAlarmChannel.playSystemAlarm());
+    } else {
+      unawaited(AndroidAlarmChannel.stopSystemAlarm());
+      unawaited(_tone.play(alarm));
+    }
+  }
+
+  bool _isClockConnected() {
+    if (!mounted) return false;
+    try {
+      return context.read<BleConnectionBloc>().state is BleConnected;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Re-route the audio source when the clock connects/disconnects while an
+  /// alarm is already sounding (e.g. the clock drops off Bluetooth mid-ring, so
+  /// the phone must take over with the system alarm sound).
+  void _onConnectionChanged() {
+    final id = _audioAlarmId;
+    if (id == null || !mounted) return;
+    final alarms = context.read<AlarmBloc>().state.alarms;
+    for (final a in alarms) {
+      if (a.id == id) {
+        _applySound(a);
+        return;
+      }
+    }
   }
 
   Future<void> _acquireWakelock() async {
@@ -181,26 +229,34 @@ class _PhoneAlarmRingerState extends State<PhoneAlarmRinger>
     // Drive audio purely from (setting enabled) × (something is ringing). A
     // SettingsBloc listener re-reconciles when the toggle flips mid-ring so
     // turning it off silences the phone at once.
-    return BlocListener<SettingsBloc, SettingsState>(
+    return BlocListener<BleConnectionBloc, BleState>(
+      // Re-route the sound (clock buzzer <-> phone/system sound) the instant the
+      // clock connects or drops while an alarm is ringing.
       listenWhen: (prev, curr) =>
-          prev.phoneAlarmEnabled != curr.phoneAlarmEnabled,
-      listener: (context, settings) {
-        final ringing = context.read<AlarmBloc>().state;
-        _reconcile(
-          settings.phoneAlarmEnabled ? ringing.ringingAlarmId : null,
-          ringing.alarms,
-        );
-      },
-      child: BlocListener<AlarmBloc, AlarmState>(
-        listenWhen: (prev, curr) => prev.ringingAlarmId != curr.ringingAlarmId,
-        listener: (context, alarmState) {
-          final enabled = context.read<SettingsBloc>().state.phoneAlarmEnabled;
+          (prev is BleConnected) != (curr is BleConnected),
+      listener: (context, _) => _onConnectionChanged(),
+      child: BlocListener<SettingsBloc, SettingsState>(
+        listenWhen: (prev, curr) =>
+            prev.phoneAlarmEnabled != curr.phoneAlarmEnabled,
+        listener: (context, settings) {
+          final ringing = context.read<AlarmBloc>().state;
           _reconcile(
-            enabled ? alarmState.ringingAlarmId : null,
-            alarmState.alarms,
+            settings.phoneAlarmEnabled ? ringing.ringingAlarmId : null,
+            ringing.alarms,
           );
         },
-        child: const SizedBox.shrink(),
+        child: BlocListener<AlarmBloc, AlarmState>(
+          listenWhen: (prev, curr) =>
+              prev.ringingAlarmId != curr.ringingAlarmId,
+          listener: (context, alarmState) {
+            final enabled = context.read<SettingsBloc>().state.phoneAlarmEnabled;
+            _reconcile(
+              enabled ? alarmState.ringingAlarmId : null,
+              alarmState.alarms,
+            );
+          },
+          child: const SizedBox.shrink(),
+        ),
       ),
     );
   }
