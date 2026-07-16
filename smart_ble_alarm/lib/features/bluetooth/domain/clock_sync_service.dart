@@ -37,11 +37,23 @@ class ClockSyncService {
 
   final WeatherDatasource _weatherSource;
 
+  // 2026-07-16: weather push DISABLED to reduce Bluetooth radio load on the clock.
+  // Every 0x0C weather frame is an HM-10 transmit burst that sags the shared rail
+  // and can white-screen the ILI9341 (the corruption is electrical, not data). This
+  // feature fired after every sync AND every 15 min, so it was a recurring white-out
+  // trigger even while the clock sat idle. Short-circuiting here kills all three push
+  // paths (post-sync, periodic timer, on-toggle) in one place — no network fetch, no
+  // BLE frame ever leaves the phone for weather. The 15-min timer + toggle still call
+  // this, but it now returns immediately (inert). Flip _weatherPushEnabled to true to
+  // restore, once a decoupling cap makes the rail robust to the extra bursts.
+  static final bool _weatherPushEnabled = false;
+
   Future<void> pushWeatherToClock(
     BleRepository repo,
     BluetoothDevice device,
     SettingsState settings,
   ) async {
+    if (!_weatherPushEnabled) return; // radio-load reduction — see note above
     try {
       if (!settings.showWeather) {
         await repo.sendCommand(device, 0x0C, BlePayloads.weatherHidden());
