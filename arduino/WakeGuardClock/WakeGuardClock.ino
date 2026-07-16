@@ -1835,8 +1835,15 @@ void renderTft() {
   //       cycle. Link-down is only noticed LINK_TIMEOUT_MS after the last frame,
   //       so a disconnect whiteout shows for ~20 s, then heals here.
   // Either way, re-init once so the repaint below lands on a good controller.
+  //   (c) DEFER the post-sync repaint until the link goes QUIET. After SYNC_END the
+  //       app immediately pushes weather (0x0C) + sleep (0x0D). If we repaint the
+  //       instant syncing clears, that burst's BLE noise corrupts the FRESH paint
+  //       and the panel goes white with the display still ON — which the RDDPM poll
+  //       can't see. Waiting until no frame has arrived for ~1.2 s lands the repaint
+  //       AFTER the burst, on a settled rail. Link-transition repaints stay instant.
   bool nowLinkUp = linkUp();
-  if (syncWasActive || (nowLinkUp != wasLinkUp)) {
+  bool bleQuiet  = (uint32_t)(millis() - lastFrameMs) > 1200UL;
+  if ((syncWasActive && bleQuiet) || (nowLinkUp != wasLinkUp)) {
     syncWasActive = false;
     tft.begin(SPI_FREQ);
     tft.setRotation(TFT_ROTATION);
@@ -1917,7 +1924,11 @@ void renderTft() {
 
 // Best-effort one-time HM-10 rename so the clock advertises as "WG Clock".
 // Set to 0 if a particular module misbehaves during boot.
-#define HM10_SET_NAME 1
+// 2026-07-16: disabled — the name is already persisted in the HM-10's own NVRAM
+// from earlier flashes, so re-sending it every boot is wasted flash. Freed here to
+// make room for the post-sync repaint-deferral white-screen fix in renderTft. Set
+// back to 1 only if you swap in a factory-fresh HM-10 that still advertises default.
+#define HM10_SET_NAME 0
 
 #if HM10_SET_NAME
 void configureBleName() {
