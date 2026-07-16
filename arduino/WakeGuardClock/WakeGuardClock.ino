@@ -1182,21 +1182,54 @@ uint8_t masterVolNow() {
 //  SoftwareSerial clean windows to receive the dismiss frame while ringing.
 struct ToneStep { uint16_t freq; uint16_t ms; }; // freq 0 = silence
 
-// A warm ascending major-pentatonic wake call (G6-A6-C7-E7) that resolves on a
-// held C7 and rings out like a bell, then breathes before repeating. Pentatonic
-// = no harsh intervals, so it reads as "music" while the bright E7 peak and the
-// repetition keep it alerting. The gradual-wake fade ramps the whole thing from
-// soft to full over the alarm's fade seconds (gentle -> insistent). Pitched high
-// on purpose: a passive piezo peaks around 2-4 kHz and is far quieter below
-// ~1.5 kHz, so keeping notes in the 1.5-2.6 kHz band is what makes it loud.
+// Alarm wake melody — pick one of three by changing ALARM_MELODY below, then
+// re-flash. Only the SELECTED pattern is compiled in (the other two are #if'd
+// out), so offering three choices costs ZERO extra flash: the binary is the
+// same size as shipping a single melody — important while the Uno is near full.
+// All three are C-major-pentatonic (only consonant intervals, so they read as
+// "music" not "beeping"), sit in the 1.5-2.6 kHz band a passive piezo is loudest
+// in, and end on a held note + a breath so the phrase rings out then repeats.
+// The gradual-wake master fade (masterVolNow) still ramps whichever you pick
+// from soft to full over the alarm's fade seconds. Each is exactly 40 bytes.
+//   0 = "Sunrise"  : warm rise to a bright peak, a turn, resolves down (default)
+//   1 = "Music Box": a lilting, bouncing up-and-down motif
+//   2 = "Bell Fall": a gentle descending cascade that settles low and calm
+#ifndef ALARM_MELODY
+#define ALARM_MELODY 0
+#endif
+
+#if ALARM_MELODY == 1
+// "Music Box" — a bouncing C7-E7-C7-D7 motif that lands on a held E7.
 const ToneStep ALARM_PATTERN[] = {
-  {1568, 200}, {0, 20},   // G6  — gentle opening
-  {1760, 200}, {0, 20},   // A6  — rising
-  {2093, 220}, {0, 20},   // C7
-  {2637, 320}, {0, 30},   // E7  — bright peak (piezo resonance: loudest + most alerting)
-  {2093, 520},            // C7  — resolve, held, rings out like a bell
-  {   0, 560},            // breathe before the phrase repeats
+  {2093, 150}, {0, 14},   // C7
+  {2637, 150}, {0, 14},   // E7
+  {2093, 150}, {0, 14},   // C7
+  {2349, 150}, {0, 14},   // D7
+  {2637, 360},            // E7  — held, rings out
+  {   0, 520},            // breathe before the phrase repeats
 };
+#elif ALARM_MELODY == 2
+// "Bell Fall" — steps down E7-D7-C7-A6 to a low held G6: calm and soothing.
+const ToneStep ALARM_PATTERN[] = {
+  {2637, 190}, {0, 16},   // E7
+  {2349, 190}, {0, 16},   // D7
+  {2093, 190}, {0, 16},   // C7
+  {1760, 250}, {0, 20},   // A6
+  {1568, 470},            // G6  — resolve low, held
+  {   0, 520},            // breathe before the phrase repeats
+};
+#else
+// "Sunrise" (default) — G6-A6 rise to a bright E7 peak, a D7 turn, then a held
+// C7 that rings out like a bell.
+const ToneStep ALARM_PATTERN[] = {
+  {1568, 170}, {0, 16},   // G6  — gentle opening
+  {1760, 170}, {0, 16},   // A6  — rising
+  {2637, 300}, {0, 26},   // E7  — bright peak (piezo resonance: loudest + most alerting)
+  {2349, 180}, {0, 16},   // D7  — melodic turn
+  {2093, 470},            // C7  — resolve, held, rings out like a bell
+  {   0, 520},            // breathe before the phrase repeats
+};
+#endif
 // A short two-note "ding-dong" for finished timers, distinct from the alarm,
 // kept in the same loud piezo band.
 const ToneStep TIMER_PATTERN[] = {
@@ -1771,15 +1804,17 @@ void renderTft() {
   // Re-init the ILI9341 after any BLE activity that can brown it out to WHITE:
   //   (a) syncWasActive — a sync batch just ended. The frame burst + EEPROM writes
   //       + current spike clear the panel config while we hold the SPI bus idle.
-  //   (b) nowLinkUp && !wasLinkUp — a fresh app CONNECTION (first valid frame after
-  //       the link was down). The HM-10 link-up current spike + SoftwareSerial
-  //       interrupt masking wipe the config the same way, but a plain connect is
-  //       NOT wrapped in SYNC_START/END so it never sets `syncing`. Without this,
-  //       the panel goes white ~2 s after the phone connects and stays white until
-  //       the slow heal. THIS is the "goes blank when the app connects" fix.
+  //   (b) nowLinkUp != wasLinkUp — the link CHANGED state. A fresh connect's
+  //       current spike + SoftwareSerial interrupt masking wipe the config, but a
+  //       plain connect is NOT wrapped in SYNC_START/END so it never sets
+  //       `syncing`. A DISCONNECT (phone off / out of range) spikes the rail the
+  //       same way when the HM-10 drops back to advertising — and with the
+  //       periodic heal compiled out that whiteout was PERMANENT until a power
+  //       cycle. Link-down is only noticed LINK_TIMEOUT_MS after the last frame,
+  //       so a disconnect whiteout shows for ~20 s, then heals here.
   // Either way, re-init once so the repaint below lands on a good controller.
   bool nowLinkUp = linkUp();
-  if (syncWasActive || (nowLinkUp && !wasLinkUp)) {
+  if (syncWasActive || (nowLinkUp != wasLinkUp)) {
     syncWasActive = false;
     tft.begin();
     tft.setRotation(TFT_ROTATION);
