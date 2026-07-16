@@ -423,10 +423,14 @@ Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 // blank (white) state. Clocking at 4 MHz doubles the per-bit settling time =
 // far more noise margin through the dividers, at the cost of ~2x slower full
 // repaints (a clock face only redraws a few small text fields per second, so
-// this is imperceptible). Drop to 2000000UL if a white screen ever recurs.
-// This is passed to EVERY tft.begin() below (boot + both re-inits) so the slow,
-// safe clock is used on every init, not just the first.
-#define SPI_FREQ   4000000UL
+// this is imperceptible). 2026-07-16: dropped to 2 MHz (4x under the AVR ceiling)
+// after 4 MHz still white-screened — this is the maximum noise margin the divider
+// path allows before repaints get annoyingly slow (~0.6 s full paint). If white
+// screens persist even at 2 MHz, the cause is ELECTRICAL (supply brownout or a
+// RESET-line glitch), not SPI timing, and only hardware (decoupling caps / a real
+// level shifter) can cure it — no firmware value will help.
+// This is passed to EVERY tft.begin() below (boot + both re-inits).
+#define SPI_FREQ   2000000UL
 SoftwareSerial bleSerial(PIN_HM10_TXD, PIN_HM10_RXD); // (rxPin, txPin)
 
 // ---- Forward declarations --------------------------------------------------
